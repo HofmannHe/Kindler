@@ -3,8 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-CFG="$ROOT_DIR/compose/haproxy/haproxy.cfg"
-DCMD=(docker compose -f "$ROOT_DIR/compose/haproxy/docker-compose.yml")
+CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
 
 # load base domain suffix from config if present
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -40,17 +40,22 @@ add_acl() {
 }
 
 add_backend() {
-  local tmp b_begin b_end ip
+  local tmp b_begin b_end ip detected_port
   # try to resolve cluster node (kind/k3d) container IP to target NodePort
-  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then : ;
-  elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then : ;
+  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
+    # kind cluster detected - use NodePort
+    detected_port="$node_port"
+  elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
+    # k3d cluster detected - use LoadBalancer port 80
+    detected_port=80
   else
     ip="127.0.0.1" # fallback (may not work for kind)
+    detected_port="$node_port"
   fi
   b_begin="^# BEGIN DYNAMIC BACKENDS"
   b_end="^# END DYNAMIC BACKENDS"
   tmp=$(mktemp)
-  awk -v n="$name" -v B="$b_begin" -v E="$b_end" -v p="$node_port" '
+  awk -v n="$name" -v B="$b_begin" -v E="$b_end" -v p="$detected_port" '
     {print $0}
     $0 ~ B {print "backend be_" n "\n  server s1 REPLACE_IP:" p}
   ' "$CFG" >"$tmp"
