@@ -3,7 +3,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-CFG="$ROOT_DIR/compose/haproxy/haproxy.cfg"
+CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 
 usage() {
   cat >&2 <<USAGE
