@@ -319,9 +319,91 @@ curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
 
 ## Advanced Usage
 
+### Domain Name Resolution
+
+Kindler supports three DNS resolution strategies:
+
+#### Option 1: sslip.io (Zero Configuration, Recommended) ✅
+
+Uses public DNS service that automatically resolves to your IP:
+
+```bash
+# config/clusters.env (default)
+BASE_DOMAIN=192.168.51.30.sslip.io
+HAPROXY_HOST=192.168.51.30
+
+# Access clusters directly
+curl http://dev.192.168.51.30.sslip.io:23080
+curl http://uat.192.168.51.30.sslip.io:23080
+```
+
+**Pros:**
+- Zero configuration required
+- Works immediately after installation
+- Perfect for multi-user environments
+- No local DNS setup needed
+
+**Cons:**
+- Longer domain names
+- Requires internet connectivity for DNS resolution
+
+#### Option 2: Local /etc/hosts (Clean Domains)
+
+Manage local DNS entries with the provided script:
+
+```bash
+# Change BASE_DOMAIN to local domain
+nano config/clusters.env
+# Set: BASE_DOMAIN=local
+
+# Sync all environments to /etc/hosts
+sudo ./scripts/update_hosts.sh --sync
+
+# Or add individual environment
+sudo ./scripts/update_hosts.sh --add dev
+
+# Access with clean domains
+curl http://dev.local:23080
+curl http://uat.local:23080
+
+# Clean up when done
+sudo ./scripts/update_hosts.sh --clean
+```
+
+**Script usage:**
+```bash
+sudo ./scripts/update_hosts.sh --sync       # Sync all from CSV
+sudo ./scripts/update_hosts.sh --add dev    # Add single environment
+sudo ./scripts/update_hosts.sh --remove dev # Remove environment
+sudo ./scripts/update_hosts.sh --clean      # Remove all Kindler entries
+sudo ./scripts/update_hosts.sh --help       # Show help
+```
+
+**Pros:**
+- Clean, short domain names
+- Fully local, no external dependencies
+- Automatic backup of /etc/hosts before changes
+
+**Cons:**
+- Requires sudo privileges
+- Manual script execution needed
+- Each developer needs to run on their machine
+
+#### Option 3: curl -H Method (Testing)
+
+Use Host header without DNS configuration:
+
+```bash
+# No configuration needed
+curl -H 'Host: dev.local' http://192.168.51.30:23080
+curl -H 'Host: uat.local' http://192.168.51.30:23080
+```
+
+**Best for:** Quick testing and verification
+
 ### Custom Domain Routing
 
-By default, clusters are accessible via `<env>.local`. To use custom domains:
+To use your own domain:
 
 1. Update `BASE_DOMAIN` in `config/clusters.env`:
    ```bash
