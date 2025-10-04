@@ -401,6 +401,103 @@ curl -H 'Host: uat.local' http://192.168.51.30:23080
 
 **适用场景:** 快速测试和验证
 
+### 多环境支持
+
+Kindler 完全支持多个环境，自动配置 DNS 和 HAProxy 路由。
+
+#### 示例：管理多个环境
+
+```bash
+# 当前在 config/environments.csv 中定义的环境
+# devops, dev, uat, prod, dev-k3d, uat-k3d, prod-k3d 等
+
+# 方案 1: 使用 sslip.io 访问 (默认，零配置)
+curl http://dev.192.168.51.30.sslip.io:23080
+curl http://uat.192.168.51.30.sslip.io:23080
+curl http://prod.192.168.51.30.sslip.io:23080
+
+# 方案 2: 使用本地域名访问 (运行 update_hosts.sh 后)
+sudo ./scripts/update_hosts.sh --sync  # 一次同步所有环境
+curl http://dev.local:23080
+curl http://uat.local:23080
+curl http://prod.local:23080
+```
+
+#### 添加新环境
+
+1. **添加到 CSV** (`config/environments.csv`):
+   ```csv
+   staging,k3d,30080,25001,true,true,25080,25443
+   ```
+
+2. **创建集群**:
+   ```bash
+   ./scripts/create_env.sh -n staging
+   ```
+   自动完成:
+   - 创建 k3d 集群
+   - 通过 Edge Agent 注册到 Portainer
+   - 注册到 ArgoCD
+   - 添加 HAProxy 路由 (ACL + backend)
+
+3. **立即访问**:
+   ```bash
+   # 使用 sslip.io (立即可用)
+   curl http://staging.192.168.51.30.sslip.io:23080
+
+   # 使用本地域名 (先同步 hosts)
+   sudo ./scripts/update_hosts.sh --add staging
+   curl http://staging.local:23080
+   ```
+
+#### HAProxy 路由配置
+
+每个环境自动获得 HAProxy 配置:
+
+```haproxy
+# Frontend ACL (在 compose/haproxy/haproxy.cfg)
+frontend fe_kube_http
+  bind *:23080
+
+  # 为每个环境自动生成
+  acl host_dev  hdr(host) -i dev.192.168.51.30.sslip.io
+  use_backend be_dev if host_dev
+
+  acl host_uat  hdr(host) -i uat.192.168.51.30.sslip.io
+  use_backend be_uat if host_uat
+
+  acl host_prod  hdr(host) -i prod.192.168.51.30.sslip.io
+  use_backend be_prod if host_prod
+
+# Backend 路由到集群 NodePort
+backend be_dev
+  server s1 <dev-cluster-ip>:30080
+
+backend be_uat
+  server s1 <uat-cluster-ip>:30080
+
+backend be_prod
+  server s1 <prod-cluster-ip>:30080
+```
+
+**工作原理:**
+1. 用户访问 `http://dev.192.168.51.30.sslip.io:23080`
+2. DNS 解析到 `192.168.51.30` (HAProxy)
+3. HAProxy 读取 Host header: `dev.192.168.51.30.sslip.io`
+4. ACL `host_dev` 匹配 → 路由到 `be_dev` backend
+5. 请求转发到 dev 集群容器 IP 的 30080 端口
+
+**查看当前路由:**
+```bash
+docker exec haproxy-gw cat /usr/local/etc/haproxy/haproxy.cfg | grep -A 2 "acl host_"
+```
+
+**从 CSV 同步路由:**
+```bash
+./scripts/haproxy_sync.sh         # 添加缺失的路由
+./scripts/haproxy_sync.sh --prune # 添加缺失 + 移除未列出的
+```
+
 ### 自定义域名路由
 
 使用自己的域名:
