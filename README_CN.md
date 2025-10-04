@@ -18,75 +18,56 @@
 
 ## 架构
 
+### 系统拓扑
+
 ```mermaid
 graph TB
     subgraph External["外部访问"]
         USER[用户/浏览器]
     end
 
-    subgraph Gateway["HAProxy 网关 (192.168.51.30)"]
+    subgraph Gateway["HAProxy 网关"]
         HAP[HAProxy 容器<br/>haproxy-gw]
-        P23343[":23343 HTTPS<br/>(Portainer)"]
-        P23380[":23380 HTTP<br/>(→ 23343)"]
-        P23800[":23800 HTTP<br/>(ArgoCD)"]
-        P23080[":23080 HTTP<br/>(集群路由)"]
+        PORTS["可配置端口:<br/>Portainer HTTPS/HTTP<br/>ArgoCD HTTP<br/>集群路由 HTTP"]
     end
 
     subgraph Management["管理层"]
-        PORT[Portainer CE<br/>portainer-ce]
-        DEVOPS["devops 集群 (k3d)<br/>ArgoCD v3.1.7"]
+        PORT[Portainer CE]
+        DEVOPS["devops 集群<br/>(k3d/kind)<br/>+ ArgoCD"]
     end
 
-    subgraph Business["业务集群"]
-        DEV["dev (kind)<br/>NodePort: 30080"]
-        UAT["uat (kind)<br/>NodePort: 30080"]
-        PROD["prod (kind)<br/>NodePort: 30080"]
-        DEVK3D["dev-k3d (k3d)<br/>NodePort: 30080"]
-        UATK3D["uat-k3d (k3d)<br/>NodePort: 30080"]
-        PRODK3D["prod-k3d (k3d)<br/>NodePort: 30080"]
+    subgraph Business["业务集群 (示例)"]
+        ENV1["环境 1<br/>(kind)"]
+        ENV2["环境 2<br/>(k3d)"]
+        ENVN["...<br/>(由 CSV 定义)"]
     end
 
     USER -->|HTTPS/HTTP| HAP
-    HAP --> P23343
-    HAP --> P23380
-    HAP --> P23800
-    HAP --> P23080
+    HAP --> PORTS
+    PORTS -.->|管理| PORT
+    PORTS -.->|GitOps| DEVOPS
+    PORTS -.->|域名路由| Business
 
-    P23343 -.->|管理| PORT
-    P23380 -.->|301 重定向| P23343
-    P23800 -.->|GitOps| DEVOPS
+    PORT -->|Edge Agent| ENV1
+    PORT -->|Edge Agent| ENV2
+    PORT -->|Edge Agent| ENVN
 
-    PORT -->|Edge Agent| DEV
-    PORT -->|Edge Agent| UAT
-    PORT -->|Edge Agent| PROD
-    PORT -->|Edge Agent| DEVK3D
-    PORT -->|Edge Agent| UATK3D
-    PORT -->|Edge Agent| PRODK3D
-
-    DEVOPS -->|kubectl| DEV
-    DEVOPS -->|kubectl| UAT
-    DEVOPS -->|kubectl| PROD
-    DEVOPS -->|kubectl| DEVK3D
-    DEVOPS -->|kubectl| UATK3D
-    DEVOPS -->|kubectl| PRODK3D
-
-    P23080 -->|dev.local| DEV
-    P23080 -->|uat.local| UAT
-    P23080 -->|prod.local| PROD
-    P23080 -->|dev-k3d.local| DEVK3D
-    P23080 -->|uat-k3d.local| UATK3D
-    P23080 -->|prod-k3d.local| PRODK3D
+    DEVOPS -->|kubectl| ENV1
+    DEVOPS -->|kubectl| ENV2
+    DEVOPS -->|kubectl| ENVN
 
     classDef gateway fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef management fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef business fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
 
-    class HAP,P23343,P23380,P23800,P23080 gateway
+    class HAP,PORTS gateway
     class PORT,DEVOPS management
-    class DEV,UAT,PROD,DEVK3D,UATK3D,PRODK3D business
+    class ENV1,ENV2,ENVN business
 ```
 
-### 架构概览
+> **注意**: 此图展示简化的拓扑结构。实际集群数量和配置由 `config/environments.csv` 定义。所有端口和域名都可通过 `config/clusters.env` 和 `config/secrets.env` 配置。
+
+### 请求流程
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +77,7 @@ sequenceDiagram
     participant ArgoCD
     participant K8sCluster as 业务集群
 
-    User->>HAProxy: 访问 https://192.168.51.30:23343
+    User->>HAProxy: 访问 Portainer 界面
     HAProxy->>Portainer: 转发请求
     Portainer-->>User: 管理界面
 
@@ -104,13 +85,13 @@ sequenceDiagram
     Portainer->>K8sCluster: Edge Agent 指令
     K8sCluster-->>Portainer: 状态更新
 
-    User->>HAProxy: 访问 http://192.168.51.30:23800
+    User->>HAProxy: 访问 ArgoCD 界面
     HAProxy->>ArgoCD: 转发请求
     ArgoCD->>K8sCluster: 通过 kubectl 部署
     K8sCluster-->>ArgoCD: 同步状态
 
-    User->>HAProxy: 访问 http://dev.local:23080
-    HAProxy->>K8sCluster: 路由到 dev 集群 NodePort
+    User->>HAProxy: 访问应用 (带 Host header)
+    HAProxy->>K8sCluster: 路由到集群 NodePort
     K8sCluster-->>User: 应用响应
 ```
 
@@ -131,13 +112,12 @@ sequenceDiagram
    cd kindler
    ```
 
-2. **配置密钥**
+2. **配置环境** (可选，已提供默认值)
    ```bash
-   # 设置 Portainer 管理员密码 (默认: admin123)
-   echo 'PORTAINER_ADMIN_PASSWORD=your-secure-password' > config/secrets.env
-
-   # 配置 HAProxy 主机地址 (默认: 192.168.51.30)
-   echo 'HAPROXY_HOST=192.168.51.30' >> config/clusters.env
+   # 根据需要编辑配置文件
+   nano config/clusters.env    # HAProxy 主机、基础域名、版本
+   nano config/secrets.env     # 管理员密码
+   nano config/environments.csv # 集群定义
    ```
 
 3. **启动基础设施**
@@ -147,14 +127,14 @@ sequenceDiagram
    该脚本将:
    - 启动 Portainer CE 容器
    - 启动 HAProxy 网关
-   - 创建 `devops` k3d 集群
-   - 部署 ArgoCD v3.1.7
+   - 创建 `devops` 管理集群
+   - 部署 ArgoCD
 
 4. **访问管理界面**
-   - Portainer: `https://192.168.51.30:23343` (自签名证书)
-   - ArgoCD: `http://192.168.51.30:23800`
+   - Portainer: `https://<HAPROXY_HOST>:23343` (自签名证书，默认为 `https://192.168.51.30:23343`)
+   - ArgoCD: `http://<HAPROXY_HOST>:23800` (默认为 `http://192.168.51.30:23800`)
      - 用户名: `admin`
-     - 密码: 查看 `config/secrets.env` 中的 `ARGOCD_ADMIN_PASSWORD`
+     - 密码: 查看 `config/secrets.env`
 
 ### 创建业务集群
 
@@ -162,29 +142,31 @@ sequenceDiagram
 
 ```bash
 # 创建单个环境
-./scripts/create_env.sh -n dev -p kind
+./scripts/create_env.sh -n dev
 
-# 从 CSV 创建所有环境
-for env in dev uat prod dev-k3d uat-k3d prod-k3d; do
+# 从 CSV 创建多个环境
+for env in dev uat prod; do
   ./scripts/create_env.sh -n $env
 done
 ```
 
 脚本将自动:
-- ✅ 创建 Kubernetes 集群 (kind/k3d)
+- ✅ 创建 Kubernetes 集群 (根据 CSV 配置选择 kind/k3d)
 - ✅ 通过 Edge Agent 注册到 Portainer
 - ✅ 使用 kubectl context 注册到 ArgoCD
-- ✅ 配置 HAProxy 域名路由
+- ✅ 配置 HAProxy 域名路由 (如果在 CSV 中启用)
 
 ### 访问集群
 
-- **Portainer**: `https://192.168.51.30:23343`
-- **ArgoCD**: `http://192.168.51.30:23800`
-- **业务应用** (通过域名路由):
+访问点取决于 `config/clusters.env` 和 `config/environments.csv` 中的配置:
+
+- **Portainer**: `https://<HAPROXY_HOST>:23343` (默认: `https://192.168.51.30:23343`)
+- **ArgoCD**: `http://<HAPROXY_HOST>:23800` (默认: `http://192.168.51.30:23800`)
+- **业务应用** (通过域名路由，默认基础域名: `local`):
   ```bash
+  # 使用默认配置的示例
   curl -H 'Host: dev.local' http://192.168.51.30:23080
   curl -H 'Host: uat.local' http://192.168.51.30:23080
-  curl -H 'Host: prod.local' http://192.168.51.30:23080
   ```
 
 ## 项目结构
@@ -240,7 +222,25 @@ dev-k3d,k3d,30080,19002,true,true,18091,18444
 
 ```bash
 KIND_NODE_IMAGE=kindest/node:v1.31.12
-K3D_IMAGE=rancher/k3s:stable
+K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
+```
+
+### 端口配置
+
+默认端口在 HAProxy 中配置。如需修改，编辑 `compose/haproxy/haproxy.cfg`:
+
+- Portainer HTTPS: `23343` (默认)
+- Portainer HTTP: `23380` (重定向到 HTTPS)
+- ArgoCD: `23800` (默认)
+- 集群路由: `23080` (默认)
+
+### 域名配置
+
+在 `config/clusters.env` 中设置基础域名:
+
+```bash
+BASE_DOMAIN=local  # 集群将通过 <env>.local 访问
+HAPROXY_HOST=192.168.51.30  # 网关入口点
 ```
 
 ## 管理命令
@@ -283,30 +283,37 @@ K3D_IMAGE=rancher/k3s:stable
 
 ## 端口参考
 
-| 服务 | 端口 | 协议 | 用途 |
-|------|------|------|------|
-| Portainer HTTP | 23380 | HTTP | 重定向到 23343 |
-| Portainer HTTPS | 23343 | HTTPS | 管理界面 |
-| ArgoCD | 23800 | HTTP | GitOps 界面 |
-| 集群路由 | 23080 | HTTP | 基于域名的路由 |
+| 服务 | 默认端口 | 协议 | 用途 | 可配置 |
+|------|----------|------|------|--------|
+| Portainer HTTP | 23380 | HTTP | 重定向到 HTTPS | 是 (haproxy.cfg) |
+| Portainer HTTPS | 23343 | HTTPS | 管理界面 | 是 (haproxy.cfg) |
+| ArgoCD | 23800 | HTTP | GitOps 界面 | 是 (haproxy.cfg) |
+| 集群路由 | 23080 | HTTP | 基于域名的路由 | 是 (haproxy.cfg) |
+
+> **注意**: 所有端口都可以通过编辑 `compose/haproxy/haproxy.cfg` 并重启 HAProxy 来自定义。
 
 ## 验证
 
+默认配置验证 (根据您的设置调整):
+
 ```bash
+# 替换为您在 config/clusters.env 中的 HAPROXY_HOST
+HAPROXY_HOST=192.168.51.30
+
 # Portainer HTTPS
-curl -kI https://192.168.51.30:23343
+curl -kI https://${HAPROXY_HOST}:23343
 # 预期: HTTP/1.1 200 OK
 
 # Portainer HTTP (重定向)
-curl -I http://192.168.51.30:23380
+curl -I http://${HAPROXY_HOST}:23380
 # 预期: HTTP/1.1 301 Moved Permanently
 
 # ArgoCD
-curl -I http://192.168.51.30:23800
+curl -I http://${HAPROXY_HOST}:23800
 # 预期: HTTP/1.1 200 OK
 
-# 集群路由 (带域名 header)
-curl -H 'Host: dev.local' -I http://192.168.51.30:23080
+# 集群路由 (带域名 header，根据需要调整 BASE_DOMAIN)
+curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
 # 预期: HTTP/1.1 200 OK (或后端服务响应)
 ```
 

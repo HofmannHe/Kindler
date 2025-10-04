@@ -18,75 +18,56 @@
 
 ## Architecture
 
+### System Topology
+
 ```mermaid
 graph TB
     subgraph External["External Access"]
         USER[User/Browser]
     end
 
-    subgraph Gateway["HAProxy Gateway (192.168.51.30)"]
+    subgraph Gateway["HAProxy Gateway"]
         HAP[HAProxy Container<br/>haproxy-gw]
-        P23343[":23343 HTTPS<br/>(Portainer)"]
-        P23380[":23380 HTTP<br/>(→ 23343)"]
-        P23800[":23800 HTTP<br/>(ArgoCD)"]
-        P23080[":23080 HTTP<br/>(Cluster Routes)"]
+        PORTS["Configurable Ports:<br/>Portainer HTTPS/HTTP<br/>ArgoCD HTTP<br/>Cluster Routes HTTP"]
     end
 
     subgraph Management["Management Layer"]
-        PORT[Portainer CE<br/>portainer-ce]
-        DEVOPS["devops Cluster (k3d)<br/>ArgoCD v3.1.7"]
+        PORT[Portainer CE]
+        DEVOPS["devops Cluster<br/>(k3d/kind)<br/>+ ArgoCD"]
     end
 
-    subgraph Business["Business Clusters"]
-        DEV["dev (kind)<br/>NodePort: 30080"]
-        UAT["uat (kind)<br/>NodePort: 30080"]
-        PROD["prod (kind)<br/>NodePort: 30080"]
-        DEVK3D["dev-k3d (k3d)<br/>NodePort: 30080"]
-        UATK3D["uat-k3d (k3d)<br/>NodePort: 30080"]
-        PRODK3D["prod-k3d (k3d)<br/>NodePort: 30080"]
+    subgraph Business["Business Clusters (Examples)"]
+        ENV1["Environment 1<br/>(kind)"]
+        ENV2["Environment 2<br/>(k3d)"]
+        ENVN["...<br/>(defined in CSV)"]
     end
 
     USER -->|HTTPS/HTTP| HAP
-    HAP --> P23343
-    HAP --> P23380
-    HAP --> P23800
-    HAP --> P23080
+    HAP --> PORTS
+    PORTS -.->|Manage| PORT
+    PORTS -.->|GitOps| DEVOPS
+    PORTS -.->|Route by Domain| Business
 
-    P23343 -.->|Manage| PORT
-    P23380 -.->|301 Redirect| P23343
-    P23800 -.->|GitOps| DEVOPS
+    PORT -->|Edge Agent| ENV1
+    PORT -->|Edge Agent| ENV2
+    PORT -->|Edge Agent| ENVN
 
-    PORT -->|Edge Agent| DEV
-    PORT -->|Edge Agent| UAT
-    PORT -->|Edge Agent| PROD
-    PORT -->|Edge Agent| DEVK3D
-    PORT -->|Edge Agent| UATK3D
-    PORT -->|Edge Agent| PRODK3D
-
-    DEVOPS -->|kubectl| DEV
-    DEVOPS -->|kubectl| UAT
-    DEVOPS -->|kubectl| PROD
-    DEVOPS -->|kubectl| DEVK3D
-    DEVOPS -->|kubectl| UATK3D
-    DEVOPS -->|kubectl| PRODK3D
-
-    P23080 -->|dev.local| DEV
-    P23080 -->|uat.local| UAT
-    P23080 -->|prod.local| PROD
-    P23080 -->|dev-k3d.local| DEVK3D
-    P23080 -->|uat-k3d.local| UATK3D
-    P23080 -->|prod-k3d.local| PRODK3D
+    DEVOPS -->|kubectl| ENV1
+    DEVOPS -->|kubectl| ENV2
+    DEVOPS -->|kubectl| ENVN
 
     classDef gateway fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef management fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef business fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
 
-    class HAP,P23343,P23380,P23800,P23080 gateway
+    class HAP,PORTS gateway
     class PORT,DEVOPS management
-    class DEV,UAT,PROD,DEVK3D,UATK3D,PRODK3D business
+    class ENV1,ENV2,ENVN business
 ```
 
-### Architecture Overview
+> **Note**: The diagram shows a simplified topology. Actual cluster count and configuration are defined in `config/environments.csv`. All ports and domain names are configurable via `config/clusters.env` and `config/secrets.env`.
+
+### Request Flow
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +77,7 @@ sequenceDiagram
     participant ArgoCD
     participant K8sCluster as Business Cluster
 
-    User->>HAProxy: Access https://192.168.51.30:23343
+    User->>HAProxy: Access Portainer UI
     HAProxy->>Portainer: Forward request
     Portainer-->>User: Management UI
 
@@ -104,13 +85,13 @@ sequenceDiagram
     Portainer->>K8sCluster: Edge Agent command
     K8sCluster-->>Portainer: Status update
 
-    User->>HAProxy: Access http://192.168.51.30:23800
+    User->>HAProxy: Access ArgoCD UI
     HAProxy->>ArgoCD: Forward request
     ArgoCD->>K8sCluster: Deploy via kubectl
     K8sCluster-->>ArgoCD: Sync status
 
-    User->>HAProxy: Access http://dev.local:23080
-    HAProxy->>K8sCluster: Route to dev cluster NodePort
+    User->>HAProxy: Access app (with Host header)
+    HAProxy->>K8sCluster: Route to cluster NodePort
     K8sCluster-->>User: Application response
 ```
 
@@ -131,13 +112,12 @@ sequenceDiagram
    cd kindler
    ```
 
-2. **Configure secrets**
+2. **Configure environment** (optional, defaults are provided)
    ```bash
-   # Set Portainer admin password (default: admin123)
-   echo 'PORTAINER_ADMIN_PASSWORD=your-secure-password' > config/secrets.env
-
-   # Configure HAProxy host (default: 192.168.51.30)
-   echo 'HAPROXY_HOST=192.168.51.30' >> config/clusters.env
+   # Edit configuration files as needed
+   nano config/clusters.env    # HAProxy host, base domain, versions
+   nano config/secrets.env     # Admin passwords
+   nano config/environments.csv # Cluster definitions
    ```
 
 3. **Bootstrap infrastructure**
@@ -147,14 +127,14 @@ sequenceDiagram
    This will:
    - Start Portainer CE container
    - Start HAProxy gateway
-   - Create `devops` k3d cluster
-   - Deploy ArgoCD v3.1.7
+   - Create `devops` management cluster
+   - Deploy ArgoCD
 
 4. **Access management interfaces**
-   - Portainer: `https://192.168.51.30:23343` (self-signed cert)
-   - ArgoCD: `http://192.168.51.30:23800`
+   - Portainer: `https://<HAPROXY_HOST>:23343` (self-signed cert, defaults to `https://192.168.51.30:23343`)
+   - ArgoCD: `http://<HAPROXY_HOST>:23800` (defaults to `http://192.168.51.30:23800`)
      - Username: `admin`
-     - Password: See `config/secrets.env` (`ARGOCD_ADMIN_PASSWORD`)
+     - Password: See `config/secrets.env`
 
 ### Create Business Clusters
 
@@ -162,29 +142,31 @@ Create clusters defined in `config/environments.csv`:
 
 ```bash
 # Create a single environment
-./scripts/create_env.sh -n dev -p kind
+./scripts/create_env.sh -n dev
 
-# Create all environments from CSV
-for env in dev uat prod dev-k3d uat-k3d prod-k3d; do
+# Create multiple environments from CSV
+for env in dev uat prod; do
   ./scripts/create_env.sh -n $env
 done
 ```
 
 The script will automatically:
-- ✅ Create the Kubernetes cluster (kind/k3d)
+- ✅ Create the Kubernetes cluster (kind/k3d based on CSV config)
 - ✅ Register to Portainer via Edge Agent
 - ✅ Register to ArgoCD with kubectl context
-- ✅ Configure HAProxy domain routing
+- ✅ Configure HAProxy domain routing (if enabled in CSV)
 
 ### Access Your Clusters
 
-- **Portainer**: `https://192.168.51.30:23343`
-- **ArgoCD**: `http://192.168.51.30:23800`
-- **Business Apps** (via domain routing):
+Access points depend on your configuration in `config/clusters.env` and `config/environments.csv`:
+
+- **Portainer**: `https://<HAPROXY_HOST>:23343` (default: `https://192.168.51.30:23343`)
+- **ArgoCD**: `http://<HAPROXY_HOST>:23800` (default: `http://192.168.51.30:23800`)
+- **Business Apps** (via domain routing, default base domain: `local`):
   ```bash
+  # Example with default configuration
   curl -H 'Host: dev.local' http://192.168.51.30:23080
   curl -H 'Host: uat.local' http://192.168.51.30:23080
-  curl -H 'Host: prod.local' http://192.168.51.30:23080
   ```
 
 ## Project Structure
@@ -240,7 +222,25 @@ Configure Kubernetes versions in `config/clusters.env`:
 
 ```bash
 KIND_NODE_IMAGE=kindest/node:v1.31.12
-K3D_IMAGE=rancher/k3s:stable
+K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
+```
+
+### Port Configuration
+
+Default ports are configured in HAProxy. Modify `compose/haproxy/haproxy.cfg` if needed:
+
+- Portainer HTTPS: `23343` (default)
+- Portainer HTTP: `23380` (redirects to HTTPS)
+- ArgoCD: `23800` (default)
+- Cluster Routes: `23080` (default)
+
+### Domain Configuration
+
+Set base domain in `config/clusters.env`:
+
+```bash
+BASE_DOMAIN=local  # Clusters will be accessible as <env>.local
+HAPROXY_HOST=192.168.51.30  # Gateway entry point
 ```
 
 ## Management Commands
@@ -283,30 +283,37 @@ K3D_IMAGE=rancher/k3s:stable
 
 ## Port Reference
 
-| Service | Port | Protocol | Purpose |
-|---------|------|----------|---------|
-| Portainer HTTP | 23380 | HTTP | Redirects to 23343 |
-| Portainer HTTPS | 23343 | HTTPS | Management UI |
-| ArgoCD | 23800 | HTTP | GitOps interface |
-| Cluster Routes | 23080 | HTTP | Domain-based routing |
+| Service | Default Port | Protocol | Purpose | Configurable |
+|---------|--------------|----------|---------|--------------|
+| Portainer HTTP | 23380 | HTTP | Redirects to HTTPS | Yes (haproxy.cfg) |
+| Portainer HTTPS | 23343 | HTTPS | Management UI | Yes (haproxy.cfg) |
+| ArgoCD | 23800 | HTTP | GitOps interface | Yes (haproxy.cfg) |
+| Cluster Routes | 23080 | HTTP | Domain-based routing | Yes (haproxy.cfg) |
+
+> **Note**: All ports can be customized by editing `compose/haproxy/haproxy.cfg` and restarting HAProxy.
 
 ## Verification
 
+Default configuration verification (adjust for your settings):
+
 ```bash
+# Replace with your HAPROXY_HOST from config/clusters.env
+HAPROXY_HOST=192.168.51.30
+
 # Portainer HTTPS
-curl -kI https://192.168.51.30:23343
+curl -kI https://${HAPROXY_HOST}:23343
 # Expected: HTTP/1.1 200 OK
 
 # Portainer HTTP (redirect)
-curl -I http://192.168.51.30:23380
+curl -I http://${HAPROXY_HOST}:23380
 # Expected: HTTP/1.1 301 Moved Permanently
 
 # ArgoCD
-curl -I http://192.168.51.30:23800
+curl -I http://${HAPROXY_HOST}:23800
 # Expected: HTTP/1.1 200 OK
 
-# Cluster route (with domain header)
-curl -H 'Host: dev.local' -I http://192.168.51.30:23080
+# Cluster route (with domain header, adjust BASE_DOMAIN as needed)
+curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
 # Expected: HTTP/1.1 200 OK (or backend service response)
 ```
 
