@@ -1,0 +1,39 @@
+services:
+  portainer:
+    image: portainer/portainer-ce:${PORTAINER_VERSION:-2.33.2-alpine}
+    container_name: portainer-ce
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+      - portainer_secrets:/run/secrets:ro
+    command: ["--admin-password-file", "/run/secrets/portainer_admin"]
+    networks:
+      - infrastructure
+
+  haproxy:
+    image: haproxy:${HAPROXY_VERSION:-3.2.6-alpine3.22}
+    container_name: haproxy-gw
+    restart: unless-stopped
+    ports:
+      - "23080:23080"
+      - "23380:23380"
+      - "23343:23343"
+      - "23800:23800"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - haproxy_certs:/usr/local/etc/haproxy/certs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - infrastructure
+
+networks:
+  infrastructure:
+    name: infrastructure
+
+volumes:
+  portainer_data:
+  portainer_secrets:
+    external: true
+  haproxy_certs:

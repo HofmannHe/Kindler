@@ -1,0 +1,28 @@
+# Data directories
+/data
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Docker volumes data (if accidentally created locally)
+portainer_data/
+haproxy_certs/
+
+# Private configurations (keep examples only)
+# Note: config/*.env files are included as examples
+# Users should copy and modify them locally if needed

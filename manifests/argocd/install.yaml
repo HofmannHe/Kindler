@@ -1,0 +1,7 @@
+# ArgoCD 安装 - 使用官方 install.yaml (精简版)
+# 来源: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# 注意：这是一个占位符，实际部署时会从官方源下载
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd

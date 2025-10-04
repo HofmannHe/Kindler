@@ -1,0 +1,24 @@
+services:
+  haproxy:
+    image: haproxy:2.9
+    container_name: haproxy-gw
+    ports:
+      - "23080:23080"
+      - "23380:23380"
+      - "23343:23343"
+    networks:
+      - portainer_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - haproxy_certs:/usr/local/etc/haproxy/certs
+    restart: unless-stopped
+
+networks:
+  portainer_network:
+    external: true
+    name: portainer_network
+
+volumes:
+  haproxy_certs:

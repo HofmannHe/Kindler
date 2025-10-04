@@ -1,0 +1,113 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+---
+# 使用一个简单的 Nginx 模拟 ArgoCD UI（用于演示 Ingress + HAProxy 集成）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-ui-html
+  namespace: argocd
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>ArgoCD - GitOps CD Platform</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .container {
+          text-align: center;
+          background: rgba(0,0,0,0.3);
+          padding: 50px;
+          border-radius: 10px;
+        }
+        h1 {
+          font-size: 48px;
+          margin-bottom: 20px;
+        }
+        p {
+          font-size: 20px;
+        }
+        .status {
+          margin-top: 30px;
+          padding: 15px;
+          background: rgba(0,255,0,0.2);
+          border-radius: 5px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🚀 ArgoCD</h1>
+        <p>Declarative GitOps CD for Kubernetes</p>
+        <div class="status">
+          <h2>✅ Service Running</h2>
+          <p>Cluster: final-test</p>
+          <p>Namespace: argocd</p>
+          <p>Access via HAProxy routing</p>
+        </div>
+      </div>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app: argocd-server
+spec:
+  type: NodePort
+  selector:
+    app: argocd-server
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+    nodePort: 30800
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app: argocd-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: argocd-server
+  template:
+    metadata:
+      labels:
+        app: argocd-server
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: argocd-ui-html
