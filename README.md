@@ -401,6 +401,103 @@ curl -H 'Host: uat.local' http://192.168.51.30:23080
 
 **Best for:** Quick testing and verification
 
+### Multi-Environment Support
+
+Kindler fully supports multiple environments with automatic DNS and HAProxy routing.
+
+#### Example: Managing Multiple Environments
+
+```bash
+# Current environments defined in config/environments.csv
+# devops, dev, uat, prod, dev-k3d, uat-k3d, prod-k3d, etc.
+
+# Option 1: Access with sslip.io (default, zero config)
+curl http://dev.192.168.51.30.sslip.io:23080
+curl http://uat.192.168.51.30.sslip.io:23080
+curl http://prod.192.168.51.30.sslip.io:23080
+
+# Option 2: Access with local domains (after running update_hosts.sh)
+sudo ./scripts/update_hosts.sh --sync  # Syncs all environments at once
+curl http://dev.local:23080
+curl http://uat.local:23080
+curl http://prod.local:23080
+```
+
+#### Add a New Environment
+
+1. **Add to CSV** (`config/environments.csv`):
+   ```csv
+   staging,k3d,30080,25001,true,true,25080,25443
+   ```
+
+2. **Create the cluster**:
+   ```bash
+   ./scripts/create_env.sh -n staging
+   ```
+   This automatically:
+   - Creates k3d cluster
+   - Registers to Portainer via Edge Agent
+   - Registers to ArgoCD
+   - Adds HAProxy route (ACL + backend)
+
+3. **Access immediately**:
+   ```bash
+   # With sslip.io (works immediately)
+   curl http://staging.192.168.51.30.sslip.io:23080
+
+   # With local domain (sync hosts first)
+   sudo ./scripts/update_hosts.sh --add staging
+   curl http://staging.local:23080
+   ```
+
+#### HAProxy Routing Configuration
+
+Each environment gets automatic HAProxy configuration:
+
+```haproxy
+# Frontend ACL (in compose/haproxy/haproxy.cfg)
+frontend fe_kube_http
+  bind *:23080
+
+  # Auto-generated for each environment
+  acl host_dev  hdr(host) -i dev.192.168.51.30.sslip.io
+  use_backend be_dev if host_dev
+
+  acl host_uat  hdr(host) -i uat.192.168.51.30.sslip.io
+  use_backend be_uat if host_uat
+
+  acl host_prod  hdr(host) -i prod.192.168.51.30.sslip.io
+  use_backend be_prod if host_prod
+
+# Backend routing to cluster NodePort
+backend be_dev
+  server s1 <dev-cluster-ip>:30080
+
+backend be_uat
+  server s1 <uat-cluster-ip>:30080
+
+backend be_prod
+  server s1 <prod-cluster-ip>:30080
+```
+
+**How it works:**
+1. User accesses `http://dev.192.168.51.30.sslip.io:23080`
+2. DNS resolves to `192.168.51.30` (HAProxy)
+3. HAProxy reads Host header: `dev.192.168.51.30.sslip.io`
+4. ACL `host_dev` matches → routes to `be_dev` backend
+5. Request forwarded to dev cluster container IP on port 30080
+
+**View current routes:**
+```bash
+docker exec haproxy-gw cat /usr/local/etc/haproxy/haproxy.cfg | grep -A 2 "acl host_"
+```
+
+**Sync routes from CSV:**
+```bash
+./scripts/haproxy_sync.sh         # Add missing routes
+./scripts/haproxy_sync.sh --prune # Add missing + remove unlisted
+```
+
 ### Custom Domain Routing
 
 To use your own domain:
