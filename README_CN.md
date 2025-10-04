@@ -319,9 +319,91 @@ curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
 
 ## 高级用法
 
+### 域名解析方案
+
+Kindler 支持三种 DNS 解析策略:
+
+#### 方案 1: sslip.io (零配置，推荐默认) ✅
+
+使用公共 DNS 服务自动解析到您的 IP:
+
+```bash
+# config/clusters.env (默认)
+BASE_DOMAIN=192.168.51.30.sslip.io
+HAPROXY_HOST=192.168.51.30
+
+# 直接访问集群
+curl http://dev.192.168.51.30.sslip.io:23080
+curl http://uat.192.168.51.30.sslip.io:23080
+```
+
+**优点:**
+- 无需任何配置
+- 安装后立即可用
+- 适合多人协作环境
+- 无需本地 DNS 设置
+
+**缺点:**
+- 域名较长
+- DNS 解析需要互联网连接
+
+#### 方案 2: 本地 /etc/hosts (简洁域名)
+
+使用提供的脚本管理本地 DNS 条目:
+
+```bash
+# 修改 BASE_DOMAIN 为本地域名
+nano config/clusters.env
+# 设置: BASE_DOMAIN=local
+
+# 同步所有环境到 /etc/hosts
+sudo ./scripts/update_hosts.sh --sync
+
+# 或添加单个环境
+sudo ./scripts/update_hosts.sh --add dev
+
+# 使用简洁域名访问
+curl http://dev.local:23080
+curl http://uat.local:23080
+
+# 完成后清理
+sudo ./scripts/update_hosts.sh --clean
+```
+
+**脚本用法:**
+```bash
+sudo ./scripts/update_hosts.sh --sync       # 从 CSV 同步所有环境
+sudo ./scripts/update_hosts.sh --add dev    # 添加单个环境
+sudo ./scripts/update_hosts.sh --remove dev # 移除环境
+sudo ./scripts/update_hosts.sh --clean      # 移除所有 Kindler 条目
+sudo ./scripts/update_hosts.sh --help       # 显示帮助
+```
+
+**优点:**
+- 简洁的域名
+- 完全本地化，无外部依赖
+- 修改前自动备份 /etc/hosts
+
+**缺点:**
+- 需要 sudo 权限
+- 需要手动执行脚本
+- 每个开发者需在自己机器上运行
+
+#### 方案 3: curl -H 方式 (测试用)
+
+使用 Host header，无需 DNS 配置:
+
+```bash
+# 无需配置
+curl -H 'Host: dev.local' http://192.168.51.30:23080
+curl -H 'Host: uat.local' http://192.168.51.30:23080
+```
+
+**适用场景:** 快速测试和验证
+
 ### 自定义域名路由
 
-默认情况下,集群通过 `<env>.local` 访问。使用自定义域名:
+使用自己的域名:
 
 1. 在 `config/clusters.env` 中更新 `BASE_DOMAIN`:
    ```bash
