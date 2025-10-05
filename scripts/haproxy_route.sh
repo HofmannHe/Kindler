@@ -34,7 +34,7 @@ add_acl() {
   awk -v n="$name" -v d="$BASE_DOMAIN" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
-    $0 ~ B {print "  acl host_" n "  hdr(host) -i " n "." d; print "  use_backend be_" n " if host_" n; ins=1}
+    $0 ~ B {print "  acl host_" n "  hdr_reg(host) -i ^" n "\\.[^:]+"; print "  use_backend be_" n " if host_" n; ins=1}
   ' "$CFG" >"$tmp"
   mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
