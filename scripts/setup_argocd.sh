@@ -53,7 +53,7 @@ K3D_NODE_IP=$(docker inspect "k3d-${CLUSTER_NAME}-server-0" --format '{{range .N
 echo "k3d 节点 IP: $K3D_NODE_IP"
 
 # 6. 更新 HAProxy 配置
-HAPROXY_CFG="$ROOT_DIR/compose/haproxy/haproxy.cfg"
+HAPROXY_CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 
 # 检查是否已存在 argocd 配置
 if grep -q "host_argocd" "$HAPROXY_CFG"; then
@@ -66,10 +66,10 @@ fi
 
 # 7. 重启 HAProxy
 if docker ps --filter "name=haproxy-gw" --format "{{.Names}}" | grep -q haproxy-gw; then
-    docker compose -f "$ROOT_DIR/compose/haproxy/docker-compose.yml" restart
+    docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart
     echo "✓ HAProxy 已重启"
 else
-    docker compose -f "$ROOT_DIR/compose/haproxy/docker-compose.yml" up -d
+    docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d
     echo "✓ HAProxy 已启动"
 fi
 echo ""
