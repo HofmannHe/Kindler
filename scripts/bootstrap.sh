@@ -13,8 +13,8 @@ main() {
     export HAPROXY_VERSION="${HAPROXY_VERSION:-3.2.6-alpine3.22}"
   fi
   : "${HAPROXY_HOST:=192.168.51.30}"
-  sed -i.bak -E "s#(http-request redirect code 301 location https://)[^/:]+(:23343/)#\1${HAPROXY_HOST}\2#" \
-    "$ROOT_DIR/compose/infrastructure/haproxy.cfg" || true
+  : "${HAPROXY_UNIFIED_PORT:=23080}"
+  : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 
   echo "[BOOTSTRAP] Ensure portainer_secrets volume exists"
   if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
@@ -28,7 +28,7 @@ main() {
 
   echo "[BOOTSTRAP] Waiting for Portainer to be ready..."
   for i in {1..30}; do
-    if curl -sk https://${HAPROXY_HOST}:23343/api/system/status >/dev/null 2>&1; then
+    if curl -sk http://devops.portainer.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT}/api/system/status >/dev/null 2>&1; then
       echo "[BOOTSTRAP] Portainer is ready"
       break
     fi
@@ -43,9 +43,9 @@ main() {
   "$ROOT_DIR/scripts/setup_devops.sh"
 
   echo "[READY]"
-  echo "- Portainer: https://${HAPROXY_HOST}:23343 (admin/$PORTAINER_ADMIN_PASSWORD)"
-  echo "- HAProxy:   http://${HAPROXY_HOST}:23080"
-  echo "- ArgoCD:    http://${HAPROXY_HOST}:23800"
+  echo "- Portainer: http://devops.portainer.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT} (admin/$PORTAINER_ADMIN_PASSWORD)"
+  echo "- HAProxy:   http://${HAPROXY_HOST}:${HAPROXY_UNIFIED_PORT}"
+  echo "- ArgoCD:    http://devops.argocd.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT}"
 }
 
 main "$@"
