@@ -1,11 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-source "$(dirname "$0")/../config/secrets.env"
+ROOT_DIR="$(dirname "$0")/.."
+source "$ROOT_DIR/config/secrets.env"
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+: "${PORTAINER_HTTPS_PORT:=9443}"
 
 # 登录 Portainer
 echo "=== 登录 Portainer ==="
-TOKEN=$(curl -sk -X POST https://localhost:9443/api/auth \
+TOKEN=$(curl -sk -X POST "https://localhost:${PORTAINER_HTTPS_PORT}/api/auth" \
   -H "Content-Type: application/json" \
   -d "{\"Username\":\"admin\",\"Password\":\"${PORTAINER_ADMIN_PASSWORD}\"}" | jq -r '.jwt')
 
@@ -24,7 +27,7 @@ for cluster in dev uat prod; do
   NODE_PORT=$(kubectl --context=kind-$cluster get svc portainer-agent -n portainer -o jsonpath='{.spec.ports[0].nodePort}')
 
   echo "注册 kind-$cluster ($NODE_IP:$NODE_PORT)..."
-  RESULT=$(curl -sk -X POST https://localhost:9443/api/endpoints \
+  RESULT=$(curl -sk -X POST "https://localhost:${PORTAINER_HTTPS_PORT}/api/endpoints" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -48,7 +51,7 @@ for cluster in dev-k3d uat-k3d prod-k3d; do
   NODE_PORT=$(kubectl --context=k3d-$cluster get svc portainer-agent -n portainer -o jsonpath='{.spec.ports[0].nodePort}')
 
   echo "注册 $cluster ($NODE_IP:$NODE_PORT)..."
-  RESULT=$(curl -sk -X POST https://localhost:9443/api/endpoints \
+  RESULT=$(curl -sk -X POST "https://localhost:${PORTAINER_HTTPS_PORT}/api/endpoints" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -67,5 +70,5 @@ done
 
 echo ""
 echo "=== 查看所有已注册环境 ==="
-curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:9443/api/endpoints | \
+curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:${PORTAINER_HTTPS_PORT}/api/endpoints" | \
   jq -r '.[] | "  - \(.Name) (ID: \(.Id), Type: \(.Type))"'

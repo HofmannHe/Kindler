@@ -7,7 +7,9 @@ echo "=== Portainer Edge Agent 完整自动注册脚本 ==="
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 # 配置参数
-PORTAINER_URL="https://localhost:9443"
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+: "${PORTAINER_HTTPS_PORT:=9443}"
+PORTAINER_URL="https://localhost:${PORTAINER_HTTPS_PORT}"
 PORTAINER_USER="admin"
 PORTAINER_PASS=$(grep PORTAINER_ADMIN_PASSWORD "$ROOT_DIR/config/secrets.env" | cut -d= -f2)
 TIMESTAMP=$(date +%s)

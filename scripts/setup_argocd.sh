@@ -6,6 +6,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+: "${ARGOCD_NODEPORT:=30800}"
 CLUSTER_NAME="${1:-argocd-demo}"
 
 echo "========================================"
@@ -58,7 +60,7 @@ HAPROXY_CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 # 检查是否已存在 argocd 配置
 if grep -q "host_argocd" "$HAPROXY_CFG"; then
     # 更新现有配置
-    sed -i "s|backend be_argocd.*|backend be_argocd\n  server s1 $K3D_NODE_IP:30800|" "$HAPROXY_CFG"
+    sed -i "s|backend be_argocd.*|backend be_argocd\\n  server s1 $K3D_NODE_IP:${ARGOCD_NODEPORT}|" "$HAPROXY_CFG"
     echo "✓ HAProxy 配置已更新"
 else
     echo "⚠️  HAProxy 配置中未找到 ArgoCD 路由，请手动添加"
@@ -103,6 +105,6 @@ echo ""
 echo "配置信息:"
 echo "  - 集群: $CLUSTER_NAME"
 echo "  - 节点 IP: $K3D_NODE_IP"
-echo "  - NodePort: 30800"
+echo "  - NodePort: ${ARGOCD_NODEPORT}"
 echo "  - HAProxy 端口: 23080"
 echo ""
