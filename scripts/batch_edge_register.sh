@@ -6,7 +6,9 @@ echo "批量部署并注册 Portainer Edge Agent"
 echo "=========================================="
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-PORTAINER_URL="https://localhost:9443"
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+: "${PORTAINER_HTTPS_PORT:=9443}"
+PORTAINER_URL="https://localhost:${PORTAINER_HTTPS_PORT}"
 PORTAINER_USER="admin"
 PORTAINER_PASS=$(grep PORTAINER_ADMIN_PASSWORD "$ROOT_DIR/config/secrets.env" | cut -d= -f2)
 
@@ -126,7 +128,7 @@ spec:
         - name: CAP_HOST_MANAGEMENT
           value: "1"
         - name: EDGE_SERVER_ADDRESS
-          value: "host.k3d.internal:9443"
+          value: "host.k3d.internal:${PORTAINER_HTTPS_PORT}"
         - name: LOG_LEVEL
           value: INFO
         ports:

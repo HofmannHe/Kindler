@@ -6,8 +6,10 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 load_secrets() {
   if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
+  if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
   : "${PORTAINER_ADMIN_PASSWORD:=admin123}"
-  export PORTAINER_ADMIN_PASSWORD
+  : "${PORTAINER_HTTPS_PORT:=9443}"
+  export PORTAINER_ADMIN_PASSWORD PORTAINER_HTTPS_PORT
 }
 
 ensure_named_volumes() { :; }
@@ -56,7 +58,7 @@ PY2
   else
     pw_json='{"username":"admin","password":"'"$PORTAINER_ADMIN_PASSWORD"'"}'
   fi
-  local bases=("$(api_base)" "https://127.0.0.1:9443")
+  local bases=("$(api_base)" "https://127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}")
   local jwt="" code body tmp
   for b in "${bases[@]}"; do
     tmp=$(mktemp)

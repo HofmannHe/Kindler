@@ -15,6 +15,7 @@ if [ -f "$ROOT_DIR/config/secrets.env" ]; then
 fi
 : "${ARGOCD_ADMIN_PASSWORD:=admin123}"
 : "${ARGOCD_VERSION:=v3.1.8}"
+: "${ARGOCD_NODEPORT:=30800}"
 
 echo "[DEVOP] Creating devops k3d cluster..."
 "$ROOT_DIR"/scripts/create_env.sh -n devops --no-register-argocd
@@ -56,7 +57,7 @@ kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io
 echo "[DEVOP] Configuring ArgoCD..."
 
 # 1. 修改 service 为 NodePort
-kubectl --context k3d-devops patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"port":80,"nodePort":30800}]}}'
+kubectl --context k3d-devops patch svc argocd-server -n argocd -p "{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":80,\"nodePort\":${ARGOCD_NODEPORT}}]}}"
 
 # 2. 启用 insecure 模式（HTTP 访问）
 kubectl --context k3d-devops patch cm argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}'

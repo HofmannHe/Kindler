@@ -5,7 +5,9 @@ echo "=== Portainer Edge Agent 全自动注册 ==="
 
 # 配置
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-PORTAINER_URL="https://localhost:9443"
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+: "${PORTAINER_HTTPS_PORT:=9443}"
+PORTAINER_URL="https://localhost:${PORTAINER_HTTPS_PORT}"
 PORTAINER_USER="admin"
 PORTAINER_PASS=$(grep PORTAINER_ADMIN_PASSWORD "$ROOT_DIR/config/secrets.env" | cut -d= -f2)
 NAMESPACE="portainer"
@@ -69,7 +71,7 @@ echo ""
 echo "步骤 4: 配置 Edge Agent (注入 EDGE_KEY)..."
 kubectl set env deployment/portainer-edge-agent -n "$NAMESPACE" \
     EDGE_KEY="$EDGE_KEY" \
-    EDGE_SERVER_ADDRESS="host.k3d.internal:9443"
+    EDGE_SERVER_ADDRESS="host.k3d.internal:${PORTAINER_HTTPS_PORT}"
 
 echo ""
 echo "步骤 5: 等待 Agent 重启并连接..."

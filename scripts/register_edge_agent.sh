@@ -25,6 +25,7 @@ fi
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then
   . "$ROOT_DIR/config/clusters.env"
 fi
+: "${PORTAINER_HTTP_PORT:=9000}"
 PORTAINER_URL="${PORTAINER_URL:-https://192.168.51.30:23343}"
 
 # 获取 JWT
@@ -66,7 +67,7 @@ echo "[EDGE] Portainer IP in cluster network: $PORTAINER_IP"
 EDGE_ENV_RESPONSE=$(curl -sk -X POST "$PORTAINER_URL/api/endpoints" \
     -H "Authorization: Bearer $JWT" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$PORTAINER_IP:9000&GroupID=1")
+    -d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$PORTAINER_IP:${PORTAINER_HTTP_PORT}&GroupID=1")
 
 ENDPOINT_ID=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.Id')
 EDGE_KEY=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.EdgeKey')
