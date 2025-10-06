@@ -9,7 +9,23 @@ if [ -f "$ROOT_DIR/config/secrets.env" ]; then
   . "$ROOT_DIR/config/secrets.env"
 fi
 
-PORTAINER_URL="${PORTAINER_URL:-https://192.168.51.30:23343}"
+# Load configuration
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then
+  . "$ROOT_DIR/config/clusters.env"
+fi
+: "${HAPROXY_HOST:=192.168.51.30}"
+: "${HAPROXY_UNIFIED_PORT:=23080}"
+: "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
+: "${PORTAINER_HTTP_PORT:=9000}"
+
+# 使用 Portainer 容器直接访问（不依赖 HAProxy 和 devops 集群）
+PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
+if [ -n "$PORTAINER_IP" ]; then
+  PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
+else
+  # Fallback to domain-based access
+  PORTAINER_URL="${PORTAINER_URL:-https://portainer.${BASE_DOMAIN}:23343}"
+fi
 
 echo "[PORTAINER] Adding local Docker endpoint..."
 

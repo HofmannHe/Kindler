@@ -26,7 +26,15 @@ if [ -f "$ROOT_DIR/config/clusters.env" ]; then
   . "$ROOT_DIR/config/clusters.env"
 fi
 : "${PORTAINER_HTTP_PORT:=9000}"
-PORTAINER_URL="${PORTAINER_URL:-https://192.168.51.30:23343}"
+if [ -z "${PORTAINER_URL:-}" ]; then
+  if [ -n "${BASE_DOMAIN:-}" ]; then
+    PORTAINER_URL="https://portainer.${BASE_DOMAIN}:23343"
+  elif [ -n "${HAPROXY_HOST:-}" ]; then
+    PORTAINER_URL="https://${HAPROXY_HOST}:23343"
+  else
+    PORTAINER_URL="https://127.0.0.1:23343"
+  fi
+fi
 
 # 获取 JWT
 echo "[EDGE] Authenticating with Portainer..."
@@ -45,7 +53,23 @@ EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g')  # 移除连字符，例如 dev-k
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
 # 获取 Portainer 在集群网络中的 IP
-NETWORK_NAME="${PROVIDER}-${CLUSTER_NAME}"
+if [ "$PROVIDER" = "k3d" ]; then
+  cluster_node="k3d-${CLUSTER_NAME}-server-0"
+else
+  cluster_node="${CLUSTER_NAME}-control-plane"
+fi
+
+NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
+  jq -r '.[0].NetworkSettings.Networks | keys[0]' 2>/dev/null || echo "")
+
+if [ -z "$NETWORK_NAME" ] || [ "$NETWORK_NAME" = "null" ]; then
+  if [ "$PROVIDER" = "k3d" ]; then
+    NETWORK_NAME="k3d-${CLUSTER_NAME}"
+  else
+    NETWORK_NAME="kind"
+  fi
+fi
+
 PORTAINER_IP=$(docker inspect portainer-ce | jq -r ".[0].NetworkSettings.Networks[\"$NETWORK_NAME\"].IPAddress" 2>/dev/null || true)
 
 # 如果 Portainer 还未连接到该网络，先连接

@@ -27,8 +27,10 @@ main() {
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d
 
   echo "[BOOTSTRAP] Waiting for Portainer to be ready..."
+  : "${PORTAINER_HTTP_PORT:=9000}"
+  PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
   for i in {1..30}; do
-    if curl -sk http://devops.portainer.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT}/api/system/status >/dev/null 2>&1; then
+    if curl -s http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}/api/system/status >/dev/null 2>&1; then
       echo "[BOOTSTRAP] Portainer is ready"
       break
     fi
@@ -43,9 +45,9 @@ main() {
   "$ROOT_DIR/scripts/setup_devops.sh"
 
   echo "[READY]"
-  echo "- Portainer: http://devops.portainer.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT} (admin/$PORTAINER_ADMIN_PASSWORD)"
+  echo "- Portainer: https://portainer.${BASE_DOMAIN}:23343 (admin/$PORTAINER_ADMIN_PASSWORD)"
   echo "- HAProxy:   http://${HAPROXY_HOST}:${HAPROXY_UNIFIED_PORT}"
-  echo "- ArgoCD:    http://devops.argocd.${BASE_DOMAIN}:${HAPROXY_UNIFIED_PORT}"
+  echo "- ArgoCD:    http://argocd.devops.${BASE_DOMAIN}:23800"
 }
 
 main "$@"

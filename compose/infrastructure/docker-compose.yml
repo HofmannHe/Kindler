@@ -17,6 +17,9 @@ services:
     restart: unless-stopped
     ports:
       - "${HAPROXY_UNIFIED_PORT:-23080}:23080"
+      - "23380:23380"
+      - "23343:23343"
+      - "23800:23800"
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - haproxy_certs:/usr/local/etc/haproxy/certs
