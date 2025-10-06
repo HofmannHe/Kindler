@@ -8,6 +8,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then
   . "$ROOT_DIR/config/clusters.env"
 fi
+: "${HAPROXY_HOST:=192.168.51.30}"
 
 # Load secrets
 if [ -f "$ROOT_DIR/config/secrets.env" ]; then
@@ -51,7 +52,7 @@ kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
 
 # 等待 ArgoCD server 就绪
 echo "[DEVOP] Waiting for ArgoCD server to be ready..."
-kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=600s
 
 # 配置 ArgoCD
 echo "[DEVOP] Configuring ArgoCD..."
@@ -85,8 +86,8 @@ echo ""
 echo "✅ [DEVOP] Setup complete!"
 echo ""
 echo "ArgoCD Access:"
-echo "  URL: http://192.168.51.30:23800/"
-echo "  Domain: http://devops.local:23080 (需要配置 hosts)"
+echo "  URL: http://${HAPROXY_HOST}:23800/"
+echo "  Domain: http://argocd.devops.${BASE_DOMAIN}:23800"
 echo "  Username: admin"
 echo "  Password: $ARGOCD_ADMIN_PASSWORD"
 echo ""
