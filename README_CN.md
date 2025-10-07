@@ -124,13 +124,24 @@ sequenceDiagram
    cd kindler
    ```
 
-2. **配置环境** (可选，已提供默认值)
+2. **配置环境** (可选，已提供合理默认值)
    ```bash
    # 根据需要编辑配置文件
    nano config/clusters.env    # HAProxy 主机、基础域名、版本
    nano config/secrets.env     # 管理员密码
    nano config/environments.csv # 集群定义
    ```
+
+   **默认配置说明**：
+   - `BASE_DOMAIN=192.168.51.30.sslip.io` (使用 sslip.io 免配置 DNS)
+   - `HAPROXY_HOST=192.168.51.30` (HAProxy 主机 IP)
+   - `HAPROXY_HTTP_PORT=80` (HTTP 端口，可选配置)
+   - `HAPROXY_HTTPS_PORT=443` (HTTPS 端口，可选配置)
+
+   > **域名方案**：默认使用 [sslip.io](https://sslip.io) 提供免配置 DNS 解析。
+   > - ✅ **优点**：零配置，任何 IP 都能自动解析为域名
+   > - ✅ **格式**：`<service>.<env>.<IP>.sslip.io` → 解析到 `<IP>`
+   > - ⚠️ **纯内网环境**：如无法访问 sslip.io，可配置内网 DNS 或修改 `/etc/hosts`
 
 3. **启动基础设施**
    ```bash
@@ -140,13 +151,29 @@ sequenceDiagram
    - 启动 Portainer CE 容器
    - 启动 HAProxy 网关
    - 创建 `devops` 管理集群
-   - 部署 ArgoCD
+   - 部署 Gitea (Git 服务)
+   - 部署 ArgoCD (GitOps 引擎)
+   - 创建 whoami 示例应用仓库
 
-4. **访问管理界面**
-   - Portainer: `https://<HAPROXY_HOST>` (自签名证书，默认为 `https://192.168.51.30`)
-   - ArgoCD: `http://<HAPROXY_HOST>` (默认为 `http://192.168.51.30`)
-     - 用户名: `admin`
-     - 密码: 查看 `config/secrets.env`
+4. **访问管理界面**（基于域名，默认端口 80/443）
+
+   **推荐方式（域名访问）**：
+   - **Portainer**: https://portainer.devops.192.168.51.30.sslip.io
+   - **ArgoCD**: http://argocd.devops.192.168.51.30.sslip.io
+   - **Gitea**: http://git.devops.192.168.51.30.sslip.io
+
+   **备用方式（IP + Host header）**：
+   ```bash
+   # Portainer (HTTP 自动跳转到 HTTPS)
+   curl -H 'Host: portainer.devops.192.168.51.30.sslip.io' http://192.168.51.30
+
+   # ArgoCD
+   curl -H 'Host: argocd.devops.192.168.51.30.sslip.io' http://192.168.51.30
+   ```
+
+   **登录凭证**：
+   - 用户名: `admin`
+   - 密码: 查看 `config/secrets.env` 中的配置
 
 ### 创建业务集群
 
@@ -168,18 +195,56 @@ done
 - ✅ 使用 kubectl context 注册到 ArgoCD
 - ✅ 配置 HAProxy 域名路由 (如果在 CSV 中启用)
 
-### 访问集群
+### 访问集群与应用
 
-访问点取决于 `config/clusters.env` 和 `config/environments.csv` 中的配置:
+**访问方式说明**：
+- ✅ **默认：域名访问**（基于 sslip.io，零配置）
+- ✅ **端口：80 (HTTP) / 443 (HTTPS)**（可通过 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 自定义）
+- ⚠️ **纯内网环境**：需配置内网 DNS 或 `/etc/hosts`
 
-- **Portainer**: `https://<HAPROXY_HOST>` (默认: `https://192.168.51.30`)
-- **ArgoCD**: `http://<HAPROXY_HOST>` (默认: `http://192.168.51.30`)
-- **业务应用** (通过域名路由，默认基础域名: `local`):
-  ```bash
-  # 使用默认配置的示例
-  curl -H 'Host: dev.local' http://192.168.51.30
-  curl -H 'Host: uat.local' http://192.168.51.30
-  ```
+**管理界面访问**：
+```bash
+# Portainer (HTTPS，自签名证书)
+https://portainer.devops.192.168.51.30.sslip.io
+
+# ArgoCD (HTTP)
+http://argocd.devops.192.168.51.30.sslip.io
+
+# Gitea (HTTP)
+http://git.devops.192.168.51.30.sslip.io
+
+# HAProxy 统计页面
+http://haproxy.devops.192.168.51.30.sslip.io/stats
+```
+
+**业务应用访问**（示例：whoami）：
+```bash
+# 通过域名访问（推荐）
+curl http://whoami.dev.192.168.51.30.sslip.io
+curl http://whoami.uat.192.168.51.30.sslip.io
+curl http://whoami.prod.192.168.51.30.sslip.io
+
+# 通过浏览器访问
+open http://whoami.dev.192.168.51.30.sslip.io
+```
+
+**纯内网环境配置**（无法访问 sslip.io）：
+```bash
+# 方式1：修改 /etc/hosts
+sudo tee -a /etc/hosts <<EOF
+192.168.51.30 portainer.devops.local
+192.168.51.30 argocd.devops.local
+192.168.51.30 git.devops.local
+192.168.51.30 whoami.dev.local
+192.168.51.30 whoami.uat.local
+192.168.51.30 whoami.prod.local
+EOF
+
+# 方式2：使用内网 DNS 服务器
+# 配置泛域名解析：*.devops.local → 192.168.51.30
+# 然后修改 config/clusters.env:
+# BASE_DOMAIN=local
+```
 
 ## GitOps 工作流
 
@@ -299,21 +364,41 @@ K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
 
 ### 端口配置
 
-默认端口在 HAProxy 中配置。如需修改，编辑 `compose/haproxy/haproxy.cfg`:
+**默认端口（推荐）**：
+- **HTTP**: `80`（通过 `HAPROXY_HTTP_PORT` 配置）
+- **HTTPS**: `443`（通过 `HAPROXY_HTTPS_PORT` 配置）
 
-- Portainer HTTPS: `23343` (默认)
-- Portainer HTTP: `23380` (重定向到 HTTPS)
-- ArgoCD: `23800` (默认)
-- 集群路由: `23080` (默认)
+**可选：自定义端口**：
+如需修改端口，编辑 `config/clusters.env`：
+```bash
+HAPROXY_HTTP_PORT=8080   # 自定义 HTTP 端口
+HAPROXY_HTTPS_PORT=8443  # 自定义 HTTPS 端口
+```
+
+**端口用途**：
+- `80` (HTTP): ArgoCD、Gitea、HAProxy Stats、业务应用、Portainer HTTP→HTTPS 跳转
+- `443` (HTTPS): Portainer 管理界面（自签名证书）
+
+> **注意**：修改端口后，访问 URL 需要带端口号，如 `http://argocd.devops.192.168.51.30.sslip.io:8080`
 
 ### 域名配置
 
-在 `config/clusters.env` 中设置基础域名:
-
+**默认配置（推荐）**：
 ```bash
-BASE_DOMAIN=local  # 集群将通过 <env>.local 访问
-HAPROXY_HOST=192.168.51.30  # 网关入口点
+BASE_DOMAIN=192.168.51.30.sslip.io  # 使用 sslip.io 免配置 DNS
+HAPROXY_HOST=192.168.51.30           # HAProxy 主机 IP
 ```
+
+**域名格式**：`<service>.<env>.<BASE_DOMAIN>`
+- 管理服务：`portainer.devops.192.168.51.30.sslip.io`
+- 业务应用：`whoami.dev.192.168.51.30.sslip.io`
+
+**纯内网环境配置**：
+```bash
+BASE_DOMAIN=local           # 使用本地域名
+HAPROXY_HOST=192.168.51.30  # 内网 IP
+```
+需配合 `/etc/hosts` 或内网 DNS 使用。
 
 ## 管理命令
 
