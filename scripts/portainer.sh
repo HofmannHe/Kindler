@@ -9,6 +9,7 @@ load_secrets() {
   if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
   : "${PORTAINER_ADMIN_PASSWORD:=admin123}"
   : "${PORTAINER_HTTPS_PORT:=9443}"
+  : "${HAPROXY_HTTPS_PORT:=443}"
   export PORTAINER_ADMIN_PASSWORD PORTAINER_HTTPS_PORT
 }
 
@@ -39,10 +40,17 @@ status() {
 
 api_base() {
   if [ -n "${PORTAINER_API_BASE:-}" ]; then echo "$PORTAINER_API_BASE"; return; fi
-  # Prefer HAProxy host if configured, otherwise default to 127.0.0.1:23343
   if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
-  if [ -n "${HAPROXY_HOST:-}" ]; then echo "https://${HAPROXY_HOST}:23343"; return; fi
-  echo "https://127.0.0.1:23343"
+  local https_port="${HAPROXY_HTTPS_PORT:-443}"
+  if [ -n "${HAPROXY_HOST:-}" ]; then
+    if [ "$https_port" = "443" ]; then
+      echo "https://${HAPROXY_HOST}"
+    else
+      echo "https://${HAPROXY_HOST}:${https_port}"
+    fi
+    return
+  fi
+  echo "https://127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}"
 }
 api_login() {
   load_secrets

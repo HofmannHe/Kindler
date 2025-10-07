@@ -10,7 +10,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: argocd.local
+  - host: argocd.devops.192.168.51.30.sslip.io
     http:
       paths:
       - path: /

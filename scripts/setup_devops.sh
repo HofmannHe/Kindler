@@ -6,13 +6,13 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 # Load configuration
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then
-  . "$ROOT_DIR/config/clusters.env"
+	. "$ROOT_DIR/config/clusters.env"
 fi
 : "${HAPROXY_HOST:=192.168.51.30}"
 
 # Load secrets
 if [ -f "$ROOT_DIR/config/secrets.env" ]; then
-  . "$ROOT_DIR/config/secrets.env"
+	. "$ROOT_DIR/config/secrets.env"
 fi
 : "${ARGOCD_ADMIN_PASSWORD:=admin123}"
 : "${ARGOCD_VERSION:=v3.1.8}"
@@ -34,18 +34,18 @@ ARGOCD_MANIFEST="$ROOT_DIR/manifests/argocd/install-${ARGOCD_VERSION}.yaml"
 ARGOCD_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 
 if [ ! -f "$ARGOCD_MANIFEST" ]; then
-  echo "[DEVOP] Downloading ArgoCD ${ARGOCD_VERSION} manifest..."
-  if curl -sSL -m 30 "$ARGOCD_URL" -o "$ARGOCD_MANIFEST" 2>/dev/null; then
-    echo "[DEVOP] Downloaded successfully"
-  else
-    echo "[ERROR] Failed to download ArgoCD manifest from GitHub"
-    echo "[ERROR] Please manually download:"
-    echo "[ERROR]   curl -sSL $ARGOCD_URL -o $ARGOCD_MANIFEST"
-    echo "[ERROR] Or fix network connectivity to raw.githubusercontent.com"
-    exit 1
-  fi
+	echo "[DEVOP] Downloading ArgoCD ${ARGOCD_VERSION} manifest..."
+	if curl -sSL -m 30 "$ARGOCD_URL" -o "$ARGOCD_MANIFEST" 2>/dev/null; then
+		echo "[DEVOP] Downloaded successfully"
+	else
+		echo "[ERROR] Failed to download ArgoCD manifest from GitHub"
+		echo "[ERROR] Please manually download:"
+		echo "[ERROR]   curl -sSL $ARGOCD_URL -o $ARGOCD_MANIFEST"
+		echo "[ERROR] Or fix network connectivity to raw.githubusercontent.com"
+		exit 1
+	fi
 else
-  echo "[DEVOP] Using cached ArgoCD manifest: $ARGOCD_MANIFEST"
+	echo "[DEVOP] Using cached ArgoCD manifest: $ARGOCD_MANIFEST"
 fi
 
 kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
@@ -69,7 +69,29 @@ password_bcrypt=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$ARGOCD_ADMIN_
 kubectl --context k3d-devops -n argocd patch secret argocd-secret -p "{\"stringData\": {\"admin.password\": \"$password_bcrypt\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
 kubectl --context k3d-devops -n argocd delete secret argocd-initial-admin-secret --ignore-not-found=true
 
-# 4. 重启 argocd-server 应用配置
+# 4. 配置 ArgoCD Ingress 以匹配域名规则
+ARGOCD_HOST="argocd.devops.${BASE_DOMAIN}"
+kubectl --context k3d-devops apply -n argocd -f - <<INGRESS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-http
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${ARGOCD_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
+INGRESS
+
+# 5. 重启 argocd-server 应用配置
 kubectl --context k3d-devops rollout restart deploy/argocd-server -n argocd
 kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
 
@@ -86,8 +108,16 @@ echo ""
 echo "✅ [DEVOP] Setup complete!"
 echo ""
 echo "ArgoCD Access:"
-echo "  URL: http://${HAPROXY_HOST}:23800/"
-echo "  Domain: http://argocd.devops.${BASE_DOMAIN}:23800"
+if [ "${HAPROXY_HTTP_PORT:-80}" = "80" ]; then
+	echo "  URL: http://${HAPROXY_HOST}/"
+else
+	echo "  URL: http://${HAPROXY_HOST}:${HAPROXY_HTTP_PORT}/"
+fi
+if [ "${HAPROXY_HTTP_PORT:-80}" = "80" ]; then
+	echo "  Domain: http://argocd.devops.${BASE_DOMAIN}"
+else
+	echo "  Domain: http://argocd.devops.${BASE_DOMAIN}:${HAPROXY_HTTP_PORT}"
+fi
 echo "  Username: admin"
 echo "  Password: $ARGOCD_ADMIN_PASSWORD"
 echo ""

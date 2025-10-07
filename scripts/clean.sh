@@ -7,7 +7,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 echo "[CLEAN] Killing port-forwards..."
 pgrep -af "kubectl.*port-forward" | awk '{print $1}' | xargs -r kill -9 || true
 
-echo "[CLEAN] Stopping infrastructure (Portainer + HAProxy)..."
+echo "[CLEAN] Stopping infrastructure (Portainer + HAProxy + Gitea)..."
 docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" down -v || true
 
 echo "[CLEAN] Force stopping Portainer containers..."
@@ -66,8 +66,9 @@ kind get clusters 2>/dev/null | while read -r cluster; do
   [ -n "$cluster" ] && kind delete cluster --name "$cluster" 2>&1 || true
 done
 
-echo "[CLEAN] Removing generated data..."
+echo "[CLEAN] Removing generated data and Gitea token..."
 rm -rf "$ROOT_DIR/data" || true
+rm -f "$ROOT_DIR/.gitea_token" || true
 mkdir -p "$ROOT_DIR/data"
 
 echo "[CLEAN] Disconnecting Portainer from K3D networks..."
