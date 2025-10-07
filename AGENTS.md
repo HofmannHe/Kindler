@@ -6,13 +6,13 @@
 
 ### 核心架构
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ HAProxy (haproxy-gw)                                        │
-│ - 统一网络入口 (192.168.51.30)                             │
-│ - 端口暴露:                                                 │
-│   *  80 : 域名统一入口（Portainer HTTP→HTTPS、ArgoCD、业务）│
-│   * 443: Portainer HTTPS 透传                              │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ HAProxy (haproxy-gw)                                           │
+│ - 统一网络入口 (192.168.51.30)                                │
+│ - 端口暴露:                                                    │
+│   *  80 : 域名统一入口（Portainer HTTP→HTTPS、ArgoCD、Gitea、业务）│
+│   * 443: Portainer HTTPS 透传                                 │
+└────────────────────────────────────────────────────────────────┘
            │
            ├──> Portainer CE (portainer-ce)
            │    - Docker Compose 部署
@@ -23,23 +23,36 @@
            │    - 端口映射: 10800:80, 10843:443, 10091:6443
            │    - 内置 Traefik Ingress Controller
            │    - 服务:
-          │      * ArgoCD v3.1.7 (GitOps CD 工具)
-          │        - 管理所有业务集群的应用部署
-          │        - Ingress: argocd.devops.$BASE_DOMAIN
-          │        - 通过 HAProxy 80 端口基于域名暴露
+           │      * ArgoCD v3.1.7 (GitOps CD 工具)
+           │        - 管理所有业务集群的应用部署
+           │        - ApplicationSet 动态生成 Applications
+           │        - Ingress: argocd.devops.$BASE_DOMAIN
+           │      * Gitea (Git 服务)
+           │        - 托管应用代码仓库 (如 whoami)
+           │        - ArgoCD 监听 Git 变化自动部署
+           │        - Ingress: git.devops.$BASE_DOMAIN
+           │    - 全部通过 HAProxy 80 端口基于域名暴露
            │
            └──> 业务集群 (k3d/kind, 按需创建)
                 - 通过 create_env.sh 创建
                 - 自动注册到 Portainer (Edge Agent)
                 - 自动注册到 ArgoCD (kubectl 方式)
-               - 通过 HAProxy 80 + 域名路由访问
+                - 通过 HAProxy 80 + 域名路由访问
+                - whoami 应用通过 GitOps 自动部署
 ```
 
 ### 核心组件
 1. **HAProxy**: 统一入口网关，所有外部访问的唯一入口
 2. **Portainer CE**: 容器和集群统一管理界面
-3. **devops 集群**: 管理集群，运行 ArgoCD 等 DevOps 工具
+3. **devops 集群**: 管理集群，运行 Gitea、ArgoCD 等 DevOps 工具
 4. **业务集群**: 运行实际应用的 k3d/kind 集群
+
+### GitOps 工作流
+- **Gitea**: Git 服务托管应用代码 (http://git.devops.$BASE_DOMAIN)
+- **ArgoCD**: 监听 Git 仓库变化，自动部署到集群
+- **ApplicationSet**: 从 `config/environments.csv` 动态生成 Applications
+- **分支映射**: develop→dev, release→uat, master→prod
+- **示例应用**: whoami (仅域名差异，遵循最小化差异原则)
 
 ### 网络拓扑
 - HAProxy 连接到所有 k3d 集群网络（通过 `docker network connect`）
@@ -48,9 +61,11 @@
 
 ### 生命周期管理
 - `clean.sh`: 清理所有环境（集群、容器、网络、数据）
-- `bootstrap.sh`: 拉起基础设施（HAProxy + Portainer + devops 集群 + ArgoCD）
-- `create_env.sh`: 创建业务集群并自动注册到 Portainer 和 ArgoCD
-- `delete_env.sh`: 删除业务集群并自动注销 Portainer 和 ArgoCD 注册
+- `bootstrap.sh`: 拉起基础设施（HAProxy + Portainer + devops 集群 + Gitea + ArgoCD）
+- `create_env.sh`: 创建业务集群并自动注册到 Portainer、ArgoCD，同步 ApplicationSet
+- `stop_env.sh`: 停止集群但保留配置（临时释放资源）
+- `start_env.sh`: 启动已停止的集群
+- `delete_env.sh`: 永久删除集群（含 CSV 配置、Portainer 注册、ArgoCD 注册、ApplicationSet）
 
 ## 语言与沟通
 - 文档与日常交流默认使用中文。

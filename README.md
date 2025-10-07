@@ -24,48 +24,60 @@
 graph TB
     subgraph External["External Access"]
         USER[User/Browser]
+        DEV[Developer]
     end
 
-    subgraph Gateway["HAProxy Gateway"]
-        HAP[HAProxy Container<br/>haproxy-gw]
-        PORTS["Configurable Ports:<br/>Portainer HTTPS/HTTP<br/>ArgoCD HTTP<br/>Cluster Routes HTTP"]
+    subgraph Gateway["HAProxy Gateway (haproxy-gw)"]
+        HAP[Unified Entry<br/>80/443]
+        ROUTES["Routing Rules:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• git.devops.*<br/>• whoami.&lt;env&gt;.*"]
     end
 
-    subgraph Management["Management Layer"]
-        PORT[Portainer CE]
-        DEVOPS["devops Cluster<br/>(k3d/kind)<br/>+ ArgoCD"]
+    subgraph Management["Management Layer (devops cluster)"]
+        PORT[Portainer CE<br/>Container/Cluster Mgmt]
+        GITEA[Gitea<br/>Git Service]
+        ARGOCD[ArgoCD<br/>GitOps Engine]
+        APPSET[ApplicationSet<br/>Dynamic App Generation]
     end
 
-    subgraph Business["Business Clusters (Examples)"]
-        ENV1["Environment 1<br/>(kind)"]
-        ENV2["Environment 2<br/>(k3d)"]
-        ENVN["...<br/>(defined in CSV)"]
+    subgraph Business["Business Clusters (CSV-driven)"]
+        ENV1["dev (kind)<br/>whoami app"]
+        ENV2["uat (kind)<br/>whoami app"]
+        ENV3["prod (kind)<br/>whoami app"]
+        ENV4["dev-k3d (k3d)<br/>whoami app"]
     end
 
-    USER -->|HTTPS/HTTP| HAP
-    HAP --> PORTS
-    PORTS -.->|Manage| PORT
-    PORTS -.->|GitOps| DEVOPS
-    PORTS -.->|Route by Domain| Business
+    USER -->|Access Services| HAP
+    DEV -->|Push Code| GITEA
 
-    PORT -->|Edge Agent| ENV1
-    PORT -->|Edge Agent| ENV2
-    PORT -->|Edge Agent| ENVN
+    HAP --> ROUTES
+    ROUTES -.->|Management UI| PORT
+    ROUTES -.->|GitOps UI| ARGOCD
+    ROUTES -.->|Git Service| GITEA
+    ROUTES -.->|App Access| Business
 
-    DEVOPS -->|kubectl| ENV1
-    DEVOPS -->|kubectl| ENV2
-    DEVOPS -->|kubectl| ENVN
+    PORT -->|Edge Agent<br/>Monitor/Deploy| Business
+
+    GITEA -->|Watch Changes| ARGOCD
+    ARGOCD --> APPSET
+    APPSET -->|Generate Application| ARGOCD
+    ARGOCD -->|kubectl Deploy| Business
 
     classDef gateway fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef management fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef business fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef gitops fill:#fff3e0,stroke:#e65100,stroke-width:2px
 
-    class HAP,PORTS gateway
-    class PORT,DEVOPS management
-    class ENV1,ENV2,ENVN business
+    class HAP,ROUTES gateway
+    class PORT management
+    class GITEA,ARGOCD,APPSET gitops
+    class ENV1,ENV2,ENV3,ENV4 business
 ```
 
-> **Note**: The diagram shows a simplified topology. Actual cluster count and configuration are defined in `config/environments.csv`. All ports and domain names are configurable via `config/clusters.env` and `config/secrets.env`.
+> **Description**:
+> - **HAProxy**: Unified gateway for domain-based routing
+> - **devops cluster**: Runs infrastructure services (Portainer, Gitea, ArgoCD)
+> - **Business clusters**: Defined in `config/environments.csv`, auto-registered to Portainer and ArgoCD
+> - **GitOps flow**: Code push → Gitea → ArgoCD watches → ApplicationSet generates → Auto-deploy
 
 ### Request Flow
 
@@ -168,6 +180,64 @@ Access points depend on your configuration in `config/clusters.env` and `config/
   curl -H 'Host: dev.local' http://192.168.51.30
   curl -H 'Host: uat.local' http://192.168.51.30
   ```
+
+## GitOps Workflow
+
+Kindler includes a complete GitOps workflow for automated code-to-deployment.
+
+### Core Components
+- **Gitea**: Git service hosting application code (Access: http://git.devops.192.168.51.30.sslip.io)
+- **ArgoCD**: GitOps engine monitoring Git changes and auto-deploying (Access: http://argocd.devops.192.168.51.30.sslip.io)
+- **ApplicationSet**: Dynamically generates ArgoCD Applications, driven by `config/environments.csv`
+
+### Branch to Environment Mapping
+
+| Git Branch | Auto-deploys to | Domain Example |
+|------------|----------------|----------------|
+| **develop** | dev, dev-k3d | whoami.dev.192.168.51.30.sslip.io |
+| **release** | uat, uat-k3d | whoami.uat.192.168.51.30.sslip.io |
+| **master** | prod, prod-k3d | whoami.prod.192.168.51.30.sslip.io |
+
+### Quick Experience
+
+```bash
+# 1. Access Gitea to create/modify applications
+open http://git.devops.192.168.51.30.sslip.io
+
+# 2. Push code to develop branch
+cd /path/to/your/app
+git push origin develop
+
+# 3. ArgoCD auto-detects and deploys to dev environment
+# 4. Monitor deployment progress in ArgoCD UI
+open http://argocd.devops.192.168.51.30.sslip.io
+
+# 5. Verify deployment
+curl http://whoami.dev.192.168.51.30.sslip.io
+```
+
+### whoami Demo Application
+
+bootstrap.sh automatically creates the `whoami` demo repository to demonstrate GitOps workflow:
+
+- **Repository**: http://git.devops.192.168.51.30.sslip.io/gitea/whoami
+- **Branches**: develop, release, master
+- **Type**: Helm Chart (deploy/ directory)
+- **Config Differences**: Only domain differs, all other configs identical (minimal difference principle)
+
+**Access Examples**:
+```bash
+# View dev environment
+curl http://whoami.dev.192.168.51.30.sslip.io
+
+# View uat environment
+curl http://whoami.uat.192.168.51.30.sslip.io
+
+# View prod environment
+curl http://whoami.prod.192.168.51.30.sslip.io
+```
+
+> 📖 **Detailed Documentation**: [Complete GitOps Workflow Guide](./docs/GITOPS_WORKFLOW.md)
 
 ## Project Structure
 
