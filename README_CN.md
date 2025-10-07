@@ -184,7 +184,9 @@ kindler/
 ├── scripts/           # 管理脚本
 │   ├── bootstrap.sh        # 初始化基础设施
 │   ├── create_env.sh       # 创建业务集群
-│   ├── delete_env.sh       # 删除集群
+│   ├── stop_env.sh         # 停止集群（保留配置）
+│   ├── start_env.sh        # 启动已停止的集群
+│   ├── delete_env.sh       # 永久删除集群（含 CSV 配置）
 │   ├── clean.sh            # 清理所有资源
 │   └── haproxy_sync.sh     # 同步 HAProxy 路由
 ├── manifests/         # Kubernetes 清单
@@ -247,19 +249,53 @@ HAPROXY_HOST=192.168.51.30  # 网关入口点
 
 ### 集群生命周期
 
+#### 创建环境
 ```bash
 # 创建集群 (使用 CSV 默认值)
 ./scripts/create_env.sh -n dev
 
 # 创建集群 (覆盖选项)
 ./scripts/create_env.sh -n dev -p kind --node-port 30081 --no-register-portainer
+```
 
-# 删除特定集群
-./scripts/delete_env.sh -n dev -p kind
+#### 停止/启动环境（保留配置）
+```bash
+# 停止集群（保留 CSV 配置和 kubeconfig，释放资源）
+./scripts/stop_env.sh -n dev
 
+# 重启已停止的集群
+./scripts/start_env.sh -n dev
+```
+
+> **用途**: 临时停止集群以节省资源，后续可快速恢复。适合开发时暂时不需要的环境。
+
+#### 永久删除环境
+```bash
+# 永久删除集群（自动清理 CSV 配置、Portainer 注册、ArgoCD 注册、HAProxy 路由）
+./scripts/delete_env.sh -n dev
+```
+
+> **警告**: 此操作会：
+> - 删除 Kubernetes 集群
+> - 从 `config/environments.csv` 移除配置
+> - 注销 Portainer Edge Environment
+> - 注销 ArgoCD 集群
+> - 移除 HAProxy 路由
+> - 自动同步 ApplicationSet（移除相关 Application）
+
+#### 清理所有资源
+```bash
 # 清理所有资源 (集群、容器、网络、卷)
 ./scripts/clean.sh
 ```
+
+### 三种操作对比
+
+| 操作 | 集群运行 | CSV 配置 | Portainer | ArgoCD | 用途 |
+|------|----------|----------|-----------|--------|------|
+| **stop_env.sh** | ❌ 停止 | ✅ 保留 | ✅ 保留 | ✅ 保留 | 临时释放资源 |
+| **start_env.sh** | ✅ 启动 | ✅ 使用 | ✅ 继续 | ✅ 继续 | 恢复已停止集群 |
+| **delete_env.sh** | ❌ 删除 | ❌ 删除 | ❌ 注销 | ❌ 注销 | 永久移除环境 |
 
 ### HAProxy 路由管理
 

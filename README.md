@@ -184,7 +184,9 @@ kindler/
 ├── scripts/           # Management scripts
 │   ├── bootstrap.sh        # Initialize infrastructure
 │   ├── create_env.sh       # Create business cluster
-│   ├── delete_env.sh       # Delete cluster
+│   ├── stop_env.sh         # Stop cluster (preserve config)
+│   ├── start_env.sh        # Start stopped cluster
+│   ├── delete_env.sh       # Permanently delete cluster (incl. CSV config)
 │   ├── clean.sh            # Clean all resources
 │   └── haproxy_sync.sh     # Sync HAProxy routes
 ├── manifests/         # Kubernetes manifests
@@ -247,19 +249,53 @@ HAPROXY_HOST=192.168.51.30  # Gateway entry point
 
 ### Cluster Lifecycle
 
+#### Create Environment
 ```bash
 # Create cluster (use CSV defaults)
 ./scripts/create_env.sh -n dev
 
 # Create cluster (override options)
 ./scripts/create_env.sh -n dev -p kind --node-port 30081 --no-register-portainer
+```
 
-# Delete specific cluster
-./scripts/delete_env.sh -n dev -p kind
+#### Stop/Start Environment (Preserve Configuration)
+```bash
+# Stop cluster (preserve CSV config and kubeconfig, free resources)
+./scripts/stop_env.sh -n dev
 
+# Restart stopped cluster
+./scripts/start_env.sh -n dev
+```
+
+> **Use Case**: Temporarily stop clusters to save resources, can quickly resume later. Ideal for dev environments not currently needed.
+
+#### Permanently Delete Environment
+```bash
+# Permanently delete cluster (auto-cleanup CSV config, Portainer registration, ArgoCD registration, HAProxy routes)
+./scripts/delete_env.sh -n dev
+```
+
+> **Warning**: This operation will:
+> - Delete Kubernetes cluster
+> - Remove configuration from `config/environments.csv`
+> - Unregister Portainer Edge Environment
+> - Unregister ArgoCD cluster
+> - Remove HAProxy routes
+> - Auto-sync ApplicationSet (remove related Applications)
+
+#### Clean All Resources
+```bash
 # Clean all resources (clusters, containers, networks, volumes)
 ./scripts/clean.sh
 ```
+
+### Operation Comparison
+
+| Operation | Cluster Running | CSV Config | Portainer | ArgoCD | Purpose |
+|-----------|----------------|------------|-----------|--------|---------|
+| **stop_env.sh** | ❌ Stopped | ✅ Kept | ✅ Kept | ✅ Kept | Temporarily free resources |
+| **start_env.sh** | ✅ Running | ✅ Used | ✅ Resume | ✅ Resume | Restart stopped cluster |
+| **delete_env.sh** | ❌ Deleted | ❌ Deleted | ❌ Unregistered | ❌ Unregistered | Permanently remove environment |
 
 ### HAProxy Route Management
 
