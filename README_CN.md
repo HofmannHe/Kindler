@@ -24,48 +24,60 @@
 graph TB
     subgraph External["外部访问"]
         USER[用户/浏览器]
+        DEV[开发者]
     end
 
-    subgraph Gateway["HAProxy 网关"]
-        HAP[HAProxy 容器<br/>haproxy-gw]
-        PORTS["可配置端口:<br/>Portainer HTTPS/HTTP<br/>ArgoCD HTTP<br/>集群路由 HTTP"]
+    subgraph Gateway["HAProxy 网关 (haproxy-gw)"]
+        HAP[统一入口<br/>80/443]
+        ROUTES["路由规则:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• git.devops.*<br/>• whoami.&lt;env&gt;.*"]
     end
 
-    subgraph Management["管理层"]
-        PORT[Portainer CE]
-        DEVOPS["devops 集群<br/>(k3d/kind)<br/>+ ArgoCD"]
+    subgraph Management["管理层 (devops 集群)"]
+        PORT[Portainer CE<br/>容器/集群管理]
+        GITEA[Gitea<br/>Git 服务]
+        ARGOCD[ArgoCD<br/>GitOps 引擎]
+        APPSET[ApplicationSet<br/>动态生成 Apps]
     end
 
-    subgraph Business["业务集群 (示例)"]
-        ENV1["环境 1<br/>(kind)"]
-        ENV2["环境 2<br/>(k3d)"]
-        ENVN["...<br/>(由 CSV 定义)"]
+    subgraph Business["业务集群 (CSV 驱动)"]
+        ENV1["dev (kind)<br/>whoami app"]
+        ENV2["uat (kind)<br/>whoami app"]
+        ENV3["prod (kind)<br/>whoami app"]
+        ENV4["dev-k3d (k3d)<br/>whoami app"]
     end
 
-    USER -->|HTTPS/HTTP| HAP
-    HAP --> PORTS
-    PORTS -.->|管理| PORT
-    PORTS -.->|GitOps| DEVOPS
-    PORTS -.->|域名路由| Business
+    USER -->|访问服务| HAP
+    DEV -->|推送代码| GITEA
 
-    PORT -->|Edge Agent| ENV1
-    PORT -->|Edge Agent| ENV2
-    PORT -->|Edge Agent| ENVN
+    HAP --> ROUTES
+    ROUTES -.->|管理界面| PORT
+    ROUTES -.->|GitOps 界面| ARGOCD
+    ROUTES -.->|Git 服务| GITEA
+    ROUTES -.->|应用访问| Business
 
-    DEVOPS -->|kubectl| ENV1
-    DEVOPS -->|kubectl| ENV2
-    DEVOPS -->|kubectl| ENVN
+    PORT -->|Edge Agent<br/>监控/部署| Business
+
+    GITEA -->|监听变化| ARGOCD
+    ARGOCD --> APPSET
+    APPSET -->|生成 Application| ARGOCD
+    ARGOCD -->|kubectl 部署| Business
 
     classDef gateway fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     classDef management fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef business fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef gitops fill:#fff3e0,stroke:#e65100,stroke-width:2px
 
-    class HAP,PORTS gateway
-    class PORT,DEVOPS management
-    class ENV1,ENV2,ENVN business
+    class HAP,ROUTES gateway
+    class PORT management
+    class GITEA,ARGOCD,APPSET gitops
+    class ENV1,ENV2,ENV3,ENV4 business
 ```
 
-> **注意**: 此图展示简化的拓扑结构。实际集群数量和配置由 `config/environments.csv` 定义。所有端口和域名都可通过 `config/clusters.env` 和 `config/secrets.env` 配置。
+> **说明**:
+> - **HAProxy**: 统一网关，基于域名路由流量
+> - **devops 集群**: 运行基础设施服务（Portainer、Gitea、ArgoCD）
+> - **业务集群**: 由 `config/environments.csv` 定义，自动注册到 Portainer 和 ArgoCD
+> - **GitOps 流程**: 代码推送 → Gitea → ArgoCD 监听 → ApplicationSet 生成 → 自动部署
 
 ### 请求流程
 
@@ -168,6 +180,64 @@ done
   curl -H 'Host: dev.local' http://192.168.51.30
   curl -H 'Host: uat.local' http://192.168.51.30
   ```
+
+## GitOps 工作流
+
+Kindler 内置完整的 GitOps 工作流，实现代码到部署的自动化。
+
+### 核心组件
+- **Gitea**: Git 服务，托管应用代码 (访问: http://git.devops.192.168.51.30.sslip.io)
+- **ArgoCD**: GitOps 引擎，监听 Git 变化并自动部署 (访问: http://argocd.devops.192.168.51.30.sslip.io)
+- **ApplicationSet**: 动态生成 ArgoCD Applications，由 `config/environments.csv` 驱动
+
+### 分支与环境映射
+
+| Git 分支 | 自动部署到 | 域名示例 |
+|----------|-----------|----------|
+| **develop** | dev, dev-k3d | whoami.dev.192.168.51.30.sslip.io |
+| **release** | uat, uat-k3d | whoami.uat.192.168.51.30.sslip.io |
+| **master** | prod, prod-k3d | whoami.prod.192.168.51.30.sslip.io |
+
+### 快速体验
+
+```bash
+# 1. 访问 Gitea 创建或修改应用
+open http://git.devops.192.168.51.30.sslip.io
+
+# 2. 推送代码到 develop 分支
+cd /path/to/your/app
+git push origin develop
+
+# 3. ArgoCD 自动检测并部署到 dev 环境
+# 4. 查看 ArgoCD UI 监控部署进度
+open http://argocd.devops.192.168.51.30.sslip.io
+
+# 5. 验证部署结果
+curl http://whoami.dev.192.168.51.30.sslip.io
+```
+
+### whoami 示例应用
+
+bootstrap.sh 会自动创建 `whoami` 示例应用仓库，演示 GitOps 工作流：
+
+- **仓库地址**: http://git.devops.192.168.51.30.sslip.io/gitea/whoami
+- **分支**: develop、release、master
+- **应用类型**: Helm Chart (deploy/ 目录)
+- **配置差异**: 仅域名不同，其他配置完全一致（最小化差异原则）
+
+**访问示例**：
+```bash
+# 查看 dev 环境
+curl http://whoami.dev.192.168.51.30.sslip.io
+
+# 查看 uat 环境
+curl http://whoami.uat.192.168.51.30.sslip.io
+
+# 查看 prod 环境
+curl http://whoami.prod.192.168.51.30.sslip.io
+```
+
+> 📖 **详细文档**: [GitOps 工作流完整指南](./docs/GITOPS_WORKFLOW.md)
 
 ## 项目结构
 
