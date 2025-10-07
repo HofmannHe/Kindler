@@ -40,6 +40,19 @@ echo "[DELETE] Portainer Edge Environment: $ep_name"
 echo "[DELETE] Unregistering cluster from ArgoCD..."
 "$ROOT_DIR"/scripts/argocd_register.sh unregister "$name" "$provider" || echo "[WARNING] Failed to unregister from ArgoCD"
 
+# 从 CSV 配置文件中移除环境配置
+CSV_FILE="$ROOT_DIR/config/environments.csv"
+if [ -f "$CSV_FILE" ]; then
+  echo "[DELETE] Removing $name from environments.csv..."
+  # 创建临时文件，排除要删除的环境行
+  tmp_file=$(mktemp)
+  awk -F, -v env="$name" '$1 != env' "$CSV_FILE" > "$tmp_file"
+  mv "$tmp_file" "$CSV_FILE"
+  echo "[SUCCESS] Environment $name removed from CSV"
+else
+  echo "[WARNING] environments.csv not found, skipping CSV cleanup"
+fi
+
 # 同步 ApplicationSet（自动移除已删除环境的 whoami 应用）
 echo "[DELETE] Syncing ApplicationSet for whoami..."
 "$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
@@ -47,4 +60,5 @@ echo "[DELETE] Syncing ApplicationSet for whoami..."
 echo "[DELETE] cluster $name via $provider"
 PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh delete "$name" || true
 
-echo "[DONE] Deleted env $name"
+echo "[DONE] Deleted env $name (cluster + configuration)"
+echo "[INFO] Environment $name has been permanently deleted"
