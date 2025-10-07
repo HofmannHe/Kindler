@@ -1,5 +1,6 @@
 # Data directories
 /data
+data/git/
 
 # Log files
 *.log

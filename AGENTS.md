@@ -10,10 +10,8 @@
 │ HAProxy (haproxy-gw)                                        │
 │ - 统一网络入口 (192.168.51.30)                             │
 │ - 端口暴露:                                                 │
-│   * 23343: Portainer HTTPS                                  │
-│   * 23380: Portainer HTTP (重定向到 23343)                 │
-│   * 23800: ArgoCD (devops 集群)                            │
-│   * 23080: 各业务集群 NodePort 路由（基于域名）           │
+│   *  80 : 域名统一入口（Portainer HTTP→HTTPS、ArgoCD、业务）│
+│   * 443: Portainer HTTPS 透传                              │
 └─────────────────────────────────────────────────────────────┘
            │
            ├──> Portainer CE (portainer-ce)
@@ -25,16 +23,16 @@
            │    - 端口映射: 10800:80, 10843:443, 10091:6443
            │    - 内置 Traefik Ingress Controller
            │    - 服务:
-           │      * ArgoCD v3.1.7 (GitOps CD 工具)
-           │        - 管理所有业务集群的应用部署
-           │        - Ingress: argocd.devops.local
-           │        - 通过 HAProxy 23800 端口暴露
+          │      * ArgoCD v3.1.7 (GitOps CD 工具)
+          │        - 管理所有业务集群的应用部署
+          │        - Ingress: argocd.devops.$BASE_DOMAIN
+          │        - 通过 HAProxy 80 端口基于域名暴露
            │
            └──> 业务集群 (k3d/kind, 按需创建)
                 - 通过 create_env.sh 创建
                 - 自动注册到 Portainer (Edge Agent)
                 - 自动注册到 ArgoCD (kubectl 方式)
-                - 通过 HAProxy 23080 + 域名路由访问
+               - 通过 HAProxy 80 + 域名路由访问
 ```
 
 ### 核心组件
@@ -72,7 +70,7 @@
 
 ## 构建、测试与开发命令
 - 启动 Portainer：`scripts/portainer.sh up`（读取 `config/secrets.env` 中 `PORTAINER_ADMIN_PASSWORD`，使用命名卷 `portainer_portainer_data`/`portainer_secrets` 持久化）
-- 启动 HAProxy：`docker compose -f compose/haproxy/docker-compose.yml up -d`（对外 `23380/23343` 暴露 Portainer；`23080` 反代各集群 NodePort）
+- 启动 HAProxy：`docker compose -f compose/haproxy/docker-compose.yml up -d`（默认对外 `80/443`，可通过 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 调整）
 - 创建集群：`scripts/create_env.sh -n <env> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route]`
   - 默认参数来自 `config/environments.csv`，命令行可覆盖。
   - CSV 列：`env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port`
@@ -80,7 +78,7 @@
 - 同步路由：`scripts/haproxy_sync.sh [--prune]`；基础测试：`bats tests`（若安装了 bats）
 
 访问示例：
-- Portainer：`http://192.168.51.30:23380` → 301 到 `https://192.168.51.30:23343`
+- Portainer：`http://portainer.devops.$BASE_DOMAIN` → 301 跳转到 `https://portainer.devops.$BASE_DOMAIN`
 - ArgoCD：`http://192.168.51.30:23800/` (admin / secrets.env 中配置的密码)
 
 ## 编码风格与命名规范
@@ -92,7 +90,7 @@
 ## 测试指南
 - Shell 脚本：在 `tests/` 添加 `bats` 用例；覆盖端口与健康检查。
 - 入口验证：
-  - Portainer：`curl -kI https://192.168.51.30:23343` 为 `200`；`curl -I http://192.168.51.30:23380` 为 `301`。
+  - Portainer：`curl -kI https://portainer.devops.$BASE_DOMAIN` 为 `200`；`curl -I http://portainer.devops.$BASE_DOMAIN` 为 `301`。
 - 轻量集群：按需用 `kubectl get nodes --context <ctx>` 做冒烟校验。
 
 ## 提交与 Pull Request 规范
@@ -106,6 +104,7 @@
 - 配置以环境变量为主，避免硬编码；记录必需变量。
 
 ## Agent 专用说明
+- 域名命名统一遵循 `[service].[env].[BASE_DOMAIN]` 规则；系统保留集群使用 `devops` 作为 env，例如 `portainer.devops.192.168.51.30.sslip.io`、`haproxy.devops.192.168.51.30.sslip.io/stat`、`argocd.devops.192.168.51.30.sslip.io`、`whoami.devk3d.192.168.51.30.sslip.io`。
 - 每次修改后必须验证：至少使用 curl（必要时配合浏览器/MCP 浏览器）验证基础环境与域名路由；并运行 `scripts/smoke.sh <env>` 记录到 `docs/TEST_REPORT.md`（强制要求）。
 - 遵循本 AGENTS.md 对其目录树内文件的要求。
 - 提前给出简短计划，保持改动最小，避免破坏性命令。
@@ -118,3 +117,4 @@
 - 已经确认Edge Agent适合当前模式，注意不要又反复退回去尝试普通Agent
 - 当最小基准建立之后，要严格遵循最小变更原则，非必要不变更
 - 每次修订README等文档的时候需要同时修订中英文版本
+- devops集群不应该部署whoami服务，应该部署到其它业务集群上。另外注意这些集群名称包括域名不应存在硬编码，因为环境配置csv中的环境名称是可能增删改的，测试用例也需要覆盖环境名增删改

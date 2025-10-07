@@ -131,8 +131,8 @@ sequenceDiagram
    - Deploy ArgoCD
 
 4. **Access management interfaces**
-   - Portainer: `https://<HAPROXY_HOST>:23343` (self-signed cert, defaults to `https://192.168.51.30:23343`)
-   - ArgoCD: `http://<HAPROXY_HOST>:23800` (defaults to `http://192.168.51.30:23800`)
+   - Portainer: `https://<HAPROXY_HOST>` (self-signed cert, defaults to `https://192.168.51.30`)
+   - ArgoCD: `http://<HAPROXY_HOST>` (defaults to `http://192.168.51.30`)
      - Username: `admin`
      - Password: See `config/secrets.env`
 
@@ -160,13 +160,13 @@ The script will automatically:
 
 Access points depend on your configuration in `config/clusters.env` and `config/environments.csv`:
 
-- **Portainer**: `https://<HAPROXY_HOST>:23343` (default: `https://192.168.51.30:23343`)
-- **ArgoCD**: `http://<HAPROXY_HOST>:23800` (default: `http://192.168.51.30:23800`)
+- **Portainer**: `https://portainer.devops.$BASE_DOMAIN` (default base domain: `192.168.51.30.sslip.io` → `https://portainer.devops.192.168.51.30.sslip.io`)
+- **ArgoCD**: `http://argocd.devops.$BASE_DOMAIN`
 - **Business Apps** (via domain routing, default base domain: `local`):
   ```bash
-  # Example with default configuration
-  curl -H 'Host: dev.local' http://192.168.51.30:23080
-  curl -H 'Host: uat.local' http://192.168.51.30:23080
+  # Example with default configuration (HAProxy HTTP port = 80)
+  curl -H 'Host: dev.local' http://192.168.51.30
+  curl -H 'Host: uat.local' http://192.168.51.30
   ```
 
 ## Project Structure
@@ -301,19 +301,19 @@ Default configuration verification (adjust for your settings):
 HAPROXY_HOST=192.168.51.30
 
 # Portainer HTTPS
-curl -kI https://${HAPROXY_HOST}:23343
+curl -kI https://${HAPROXY_HOST}
 # Expected: HTTP/1.1 200 OK
 
 # Portainer HTTP (redirect)
-curl -I http://${HAPROXY_HOST}:23380
+curl -I http://${HAPROXY_HOST}
 # Expected: HTTP/1.1 301 Moved Permanently
 
 # ArgoCD
-curl -I http://${HAPROXY_HOST}:23800
+curl -I http://${HAPROXY_HOST}
 # Expected: HTTP/1.1 200 OK
 
 # Cluster route (with domain header, adjust BASE_DOMAIN as needed)
-curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
+curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
 # Expected: HTTP/1.1 200 OK (or backend service response)
 ```
 
@@ -332,9 +332,9 @@ Uses public DNS service that automatically resolves to your IP:
 BASE_DOMAIN=192.168.51.30.sslip.io
 HAPROXY_HOST=192.168.51.30
 
-# Access clusters directly
-curl http://dev.192.168.51.30.sslip.io:23080
-curl http://uat.192.168.51.30.sslip.io:23080
+# Access services directly
+curl http://whoami.dev.192.168.51.30.sslip.io
+curl http://whoami.uat.192.168.51.30.sslip.io
 ```
 
 **Pros:**
@@ -363,8 +363,8 @@ sudo ./scripts/update_hosts.sh --sync
 sudo ./scripts/update_hosts.sh --add dev
 
 # Access with clean domains
-curl http://dev.local:23080
-curl http://uat.local:23080
+curl http://dev.local
+curl http://uat.local
 
 # Clean up when done
 sudo ./scripts/update_hosts.sh --clean
@@ -395,8 +395,8 @@ Use Host header without DNS configuration:
 
 ```bash
 # No configuration needed
-curl -H 'Host: dev.local' http://192.168.51.30:23080
-curl -H 'Host: uat.local' http://192.168.51.30:23080
+curl -H 'Host: dev.local' http://192.168.51.30
+curl -H 'Host: uat.local' http://192.168.51.30
 ```
 
 **Best for:** Quick testing and verification
@@ -412,15 +412,15 @@ Kindler fully supports multiple environments with automatic DNS and HAProxy rout
 # devops, dev, uat, prod, dev-k3d, uat-k3d, prod-k3d, etc.
 
 # Option 1: Access with sslip.io (default, zero config)
-curl http://dev.192.168.51.30.sslip.io:23080
-curl http://uat.192.168.51.30.sslip.io:23080
-curl http://prod.192.168.51.30.sslip.io:23080
+curl http://dev.192.168.51.30.sslip.io
+curl http://uat.192.168.51.30.sslip.io
+curl http://prod.192.168.51.30.sslip.io
 
 # Option 2: Access with local domains (after running update_hosts.sh)
 sudo ./scripts/update_hosts.sh --sync  # Syncs all environments at once
-curl http://dev.local:23080
-curl http://uat.local:23080
-curl http://prod.local:23080
+curl http://dev.local
+curl http://uat.local
+curl http://prod.local
 ```
 
 #### Add a New Environment
@@ -443,11 +443,11 @@ curl http://prod.local:23080
 3. **Access immediately**:
    ```bash
    # With sslip.io (works immediately)
-   curl http://staging.192.168.51.30.sslip.io:23080
+   curl http://whoami.staging.192.168.51.30.sslip.io
 
    # With local domain (sync hosts first)
    sudo ./scripts/update_hosts.sh --add staging
-   curl http://staging.local:23080
+   curl http://staging.local
    ```
 
 #### HAProxy Routing Configuration
@@ -456,17 +456,17 @@ Each environment gets automatic HAProxy configuration:
 
 ```haproxy
 # Frontend ACL (in compose/haproxy/haproxy.cfg)
-frontend fe_kube_http
-  bind *:23080
+frontend fe_http
+  bind *:80
 
-  # Auto-generated for each environment
-  acl host_dev  hdr(host) -i dev.192.168.51.30.sslip.io
+  # Auto-generated for each environment (host_<env>)
+  acl host_dev  hdr_reg(host) -i ^[^.]+\\.dev\\.[^:]+
   use_backend be_dev if host_dev
 
-  acl host_uat  hdr(host) -i uat.192.168.51.30.sslip.io
+  acl host_uat  hdr_reg(host) -i ^[^.]+\\.uat\\.[^:]+
   use_backend be_uat if host_uat
 
-  acl host_prod  hdr(host) -i prod.192.168.51.30.sslip.io
+  acl host_prod  hdr_reg(host) -i ^[^.]+\\.prod\\.[^:]+
   use_backend be_prod if host_prod
 
 # Backend routing to cluster NodePort
@@ -481,7 +481,7 @@ backend be_prod
 ```
 
 **How it works:**
-1. User accesses `http://dev.192.168.51.30.sslip.io:23080`
+1. User accesses `http://dev.192.168.51.30.sslip.io`
 2. DNS resolves to `192.168.51.30` (HAProxy)
 3. HAProxy reads Host header: `dev.192.168.51.30.sslip.io`
 4. ACL `host_dev` matches → routes to `be_dev` backend
@@ -514,7 +514,7 @@ To use your own domain:
 
 3. Access via custom domain:
    ```bash
-   curl -H 'Host: dev.k8s.example.com' http://192.168.51.30:23080
+   curl -H 'Host: dev.k8s.example.com' http://192.168.51.30
    ```
 
 ### Multi-Node Clusters
@@ -577,7 +577,7 @@ Test results are logged to `docs/TEST_REPORT.md`.
 
 2. Verify backend health:
    ```bash
-   curl -I http://192.168.51.30:23080/haproxy/stats
+   curl -I http://192.168.51.30/haproxy/stats
    ```
 
 3. Re-sync routes:

@@ -40,6 +40,10 @@ echo "[DELETE] Portainer Edge Environment: $ep_name"
 echo "[DELETE] Unregistering cluster from ArgoCD..."
 "$ROOT_DIR"/scripts/argocd_register.sh unregister "$name" "$provider" || echo "[WARNING] Failed to unregister from ArgoCD"
 
+# 同步 ApplicationSet（自动移除已删除环境的 whoami 应用）
+echo "[DELETE] Syncing ApplicationSet for whoami..."
+"$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
+
 echo "[DELETE] cluster $name via $provider"
 PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh delete "$name" || true
 

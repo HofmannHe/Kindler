@@ -131,8 +131,8 @@ sequenceDiagram
    - 部署 ArgoCD
 
 4. **访问管理界面**
-   - Portainer: `https://<HAPROXY_HOST>:23343` (自签名证书，默认为 `https://192.168.51.30:23343`)
-   - ArgoCD: `http://<HAPROXY_HOST>:23800` (默认为 `http://192.168.51.30:23800`)
+   - Portainer: `https://<HAPROXY_HOST>` (自签名证书，默认为 `https://192.168.51.30`)
+   - ArgoCD: `http://<HAPROXY_HOST>` (默认为 `http://192.168.51.30`)
      - 用户名: `admin`
      - 密码: 查看 `config/secrets.env`
 
@@ -160,13 +160,13 @@ done
 
 访问点取决于 `config/clusters.env` 和 `config/environments.csv` 中的配置:
 
-- **Portainer**: `https://<HAPROXY_HOST>:23343` (默认: `https://192.168.51.30:23343`)
-- **ArgoCD**: `http://<HAPROXY_HOST>:23800` (默认: `http://192.168.51.30:23800`)
+- **Portainer**: `https://<HAPROXY_HOST>` (默认: `https://192.168.51.30`)
+- **ArgoCD**: `http://<HAPROXY_HOST>` (默认: `http://192.168.51.30`)
 - **业务应用** (通过域名路由，默认基础域名: `local`):
   ```bash
   # 使用默认配置的示例
-  curl -H 'Host: dev.local' http://192.168.51.30:23080
-  curl -H 'Host: uat.local' http://192.168.51.30:23080
+  curl -H 'Host: dev.local' http://192.168.51.30
+  curl -H 'Host: uat.local' http://192.168.51.30
   ```
 
 ## 项目结构
@@ -301,19 +301,19 @@ HAPROXY_HOST=192.168.51.30  # 网关入口点
 HAPROXY_HOST=192.168.51.30
 
 # Portainer HTTPS
-curl -kI https://${HAPROXY_HOST}:23343
+curl -kI https://${HAPROXY_HOST}
 # 预期: HTTP/1.1 200 OK
 
 # Portainer HTTP (重定向)
-curl -I http://${HAPROXY_HOST}:23380
+curl -I http://${HAPROXY_HOST}
 # 预期: HTTP/1.1 301 Moved Permanently
 
 # ArgoCD
-curl -I http://${HAPROXY_HOST}:23800
+curl -I http://${HAPROXY_HOST}
 # 预期: HTTP/1.1 200 OK
 
 # 集群路由 (带域名 header，根据需要调整 BASE_DOMAIN)
-curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}:23080
+curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
 # 预期: HTTP/1.1 200 OK (或后端服务响应)
 ```
 
@@ -332,9 +332,9 @@ Kindler 支持三种 DNS 解析策略:
 BASE_DOMAIN=192.168.51.30.sslip.io
 HAPROXY_HOST=192.168.51.30
 
-# 直接访问集群
-curl http://dev.192.168.51.30.sslip.io:23080
-curl http://uat.192.168.51.30.sslip.io:23080
+# 直接访问服务
+curl http://whoami.dev.192.168.51.30.sslip.io
+curl http://whoami.uat.192.168.51.30.sslip.io
 ```
 
 **优点:**
@@ -363,8 +363,8 @@ sudo ./scripts/update_hosts.sh --sync
 sudo ./scripts/update_hosts.sh --add dev
 
 # 使用简洁域名访问
-curl http://dev.local:23080
-curl http://uat.local:23080
+curl http://dev.local
+curl http://uat.local
 
 # 完成后清理
 sudo ./scripts/update_hosts.sh --clean
@@ -395,8 +395,8 @@ sudo ./scripts/update_hosts.sh --help       # 显示帮助
 
 ```bash
 # 无需配置
-curl -H 'Host: dev.local' http://192.168.51.30:23080
-curl -H 'Host: uat.local' http://192.168.51.30:23080
+curl -H 'Host: dev.local' http://192.168.51.30
+curl -H 'Host: uat.local' http://192.168.51.30
 ```
 
 **适用场景:** 快速测试和验证
@@ -412,15 +412,15 @@ Kindler 完全支持多个环境，自动配置 DNS 和 HAProxy 路由。
 # devops, dev, uat, prod, dev-k3d, uat-k3d, prod-k3d 等
 
 # 方案 1: 使用 sslip.io 访问 (默认，零配置)
-curl http://dev.192.168.51.30.sslip.io:23080
-curl http://uat.192.168.51.30.sslip.io:23080
-curl http://prod.192.168.51.30.sslip.io:23080
+curl http://dev.192.168.51.30.sslip.io
+curl http://uat.192.168.51.30.sslip.io
+curl http://prod.192.168.51.30.sslip.io
 
 # 方案 2: 使用本地域名访问 (运行 update_hosts.sh 后)
 sudo ./scripts/update_hosts.sh --sync  # 一次同步所有环境
-curl http://dev.local:23080
-curl http://uat.local:23080
-curl http://prod.local:23080
+curl http://dev.local
+curl http://uat.local
+curl http://prod.local
 ```
 
 #### 添加新环境
@@ -443,11 +443,11 @@ curl http://prod.local:23080
 3. **立即访问**:
    ```bash
    # 使用 sslip.io (立即可用)
-   curl http://staging.192.168.51.30.sslip.io:23080
+   curl http://whoami.staging.192.168.51.30.sslip.io
 
    # 使用本地域名 (先同步 hosts)
    sudo ./scripts/update_hosts.sh --add staging
-   curl http://staging.local:23080
+   curl http://staging.local
    ```
 
 #### HAProxy 路由配置
@@ -457,16 +457,16 @@ curl http://prod.local:23080
 ```haproxy
 # Frontend ACL (在 compose/haproxy/haproxy.cfg)
 frontend fe_kube_http
-  bind *:23080
+  bind *
 
   # 为每个环境自动生成
-  acl host_dev  hdr(host) -i dev.192.168.51.30.sslip.io
+  acl host_dev  hdr_reg(host) -i ^[^.]+\\.dev\\.[^:]+
   use_backend be_dev if host_dev
 
-  acl host_uat  hdr(host) -i uat.192.168.51.30.sslip.io
+  acl host_uat  hdr_reg(host) -i ^[^.]+\\.uat\\.[^:]+
   use_backend be_uat if host_uat
 
-  acl host_prod  hdr(host) -i prod.192.168.51.30.sslip.io
+  acl host_prod  hdr_reg(host) -i ^[^.]+\\.prod\\.[^:]+
   use_backend be_prod if host_prod
 
 # Backend 路由到集群 NodePort
@@ -481,7 +481,7 @@ backend be_prod
 ```
 
 **工作原理:**
-1. 用户访问 `http://dev.192.168.51.30.sslip.io:23080`
+1. 用户访问 `http://dev.192.168.51.30.sslip.io`
 2. DNS 解析到 `192.168.51.30` (HAProxy)
 3. HAProxy 读取 Host header: `dev.192.168.51.30.sslip.io`
 4. ACL `host_dev` 匹配 → 路由到 `be_dev` backend
@@ -514,7 +514,7 @@ docker exec haproxy-gw cat /usr/local/etc/haproxy/haproxy.cfg | grep -A 2 "acl h
 
 3. 通过自定义域名访问:
    ```bash
-   curl -H 'Host: dev.k8s.example.com' http://192.168.51.30:23080
+   curl -H 'Host: dev.k8s.example.com' http://192.168.51.30
    ```
 
 ### 多节点集群
@@ -577,7 +577,7 @@ agents: 2
 
 2. 验证后端健康状态:
    ```bash
-   curl -I http://192.168.51.30:23080/haproxy/stats
+   curl -I http://192.168.51.30/haproxy/stats
    ```
 
 3. 重新同步路由:

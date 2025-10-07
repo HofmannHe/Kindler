@@ -151,6 +151,10 @@ fi
 if [ "$reg_argocd" = 1 ]; then
   echo "[INFO] Registering cluster to ArgoCD..."
   "$ROOT_DIR"/scripts/argocd_register.sh register "$name" "$provider" || echo "[WARNING] Failed to register to ArgoCD"
+
+  # 同步 ApplicationSet（自动为新环境部署 whoami）
+  echo "[INFO] Syncing ApplicationSet for whoami..."
+  "$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
 else
   echo "[INFO] Skipping ArgoCD registration (--no-register-argocd specified)"
 fi

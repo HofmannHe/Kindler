@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: whoami
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - list:
+      elements:
+      # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
+      - env: dev
+        branch: develop
+        clusterName: dev
+      - env: uat
+        branch: release
+        clusterName: uat
+      - env: prod
+        branch: master
+        clusterName: prod
+      - env: dev-k3d
+        branch: develop
+        clusterName: dev-k3d
+      - env: uat-k3d
+        branch: release
+        clusterName: uat-k3d
+      - env: prod-k3d
+        branch: master
+        clusterName: prod-k3d
+      - env: debug-k3d
+        branch: main
+        clusterName: debug-k3d
+      - env: test-final
+        branch: main
+        clusterName: test-final
+      - env: test-k3d-fixed
+        branch: main
+        clusterName: test-k3d-fixed
+  template:
+    metadata:
+      name: 'whoami-{{.env}}'
+      labels:
+        app: whoami
+        env: '{{.env}}'
+    spec:
+      project: default
+      source:
+        repoURL: http://git.devops.192.168.51.30.sslip.io/gitea/whoami.git
+        path: deploy
+        targetRevision: '{{.branch}}'
+        helm:
+          releaseName: whoami
+          parameters:
+          # 动态设置 Ingress host
+          - name: ingress.host
+            value: 'whoami.{{.env}}.192.168.51.30.sslip.io'
+      destination:
+        # 部署到对应的集群
+        name: '{{.clusterName}}'
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
