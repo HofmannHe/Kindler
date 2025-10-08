@@ -30,6 +30,12 @@ kind) network_name="kind" ;;
 esac
 
 ensure_network() {
+	# HAProxy 需要连接到 k3d-shared 网络以访问所有集群
+	local shared_network="k3d-shared"
+	if docker network inspect "$shared_network" >/dev/null 2>&1; then
+		docker network connect "$shared_network" haproxy-gw 2>/dev/null || true
+	fi
+	# 兼容旧的独立网络模式
 	if [ -n "${network_name:-}" ]; then
 		docker network connect "$network_name" haproxy-gw 2>/dev/null || true
 	fi
@@ -70,8 +76,11 @@ add_backend() {
 	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
 		# kind cluster detected - use NodePort
 		detected_port="$node_port"
+	elif ip=$(docker inspect "k3d-${name}-serverlb" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
+		# k3d cluster with shared network - use shared network IP + LoadBalancer port 80
+		detected_port=80
 	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-serverlb" 2>/dev/null); then
-		# k3d cluster detected - use LoadBalancer port 80
+		# k3d cluster (legacy mode) - use LoadBalancer port 80
 		detected_port=80
 	else
 		ip="127.0.0.1" # fallback (may not work for kind)

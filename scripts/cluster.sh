@@ -53,8 +53,12 @@ create_k3d() {
   need_cmd k3d || return 0
   local img_arg=""
   if [ -n "${K3D_IMAGE:-}" ]; then img_arg="--image ${K3D_IMAGE}"; fi
+
+  # 使用共享网络以支持 ArgoCD 跨集群连接
+  local network_arg="--network k3d-shared"
+
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
-  run "k3d cluster create ${name} ${img_arg} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
+  run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
   limit_node_resources k3d "$name"
 
   # 修正kubeconfig中的0.0.0.0地址为127.0.0.1

@@ -18,6 +18,19 @@ main() {
 	: "${HAPROXY_HTTPS_PORT:=443}"
 	: "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 
+	echo "[BOOTSTRAP] Create shared Docker network for k3d clusters"
+	SHARED_NETWORK="k3d-shared"
+	if ! docker network inspect "$SHARED_NETWORK" >/dev/null 2>&1; then
+		echo "[NETWORK] Creating shared network: $SHARED_NETWORK (10.100.0.0/16)"
+		docker network create "$SHARED_NETWORK" \
+			--subnet 10.100.0.0/16 \
+			--gateway 10.100.0.1 \
+			--opt com.docker.network.bridge.name=br-k3d-shared
+		echo "[SUCCESS] Shared network created"
+	else
+		echo "[NETWORK] Shared network already exists"
+	fi
+
 	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists"
 	if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
 	: "${PORTAINER_ADMIN_PASSWORD:=admin123}"
