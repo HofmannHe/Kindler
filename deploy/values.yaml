@@ -1,0 +1,15 @@
+replicaCount: 1
+
+image:
+  repository: traefik/whoami
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: traefik
+  host: whoami.default.192.168.51.30.sslip.io
