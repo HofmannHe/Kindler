@@ -414,7 +414,14 @@ git branch -D feature/x   # 可选，若分支已合并且不再需要
   - `BASE_DOMAIN=local`
 - 更新 `/etc/hosts`（或内网 DNS）：将 `portainer.devops.local`、`argocd.devops.local`、`whoami.<env>.local` 指向新 IP。
 
-修改 `clusters.env` 后的最小操作
+方案 C — 一键脚本
+```bash
+# 为默认网卡临时增加别名并切换到 192.168.51.35
+# (ip 别名需要 root；如无权限可去掉 --add-alias)
+sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+```
+
+修改 `clusters.env` 后的最小操作（手动路径）
 ```bash
 # 1) 同步 HAProxy 路由
 ./scripts/haproxy_sync.sh --prune
