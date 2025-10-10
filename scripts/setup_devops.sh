@@ -50,9 +50,10 @@ fi
 
 kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
 
-# 等待 ArgoCD server 就绪
-echo "[DEVOP] Waiting for ArgoCD server to be ready..."
-kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=600s
+# 等待 ArgoCD server，就绪失败则预热镜像后重试
+echo "[DEVOP] Waiting for ArgoCD server to be ready (with preload retry)..."
+. "$ROOT_DIR/scripts/lib.sh"
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || true
 
 # 配置 ArgoCD
 echo "[DEVOP] Configuring ArgoCD..."
@@ -93,7 +94,9 @@ INGRESS
 
 # 5. 重启 argocd-server 应用配置
 kubectl --context k3d-devops rollout restart deploy/argocd-server -n argocd
-kubectl --context k3d-devops wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=120s
+# 使用通用预热重试再次等待 argocd-server 就绪
+. "$ROOT_DIR/scripts/lib.sh"
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || true
 
 # 连接 HAProxy 到 devops 网络
 echo "[DEVOP] Connecting HAProxy to devops network..."
@@ -103,6 +106,19 @@ docker restart haproxy-gw
 # 添加 HAProxy 路由 (使用 NodePort 30800)
 echo "[DEVOP] Adding HAProxy route..."
 "$ROOT_DIR"/scripts/haproxy_route.sh add devops --node-port 30800
+
+# Ensure argocd host routing points to current devops NodePort (be_argocd)
+DEVOPS_NODE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' k3d-devops-server-0 2>/dev/null || true)
+if [ -n "$DEVOPS_NODE_IP" ]; then
+  CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+  awk -v ip="$DEVOPS_NODE_IP" -v port="$ARGOCD_NODEPORT" '
+    BEGIN{ins=0}
+    {print}
+    /^backend be_argocd/ {getline; gsub(/.*/, "  server s1 " ip ":" port); print; ins=1}
+  ' "$CFG" >"$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+  docker restart haproxy-gw >/dev/null 2>&1 || true
+  echo "[DEVOP] be_argocd -> ${DEVOPS_NODE_IP}:${ARGOCD_NODEPORT}"
+fi
 
 echo ""
 echo "✅ [DEVOP] Setup complete!"

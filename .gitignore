@@ -1,6 +1,6 @@
 # Data directories
 /data
-data/git/
+config/git.env
 
 # Log files
 *.log
@@ -27,3 +27,4 @@ haproxy_certs/
 # Private configurations (keep examples only)
 # Note: config/*.env files are included as examples
 # Users should copy and modify them locally if needed
+config/secrets.env

@@ -144,6 +144,7 @@ case "${1:-}" in
   down) down ;;
   status) status ;;
   api-login) api_login ;;
+  api-base) api_base ;;
   add-endpoint) add_endpoint "$2" "$3" ;;
   del-endpoint) delete_endpoint "$2" ;;
   *) echo "Usage: $0 {up|down|status|api-login|add-endpoint <name> <url>|del-endpoint <name>}"; exit 1 ;;

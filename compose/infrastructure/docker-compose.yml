@@ -26,23 +26,6 @@ services:
     networks:
       - infrastructure
 
-  gitea:
-    image: gitea/gitea:${GITEA_VERSION:-1.22-rootless}
-    container_name: gitea
-    restart: unless-stopped
-    environment:
-      - USER_UID=1000
-      - USER_GID=1000
-      - GITEA__database__DB_TYPE=sqlite3
-      - GITEA__server__DOMAIN=${HAPROXY_HOST:-192.168.51.30}
-      - GITEA__server__ROOT_URL=http://git.devops.${BASE_DOMAIN:-192.168.51.30.sslip.io}/
-      - GITEA__server__HTTP_PORT=3000
-    volumes:
-      - gitea_data:/var/lib/gitea
-      - gitea_config:/etc/gitea
-    networks:
-      - infrastructure
-
 networks:
   infrastructure:
     name: infrastructure
@@ -52,5 +35,3 @@ volumes:
   portainer_secrets:
     external: true
   haproxy_certs:
-  gitea_data:
-  gitea_config:

@@ -63,8 +63,8 @@ for entry in "${records[@]}"; do
 	if [ -n "${flag:-}" ] && ! is_true "$flag"; then
 		continue
 	fi
-	p="${p:-30080}"
-	"$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
+    p="${p:-30080}"
+    "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
 done
 
 if [ $prune -eq 1 ]; then

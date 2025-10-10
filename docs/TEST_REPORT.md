@@ -1932,3 +1932,1328 @@ k3d-shared (10.100.0.0/16)
 3. ⚠️ 考虑 IP 地址管理（大规模部署时）
 
 ---
+# Smoke Test @ 2025-10-08 18:55:51
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 5 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 5 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 7 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 11 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 17 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 17 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 10 seconds
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 9 seconds
+git-ssh-server          jkarlos/git-server-docker:latest       Up 4 hours
+gitweb                  rockstorm/gitweb:latest                Up 7 hours
+phase3-test-db          postgres:15-alpine                     Up 7 hours
+phase3-backend          confix2-backend:phase3-latest          Up 11 hours (healthy)
+phase3-postgres         postgres:15-alpine                     Up 11 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 4 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-08 22:51:39
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 3 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 3 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 5 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 5 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 7 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 7 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 11 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 15 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 19 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 21 seconds
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 20 seconds
+git-ssh-server          jkarlos/git-server-docker:latest       Up 8 hours
+phase3-test-db          postgres:15-alpine                     Up 11 hours
+phase3-backend          confix2-backend:phase3-latest          Up 15 hours (healthy)
+phase3-postgres         postgres:15-alpine                     Up 15 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 7 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:13:03
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 13:22:19
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:27
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 29 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 29 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 14 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 17 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:31
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 29 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 30 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 17 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 21 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:34
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 29 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 30 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 20 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 24 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 30 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 30 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 24 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 27 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:45
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 10 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 30 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 30 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 32 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 35 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 14:34:48
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 4 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 4 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 6 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 6 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 10 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 13 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 17 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 30 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 30 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 35 seconds
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 38 seconds
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:03:44
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 31 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 31 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 33 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 42 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:03:48
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 31 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 31 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 33 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 42 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:03:51
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 31 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 33 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 42 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:03:54
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 31 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 33 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 42 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:04:05
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 34 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 43 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-09 15:04:08
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 33 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 34 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 39 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 43 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 46 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 59 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 59 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 29 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 29 minutes
+local-registry          registry:2                             Up 5 hours
+postgres-test           postgres:15-alpine                     Up 5 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 5 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 503 Service Unavailable
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.3
+- 4 uat type=7 url=172.19.0.3
+- 5 prod type=7 url=172.19.0.3
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 09:42:13
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+(dry-run) skipped docker ps
+\n## Curl
+\n- Portainer HTTP (80)
+  (dry-run) skipped curl
+\n- Portainer HTTPS (443)
+  (dry-run) skipped curl
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  (dry-run) skipped curl
+
+## Portainer Endpoints
+(dry-run) skipped API calls
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:36
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 38 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 38 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 38 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 38 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 1 second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 38 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 1 second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 10:56:37
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 28 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 28 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 32 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 32 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 35 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 35 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 37 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 39 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 40 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 48 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 48 minutes
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 1 second
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+local-registry          registry:2                             Up 25 hours
+postgres-test           postgres:15-alpine                     Up 25 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 25 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 dev type=7 url=172.19.0.5
+- 4 uat type=7 url=172.19.0.5
+- 5 prod type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+
+## Full Cycle Run @ 2025-10-10T11:00:20+08:00
+- phase(clean): done
+- phase(bootstrap): done
+
+## Full Cycle Run @ 2025-10-10T11:37:37+08:00
+- phase(clean): done
+
+## Full Cycle Run @ 2025-10-10T11:42:11+08:00
+- phase(clean): done
+- phase(bootstrap): done
+
+## Full Cycle Run @ 2025-10-10T13:13:10+08:00
+- phase(clean): done
+- phase(bootstrap): done
+# Smoke Test @ 2025-10-10 13:32:32
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+\n- Portainer HTTPS (443)
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 13:32:32
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 13:32:32
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 1 second
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 13:32:33
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up Less than a second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.devk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 13:32:33
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 1 second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.uatk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+# Smoke Test @ 2025-10-10 13:32:33
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                   IMAGE                                  STATUS
+k3d-prod-k3d-serverlb   ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-uat-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-prod-k3d-server-0   rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-uat-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+k3d-dev-k3d-serverlb    ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 2 minutes
+k3d-dev-k3d-server-0    rancher/k3s:v1.31.5-k3s1               Up 2 minutes
+prod-control-plane      kindest/node:v1.31.12                  Up 9 minutes
+dev-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+uat-control-plane       kindest/node:v1.31.12                  Up 9 minutes
+k3d-devops-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3         Up 19 minutes
+k3d-devops-server-0     rancher/k3s:v1.31.5-k3s1               Up 19 minutes
+portainer-ce            portainer/portainer-ce:2.33.2-alpine   Up 2 seconds
+haproxy-gw              haproxy:3.2.6-alpine3.22               Up 1 second
+local-registry          registry:2                             Up 28 hours
+postgres-test           postgres:15-alpine                     Up 28 hours
+gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (healthy)
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/1.1 200 OK
+\n- Ingress Host (whoami.prodk3d.192.168.51.30.sslip.io via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 devops type=7 url=10.100.0.4
+- 3 uat type=7 url=172.19.0.5
+- 4 prod type=7 url=172.19.0.5
+- 5 dev type=7 url=172.19.0.5
+- 6 devk3d type=7 url=10.100.0.4
+- 7 uatk3d type=7 url=10.100.0.4
+- 8 prodk3d type=7 url=10.100.0.4
+\n---\n
+- phase(environments): done (concurrency=3)
+- phase(haproxy+smoke): done
+- total: 1163s
+- env durations:
+  - dev: 439s
+  - uat: 436s
+  - prod: 439s
+  - dev-k3d: 153s
+  - uat-k3d: 151s
+  - prod-k3d: 152s
+- portainer endpoints:
+  - [1] dockerhost Type=1 Status=1 URL=unix:///var/run/docker.sock
+  - [2] devops Type=7 Status=1 URL=10.100.0.4
+  - [3] uat Type=7 Status=1 URL=172.19.0.5
+  - [4] prod Type=7 Status=1 URL=172.19.0.5
+  - [5] dev Type=7 Status=1 URL=172.19.0.5
+  - [6] devk3d Type=7 Status=1 URL=10.100.0.4
+  - [7] uatk3d Type=7 Status=1 URL=10.100.0.4
+  - [8] prodk3d Type=7 Status=1 URL=10.100.0.4
+- Validation (curl via HAProxy Host headers)
+  - whoami.dev.192.168.51.30.sslip.io -> 200 OK
+  - whoami.uat.192.168.51.30.sslip.io -> 200 OK
+  - whoami.prod.192.168.51.30.sslip.io -> 200 OK
+  - whoami.devk3d.192.168.51.30.sslip.io -> 200 OK
+  - whoami.uatk3d.192.168.51.30.sslip.io -> 200 OK
+  - whoami.prodk3d.192.168.51.30.sslip.io -> 200 OK
+  - ArgoCD: http://argocd.devops.192.168.51.30.sslip.io -> 200/302 (as configured)
+  - Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io -> 200 OK
+  - Portainer HTTP redirect: http://portainer.devops.192.168.51.30.sslip.io -> 301 Moved Permanently

@@ -15,6 +15,7 @@
 - 🛠️ **灵活后端**: 支持 kind 和 k3d 两种 Kubernetes 发行版
 - 📦 **自动注册**: 自动将集群注册到 Portainer 和 ArgoCD
 - 🔒 **生产就绪**: 支持 TLS 和自动重定向
+- 🔄 **统一 Ingress（NodePort）**：无论 k3d 还是 kind，均通过 NodePort 暴露入口，应用无需感知差异
 
 ## 架构
 
@@ -29,12 +30,12 @@ graph TB
 
     subgraph Gateway["HAProxy 网关 (haproxy-gw)"]
         HAP[统一入口<br/>80/443]
-        ROUTES["路由规则:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• git.devops.*<br/>• whoami.&lt;env&gt;.*"]
+        ROUTES["路由规则:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• whoami.&lt;env&gt;.*"]
     end
 
     subgraph Management["管理层 (devops 集群)"]
         PORT[Portainer CE<br/>容器/集群管理]
-        GITEA[Gitea<br/>Git 服务]
+        GITSVC[外部 Git<br/>服务]
         ARGOCD[ArgoCD<br/>GitOps 引擎]
         APPSET[ApplicationSet<br/>动态生成 Apps]
     end
@@ -47,17 +48,17 @@ graph TB
     end
 
     USER -->|访问服务| HAP
-    DEV -->|推送代码| GITEA
+    DEV -->|推送代码| GITSVC
 
     HAP --> ROUTES
     ROUTES -.->|管理界面| PORT
     ROUTES -.->|GitOps 界面| ARGOCD
-    ROUTES -.->|Git 服务| GITEA
+    ROUTES -.->|Git 服务| GITSVC
     ROUTES -.->|应用访问| Business
 
     PORT -->|Edge Agent<br/>监控/部署| Business
 
-    GITEA -->|监听变化| ARGOCD
+    GITSVC -->|监听变化| ARGOCD
     ARGOCD --> APPSET
     APPSET -->|生成 Application| ARGOCD
     ARGOCD -->|kubectl 部署| Business
@@ -69,15 +70,15 @@ graph TB
 
     class HAP,ROUTES gateway
     class PORT management
-    class GITEA,ARGOCD,APPSET gitops
+    class GITSVC,ARGOCD,APPSET gitops
     class ENV1,ENV2,ENV3,ENV4 business
 ```
 
 > **说明**:
 > - **HAProxy**: 统一网关，基于域名路由流量
-> - **devops 集群**: 运行基础设施服务（Portainer、Gitea、ArgoCD）
+> - **devops 集群**: 运行基础设施服务（Portainer、ArgoCD）
 > - **业务集群**: 由 `config/environments.csv` 定义，自动注册到 Portainer 和 ArgoCD
-> - **GitOps 流程**: 代码推送 → Gitea → ArgoCD 监听 → ApplicationSet 生成 → 自动部署
+> - **GitOps 流程**: 代码推送 → 外部 Git 服务 → ArgoCD 监听 → ApplicationSet 生成 → 自动部署
 
 ### 请求流程
 
@@ -127,6 +128,8 @@ sequenceDiagram
 2. **配置环境** (可选，已提供合理默认值)
    ```bash
    # 根据需要编辑配置文件
+   cp config/git.env.example config/git.env  # 外部 Git 配置模板
+   nano config/git.env          # 填写 Git 仓库地址与凭证
    nano config/clusters.env    # HAProxy 主机、基础域名、版本
    nano config/secrets.env     # 管理员密码
    nano config/environments.csv # 集群定义
@@ -151,16 +154,23 @@ sequenceDiagram
    - 启动 Portainer CE 容器
    - 启动 HAProxy 网关
    - 创建 `devops` 管理集群
-   - 部署 Gitea (Git 服务)
    - 部署 ArgoCD (GitOps 引擎)
-   - 创建 whoami 示例应用仓库
+   - 校验 `config/git.env` 中配置的外部 Git 仓库
 
-4. **访问管理界面**（基于域名，默认端口 80/443）
+4. **一键拉起（含计时/健康检查，建议）**
+   ```bash
+   # 可选：先全量清理
+   ./scripts/clean.sh
+
+   # 一键全流程（含 bootstrap + 批量创建 CSV 环境）
+   ./scripts/full_cycle.sh --concurrency 3
+   ```
+
+5. **访问管理界面**（基于域名，默认端口 80/443）
 
    **推荐方式（域名访问）**：
    - **Portainer**: https://portainer.devops.192.168.51.30.sslip.io
    - **ArgoCD**: http://argocd.devops.192.168.51.30.sslip.io
-   - **Gitea**: http://git.devops.192.168.51.30.sslip.io
 
    **备用方式（IP + Host header）**：
    ```bash
@@ -175,21 +185,24 @@ sequenceDiagram
    - 用户名: `admin`
    - 密码: 查看 `config/secrets.env` 中的配置
 
-### 创建业务集群
-
-创建 `config/environments.csv` 中定义的集群:
+### 手动创建/删除业务集群
 
 ```bash
-# 创建单个环境
+# 创建单个环境（读取 CSV 默认）
 ./scripts/create_env.sh -n dev
 
-# 从 CSV 创建多个环境
-for env in dev uat prod; do
-  ./scripts/create_env.sh -n $env
-done
+# 批量创建（来自 CSV）
+for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n "$env"; done
+
+# 停止/启动（保留配置）
+./scripts/stop_env.sh -n dev
+./scripts/start_env.sh -n dev
+
+# 永久删除（连带 CSV/Portainer/ArgoCD/HAProxy 清理）
+./scripts/delete_env.sh -n dev
 ```
 
-脚本将自动:
+创建脚本将自动:
 - ✅ 创建 Kubernetes 集群 (根据 CSV 配置选择 kind/k3d)
 - ✅ 通过 Edge Agent 注册到 Portainer
 - ✅ 使用 kubectl context 注册到 ArgoCD
@@ -210,22 +223,19 @@ https://portainer.devops.192.168.51.30.sslip.io
 # ArgoCD (HTTP)
 http://argocd.devops.192.168.51.30.sslip.io
 
-# Gitea (HTTP)
-http://git.devops.192.168.51.30.sslip.io
-
 # HAProxy 统计页面
 http://haproxy.devops.192.168.51.30.sslip.io/stats
 ```
 
-**业务应用访问**（示例：whoami）：
+**业务应用访问**（示例：whoami，经 HAProxy Host 头访问）：
 ```bash
-# 通过域名访问（推荐）
-curl http://whoami.dev.192.168.51.30.sslip.io
-curl http://whoami.uat.192.168.51.30.sslip.io
-curl http://whoami.prod.192.168.51.30.sslip.io
-
-# 通过浏览器访问
-open http://whoami.dev.192.168.51.30.sslip.io
+BASE=192.168.51.30
+curl -I -H 'Host: whoami.dev.192.168.51.30.sslip.io'   http://$BASE
+curl -I -H 'Host: whoami.uat.192.168.51.30.sslip.io'   http://$BASE
+curl -I -H 'Host: whoami.prod.192.168.51.30.sslip.io'  http://$BASE
+curl -I -H 'Host: whoami.devk3d.192.168.51.30.sslip.io'  http://$BASE
+curl -I -H 'Host: whoami.uatk3d.192.168.51.30.sslip.io'  http://$BASE
+curl -I -H 'Host: whoami.prodk3d.192.168.51.30.sslip.io' http://$BASE
 ```
 
 **纯内网环境配置**（无法访问 sslip.io）：
@@ -234,7 +244,6 @@ open http://whoami.dev.192.168.51.30.sslip.io
 sudo tee -a /etc/hosts <<EOF
 192.168.51.30 portainer.devops.local
 192.168.51.30 argocd.devops.local
-192.168.51.30 git.devops.local
 192.168.51.30 whoami.dev.local
 192.168.51.30 whoami.uat.local
 192.168.51.30 whoami.prod.local
@@ -251,25 +260,21 @@ EOF
 Kindler 内置完整的 GitOps 工作流，实现代码到部署的自动化。
 
 ### 核心组件
-- **Gitea**: Git 服务，托管应用代码 (访问: http://git.devops.192.168.51.30.sslip.io)
+- **外部 Git 服务**: 托管应用仓库，配置见 `config/git.env`
 - **ArgoCD**: GitOps 引擎，监听 Git 变化并自动部署 (访问: http://argocd.devops.192.168.51.30.sslip.io)
 - **ApplicationSet**: 动态生成 ArgoCD Applications，由 `config/environments.csv` 驱动
 
 ### 分支与环境映射
 
-| Git 分支 | 自动部署到 | 域名示例 |
-|----------|-----------|----------|
-| **develop** | dev, dev-k3d | whoami.dev.192.168.51.30.sslip.io |
-| **release** | uat, uat-k3d | whoami.uat.192.168.51.30.sslip.io |
-| **master** | prod, prod-k3d | whoami.prod.192.168.51.30.sslip.io |
+- 分支名 = 环境名。ArgoCD 将分支=<env> 的代码同步到集群=<env>。
+- 示例：`dev`、`uat`、`prod`、`dev-k3d`、`uat-k3d`、`prod-k3d`。
 
 ### 快速体验
 
 ```bash
-# 1. 访问 Gitea 创建或修改应用
-open http://git.devops.192.168.51.30.sslip.io
+# 1. 确认 config/git.env 已指向外部 Git 仓库
 
-# 2. 推送代码到 develop 分支
+# 2. 推送代码到对应环境分支（如 dev/uat/prod/...）
 cd /path/to/your/app
 git push origin develop
 
@@ -283,10 +288,10 @@ curl http://whoami.dev.192.168.51.30.sslip.io
 
 ### whoami 示例应用
 
-bootstrap.sh 会自动创建 `whoami` 示例应用仓库，演示 GitOps 工作流：
+将仓库示例（位于 `examples/whoami`）推送到外部 Git 服务，即可演示 GitOps 工作流：
 
-- **仓库地址**: http://git.devops.192.168.51.30.sslip.io/gitea/whoami
-- **分支**: develop、release、master
+- **仓库地址**: 在 `config/git.env` 中配置
+- **推荐分支**: develop、release、master
 - **应用类型**: Helm Chart (deploy/ 目录)
 - **配置差异**: 仅域名不同，其他配置完全一致（最小化差异原则）
 
@@ -302,6 +307,10 @@ curl http://whoami.uat.192.168.51.30.sslip.io
 curl http://whoami.prod.192.168.51.30.sslip.io
 ```
 
+注意：
+- `devops` 管理集群不部署 whoami，仅对 `config/environments.csv` 中的业务集群进行部署。
+- 环境完全由 CSV 驱动，请勿在清单/脚本中硬编码环境名；使用 `scripts/sync_applicationset.sh` 自动生成。
+
 > 📖 **详细文档**: [GitOps 工作流完整指南](./docs/GITOPS_WORKFLOW.md)
 
 ## 项目结构
@@ -315,6 +324,7 @@ kindler/
 ├── config/            # 配置文件
 │   ├── environments.csv    # 环境定义
 │   ├── clusters.env        # 集群镜像版本
+│   ├── git.env.example     # 外部 Git 配置模板（复制为 git.env）
 │   └── secrets.env         # 密码和令牌
 ├── scripts/           # 管理脚本
 │   ├── bootstrap.sh        # 初始化基础设施
@@ -376,7 +386,7 @@ HAPROXY_HTTPS_PORT=8443  # 自定义 HTTPS 端口
 ```
 
 **端口用途**：
-- `80` (HTTP): ArgoCD、Gitea、HAProxy Stats、业务应用、Portainer HTTP→HTTPS 跳转
+- `80` (HTTP): ArgoCD、HAProxy Stats、业务应用、Portainer HTTP→HTTPS 跳转
 - `443` (HTTPS): Portainer 管理界面（自签名证书）
 
 > **注意**：修改端口后，访问 URL 需要带端口号，如 `http://argocd.devops.192.168.51.30.sslip.io:8080`
@@ -481,7 +491,7 @@ HAPROXY_HOST=192.168.51.30  # 内网 IP
 | ArgoCD | 23800 | HTTP | GitOps 界面 | 是 (haproxy.cfg) |
 | 集群路由 | 23080 | HTTP | 基于域名的路由 | 是 (haproxy.cfg) |
 
-> **注意**: 所有端口都可以通过编辑 `compose/haproxy/haproxy.cfg` 并重启 HAProxy 来自定义。
+> **注意**: 所有端口都可以通过编辑 `compose/infrastructure/haproxy.cfg` 并重启 HAProxy 来自定义。
 
 ## 验证
 
@@ -646,7 +656,7 @@ curl http://prod.local
 每个环境自动获得 HAProxy 配置:
 
 ```haproxy
-# Frontend ACL (在 compose/haproxy/haproxy.cfg)
+# Frontend ACL (在 compose/infrastructure/haproxy.cfg)
 frontend fe_kube_http
   bind *
 

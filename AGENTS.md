@@ -10,7 +10,7 @@
 │ HAProxy (haproxy-gw)                                           │
 │ - 统一网络入口 (192.168.51.30)                                │
 │ - 端口暴露:                                                    │
-│   *  80 : 域名统一入口（Portainer HTTP→HTTPS、ArgoCD、Gitea、业务）│
+│   *  80 : 域名统一入口（Portainer HTTP→HTTPS、ArgoCD、业务）     │
 │   * 443: Portainer HTTPS 透传                                 │
 └────────────────────────────────────────────────────────────────┘
            │
@@ -27,10 +27,9 @@
            │        - 管理所有业务集群的应用部署
            │        - ApplicationSet 动态生成 Applications
            │        - Ingress: argocd.devops.$BASE_DOMAIN
-           │      * Gitea (Git 服务)
-           │        - 托管应用代码仓库 (如 whoami)
+           │      * 外部 Git 仓库（通过 config/git.env 配置）
+           │        - 存储应用代码仓库 (如 whoami)
            │        - ArgoCD 监听 Git 变化自动部署
-           │        - Ingress: git.devops.$BASE_DOMAIN
            │    - 全部通过 HAProxy 80 端口基于域名暴露
            │
            └──> 业务集群 (k3d/kind, 按需创建)
@@ -44,11 +43,11 @@
 ### 核心组件
 1. **HAProxy**: 统一入口网关，所有外部访问的唯一入口
 2. **Portainer CE**: 容器和集群统一管理界面
-3. **devops 集群**: 管理集群，运行 Gitea、ArgoCD 等 DevOps 工具
+3. **devops 集群**: 管理集群，运行 ArgoCD 等 DevOps 工具
 4. **业务集群**: 运行实际应用的 k3d/kind 集群
 
 ### GitOps 工作流
-- **Gitea**: Git 服务托管应用代码 (http://git.devops.$BASE_DOMAIN)
+- **外部 Git 服务**: 托管应用代码（在 `config/git.env` 中配置）
 - **ArgoCD**: 监听 Git 仓库变化，自动部署到集群
 - **ApplicationSet**: 从 `config/environments.csv` 动态生成 Applications
 - **分支映射**: develop→dev, release→uat, master→prod
@@ -61,7 +60,7 @@
 
 ### 生命周期管理
 - `clean.sh`: 清理所有环境（集群、容器、网络、数据）
-- `bootstrap.sh`: 拉起基础设施（HAProxy + Portainer + devops 集群 + Gitea + ArgoCD）
+- `bootstrap.sh`: 拉起基础设施（HAProxy + Portainer + devops 集群 + ArgoCD，并验证外部 Git 配置）
 - `create_env.sh`: 创建业务集群并自动注册到 Portainer、ArgoCD，同步 ApplicationSet
 - `stop_env.sh`: 停止集群但保留配置（临时释放资源）
 - `start_env.sh`: 启动已停止的集群
@@ -77,7 +76,7 @@
 - 目录（按需创建）：
   - `images/`：各镜像的 Dockerfile 与构建上下文（如 `images/base/`）。
   - `clusters/`：k3d 集群配置（`*.yaml`）及默认值。
-  - `compose/`：Docker Compose（`compose/portainer/`、`compose/haproxy/`）。
+  - `compose/`：Docker Compose（`compose/infrastructure/` 包含 Portainer 与 HAProxy）。
   - `manifests/`：Kubernetes YAML（按需使用）。
   - `scripts/`：辅助脚本；尽量保持 POSIX‑sh 兼容。
   - `examples/`：最小可运行示例。
@@ -85,7 +84,7 @@
 
 ## 构建、测试与开发命令
 - 启动 Portainer：`scripts/portainer.sh up`（读取 `config/secrets.env` 中 `PORTAINER_ADMIN_PASSWORD`，使用命名卷 `portainer_portainer_data`/`portainer_secrets` 持久化）
-- 启动 HAProxy：`docker compose -f compose/haproxy/docker-compose.yml up -d`（默认对外 `80/443`，可通过 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 调整）
+- 启动 HAProxy：`docker compose -f compose/infrastructure/docker-compose.yml up -d`（默认对外 `80/443`，可通过 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 调整）
 - 创建集群：`scripts/create_env.sh -n <env> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route]`
   - 默认参数来自 `config/environments.csv`，命令行可覆盖。
   - CSV 列：`env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port`
@@ -115,6 +114,7 @@
 
 ## 安全与配置提示
 - 禁止提交密钥；提供 `*.example` 文件，并在 `.gitignore` 忽略真实值。
+- `config/git.env` 仅保存本地仓库凭证，请使用 `config/git.env.example` 模板并避免提交真实值。
 - 尽量使用镜像摘要固定基镜像；避免在生产路径使用 `latest`。
 - 配置以环境变量为主，避免硬编码；记录必需变量。
 
