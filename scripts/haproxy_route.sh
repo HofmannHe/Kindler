@@ -20,11 +20,13 @@ usage() {
 cmd="${1:-}"
 name="${2:-}"
 shift 2 || true
-label="$(env_label "$name")"
-[ -n "$label" ] || label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-provider="$(provider_for "$name")"
+base_env="$name"
+. "$ROOT_DIR/scripts/lib.sh"
+label="$(host_label "$base_env")"
+[ -n "$label" ] || label="$(printf '%s' "$base_env" | tr '[:upper:]' '[:lower:]')"
+provider="$(provider_for "$base_env")"
 case "$provider" in
-k3d) network_name="k3d-${name}" ;;
+k3d) network_name="k3d-$(effective_name "$base_env")" ;;
 kind) network_name="kind" ;;
 *) network_name="" ;;
 esac
@@ -62,7 +64,7 @@ add_acl() {
 	acl_begin="^[[:space:]]*# BEGIN DYNAMIC ACL"
 	acl_end="^[[:space:]]*# END DYNAMIC ACL"
 	tmp=$(mktemp)
-	awk -v n="$name" -v l="$label" -v B="$acl_begin" -v E="$acl_end" '
+	awk -v n="$(effective_name "$base_env")" -v l="$label" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
     $0 ~ B {print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." l "\\.[^:]+"; print "  use_backend be_" n " if host_" n; ins=1}
@@ -74,13 +76,14 @@ add_acl() {
 add_backend() {
 	local tmp b_begin b_end ip detected_port
 	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
-	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
+	local eff; eff="$(effective_name "$base_env")"
+	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${eff}-control-plane" 2>/dev/null); then
 		# kind cluster detected - use NodePort on control-plane container IP
 		detected_port="$node_port"
-	elif ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
+	elif ip=$(docker inspect "k3d-${eff}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
 		# k3d cluster on shared network - use server-0 container IP + NodePort
 		detected_port="$node_port"
-	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
+	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${eff}-server-0" 2>/dev/null); then
 		# k3d cluster (legacy/without shared network info) - use server-0 container IP + NodePort
 		detected_port="$node_port"
 	else
@@ -90,7 +93,7 @@ add_backend() {
 	b_begin="^# BEGIN DYNAMIC BACKENDS"
 	b_end="^# END DYNAMIC BACKENDS"
 	tmp=$(mktemp)
-	awk -v n="$name" -v B="$b_begin" -v E="$b_end" -v p="$detected_port" '
+	awk -v n="$(effective_name "$base_env")" -v B="$b_begin" -v E="$b_end" -v p="$detected_port" '
     {print $0}
     $0 ~ B {print "backend be_" n "\n  server s1 REPLACE_IP:" p}
   ' "$CFG" >"$tmp"
@@ -102,7 +105,7 @@ add_backend() {
 remove_acl() {
 	local tmp
 	tmp=$(mktemp)
-	awk -v n="$name" '
+	awk -v n="$(effective_name "$base_env")" '
     BEGIN{skip=0}
     {
       if ($0 ~ "^[[:space:]]*acl[[:space:]]+host_" n "[[:space:]]+") next;
@@ -116,7 +119,7 @@ remove_acl() {
 remove_backend() {
 	local tmp
 	tmp=$(mktemp)
-	awk -v n="$name" 'BEGIN{inblk=0}
+	awk -v n="$(effective_name "$base_env")" 'BEGIN{inblk=0}
     /^backend be_/ {inblk=($2=="be_" n)}
     inblk {next}
     {print $0}

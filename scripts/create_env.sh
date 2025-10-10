@@ -114,7 +114,9 @@ if ! PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh create "$name"; then
 fi
 
 ctx_prefix=$([ "$provider" = "k3d" ] && echo k3d || echo kind)
-ctx="$ctx_prefix-$name"
+. "$ROOT_DIR/scripts/lib.sh"
+eff_name="$(effective_name "$name")"
+ctx="$ctx_prefix-$eff_name"
 
 # Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
 . "$ROOT_DIR/scripts/lib.sh"
@@ -137,7 +139,7 @@ if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
 fi
 if [ "$need_apply_traefik" -eq 1 ]; then
   echo "[TRAEFIK] install/update..."
-  "$ROOT_DIR"/scripts/traefik.sh install "$ctx" --nodeport "$node_port" || true
+"$ROOT_DIR"/scripts/traefik.sh install "$ctx" --nodeport "$node_port" || true
 fi
 
 # Add HAProxy route (domain-based; default to node_port)

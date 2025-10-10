@@ -63,7 +63,7 @@ spec:
           parameters:
           # 动态设置 Ingress host
           - name: ingress.host
-            value: 'whoami.{{.hostEnv}}.192.168.51.30.sslip.io'
+            value: 'whoami.{{.hostEnv}}.192.168.51.35.sslip.io'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
           - name: image.tag
             value: 'v1.10.2'

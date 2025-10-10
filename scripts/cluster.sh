@@ -132,6 +132,9 @@ main() {
   local provider name ports http_port https_port
   provider="$(provider_for "$env")"
   name="$(ctx_name "$env")"
+  # apply namespace suffix for actual cluster/container naming
+  . "$ROOT_DIR/scripts/lib.sh"
+  name="$(effective_name "$name")"
   # read ports with space separator regardless of global IFS
   local _ports
   _ports="$(ports_for "$env")"
