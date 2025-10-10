@@ -450,6 +450,55 @@ Notes
 - CI, scripts, and deployment flows must not depend on any files inside `worktrees/`.
 - Root-level scripts and docs always target the stable `master/main`.
 
+## User Configuration Guide
+
+This project is designed to be portable across hosts. Below are common tasks when changing machines or network settings.
+
+### Change Host IP / Gateway Domain
+
+Option A — Use sslip.io (zero‑DNS)
+- Edit `config/clusters.env`:
+  - `HAPROXY_HOST=<new_host_ip>` (e.g. `192.168.88.10`)
+  - `BASE_DOMAIN=<new_host_ip>.sslip.io` (e.g. `192.168.88.10.sslip.io`)
+
+Option B — Local domain
+- Edit `config/clusters.env`:
+  - `HAPROXY_HOST=<new_host_ip>`
+  - `BASE_DOMAIN=local`
+- Update `/etc/hosts` (or LAN DNS): map `portainer.devops.local`, `argocd.devops.local`, and `whoami.<env>.local` to the new IP.
+
+After editing `clusters.env`, refresh components
+```bash
+# 1) Refresh HAProxy routes
+./scripts/haproxy_sync.sh --prune
+
+# 2) Update devops ArgoCD Ingress
+./scripts/setup_devops.sh
+
+# 3) Regenerate ApplicationSet for business clusters
+./scripts/sync_applicationset.sh
+
+# 4) Verify (example for sslip.io)
+BASE=<new_host_ip>
+curl -I -H "Host: portainer.devops.$BASE.sslip.io" http://$BASE   # 301
+curl -I -H "Host: argocd.devops.$BASE.sslip.io"  http://$BASE     # 200/302
+curl -I -H "Host: whoami.dev.$BASE.sslip.io"     http://$BASE     # 200
+```
+
+Notes
+- Clusters do not need recreation for IP/domain changes; HAProxy and Ingress hosts derive from `BASE_DOMAIN`.
+- If external ports change, set `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` and restart compose:
+  ```bash
+  docker compose -f compose/infrastructure/docker-compose.yml down && \
+  docker compose -f compose/infrastructure/docker-compose.yml up -d
+  ```
+
+Full re-initialize (optional)
+```bash
+./scripts/clean.sh
+./scripts/full_cycle.sh --concurrency 3
+```
+
 > **Note**: All ports can be customized by editing `compose/infrastructure/haproxy.cfg` and restarting HAProxy.
 
 ## Verification
