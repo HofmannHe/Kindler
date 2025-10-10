@@ -121,12 +121,12 @@ ctx="$ctx_prefix-$eff_name"
 # Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
 . "$ROOT_DIR/scripts/lib.sh"
 if [ "$provider" = "kind" ]; then
-  preload_image_to_cluster kind "$name" "traefik:v2.10" || true
-  preload_image_to_cluster kind "$name" "traefik/whoami:v1.10.2" || true
+  preload_image_to_cluster kind "$eff_name" "traefik:v2.10" || true
+  preload_image_to_cluster kind "$eff_name" "traefik/whoami:v1.10.2" || true
 else
   # optional: preload into k3d to speed up rollout
-  preload_image_to_cluster k3d "$name" "traefik:v2.10" || true
-  preload_image_to_cluster k3d "$name" "traefik/whoami:v1.10.2" || true
+  preload_image_to_cluster k3d "$eff_name" "traefik:v2.10" || true
+  preload_image_to_cluster k3d "$eff_name" "traefik/whoami:v1.10.2" || true
 fi
 need_apply_traefik=1
 if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
@@ -192,7 +192,8 @@ fi
 if [ "$reg_argocd" = 1 ]; then
   echo "[INFO] Registering cluster to ArgoCD..."
   if [ "${DRY_RUN:-}" != "1" ]; then
-    if kubectl --context k3d-devops -n argocd get secret "cluster-${name}" >/dev/null 2>&1; then
+    # 在命名空间隔离下，secret 名称使用有效名（例如 cluster-dev-ns）
+    if kubectl --context k3d-devops -n argocd get secret "cluster-${eff_name}" >/dev/null 2>&1; then
       echo "[ARGOCD] secret cluster-${name} exists, skip register"
     else
       "$ROOT_DIR"/scripts/argocd_register.sh register "$name" "$provider" || echo "[WARNING] Failed to register to ArgoCD"
