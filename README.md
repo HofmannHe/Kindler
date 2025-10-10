@@ -467,6 +467,13 @@ Option B — Local domain
   - `BASE_DOMAIN=local`
 - Update `/etc/hosts` (or LAN DNS): map `portainer.devops.local`, `argocd.devops.local`, and `whoami.<env>.local` to the new IP.
 
+Option C — One‑click script
+```bash
+# Add a temporary alias to your default NIC and reconfigure to 192.168.51.35
+# (ip alias requires root; omit --add-alias if not permitted)
+sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+```
+
 After editing `clusters.env`, refresh components
 ```bash
 # 1) Refresh HAProxy routes
