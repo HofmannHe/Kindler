@@ -134,6 +134,22 @@
 - 每次修订README等文档的时候需要同时修订中英文版本
 - devops集群不应该部署whoami服务，应该部署到其它业务集群上。另外注意这些集群名称包括域名不应存在硬编码，因为环境配置csv中的环境名称是可能增删改的，测试用例也需要覆盖环境名增删改
 
+### 分支与工作树（强制要求）
+- 根目录仅用于 `master/main` 稳定分支，供实际部署与用户使用；禁止在根目录直接开发或推送（master 为保护分支，仅允许通过 PR 合并）。
+- 所有开发与测试必须在 `worktrees/` 目录下的 git worktree 中进行：每个子目录代表一个开发分支。
+- 环境隔离：开发分支下运行脚本前必须设置 `KINDLER_NS=<ns>`（建议与分支名一致，例如 `develop`）。脚本会将实际资源（集群名、HAProxy 路由、ArgoCD secret/应用等）添加命名空间后缀，避免影响 master 运行环境。
+- 清理：在开发分支不要运行根目录的 `clean.sh`（会影响全局）。使用 `scripts/clean_ns.sh`，它只清理 `KINDLER_NS` 对应的资源。
+- 建议流程：
+  ```bash
+  mkdir -p worktrees
+  git worktree add worktrees/develop develop
+  cd worktrees/develop
+  export KINDLER_NS=develop
+  ./scripts/create_env.sh -n dev
+  # ... 开发与验证 ...
+  ./scripts/clean_ns.sh --from-csv   # 仅清理 develop 命名空间下的资源
+  ```
+
 ## 开发模式（Git Flow + Git Worktree）
 
 - 目标：实现“部署与开发隔离”。项目根目录仅承载 `master`（或 `main`）稳定分支，供用户直接使用与部署；开发分支使用 `git worktree` 挂载到本地 `worktrees/` 目录下。
