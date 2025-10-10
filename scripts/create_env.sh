@@ -127,6 +127,11 @@ else
   # optional: preload into k3d to speed up rollout
   preload_image_to_cluster k3d "$eff_name" "traefik:v2.10" || true
   preload_image_to_cluster k3d "$eff_name" "traefik/whoami:v1.10.2" || true
+  # 必须：为 k3d 预导入 pause/coredns 以避免 PodSandbox 拉取失败（离线场景）
+  . "$ROOT_DIR/scripts/lib.sh"; prefetch_image rancher/mirrored-pause:3.6 || true; prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
+  if command -v k3d >/dev/null 2>&1; then
+    k3d image import rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$eff_name" 2>/dev/null || true
+  fi
 fi
 need_apply_traefik=1
 if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
@@ -164,7 +169,7 @@ if [ $reg_portainer -eq 1 ]; then
     if [ "${DRY_RUN:-}" != "1" ]; then
       echo "[PORTAINER] Importing images to k3d cluster..."
       . "$ROOT_DIR/scripts/lib.sh"; prefetch_image rancher/mirrored-pause:3.6 || true; prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
-      k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>/dev/null || true
+      k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$eff_name" 2>/dev/null || true
     else
       echo "[DRY-RUN][PORTAINER] 跳过 k3d 镜像导入"
     fi
