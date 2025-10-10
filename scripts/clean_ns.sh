@@ -28,7 +28,7 @@ for env in "${envs[@]}"; do
   eff="$(effective_name "$env")"
   echo "[NS-CLEAN] env=$env eff=$eff provider=$provider"
   "$ROOT_DIR"/scripts/haproxy_route.sh remove "$env" || true
-  "$ROOT_DIR"/scripts/argocd_register.sh unregister "$env" "$provider" || true
+  "$ROOT_DIR"/scripts/argocd_register_kubectl.sh unregister "$env" "$provider" || true
   ep_name="$(echo "$eff" | tr -d '-')"
   "$ROOT_DIR"/scripts/portainer.sh del-endpoint "$ep_name" >/dev/null 2>&1 || true
   PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh delete "$env" || true
