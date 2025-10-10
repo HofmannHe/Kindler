@@ -28,3 +28,6 @@ haproxy_certs/
 # Note: config/*.env files are included as examples
 # Users should copy and modify them locally if needed
 config/secrets.env
+
+# Local git worktrees (development branches)
+worktrees/
