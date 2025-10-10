@@ -116,6 +116,30 @@ fi
 ctx_prefix=$([ "$provider" = "k3d" ] && echo k3d || echo kind)
 ctx="$ctx_prefix-$name"
 
+# Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
+. "$ROOT_DIR/scripts/lib.sh"
+if [ "$provider" = "kind" ]; then
+  preload_image_to_cluster kind "$name" "traefik:v2.10" || true
+  preload_image_to_cluster kind "$name" "traefik/whoami:v1.10.2" || true
+else
+  # optional: preload into k3d to speed up rollout
+  preload_image_to_cluster k3d "$name" "traefik:v2.10" || true
+  preload_image_to_cluster k3d "$name" "traefik/whoami:v1.10.2" || true
+fi
+need_apply_traefik=1
+if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
+  # If service exists and has a nodePort, skip reinstall
+  np=$(kubectl --context "$ctx" -n traefik get svc traefik -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
+  if [ -n "$np" ]; then
+    echo "[TRAEFIK] exists (nodePort=$np), skip apply"
+    need_apply_traefik=0
+  fi
+fi
+if [ "$need_apply_traefik" -eq 1 ]; then
+  echo "[TRAEFIK] install/update..."
+  "$ROOT_DIR"/scripts/traefik.sh install "$ctx" --nodeport "$node_port" || true
+fi
+
 # Add HAProxy route (domain-based; default to node_port)
 if [ $add_haproxy -eq 1 ]; then
   "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || true
@@ -125,36 +149,68 @@ if [ $reg_portainer -eq 1 ]; then
   # 使用 Edge Agent 方式（更可靠，不依赖网络镜像拉取）
   echo "[PORTAINER] Using Edge Agent mode (recommended for offline environments)"
 
-  # 预拉取镜像
-  echo "[PORTAINER] Prefetching required images..."
-  docker pull portainer/agent:latest 2>/dev/null || true
+  # 预拉取镜像（本地有则跳过）
+  if [ "${DRY_RUN:-}" != "1" ]; then
+    echo "[PORTAINER] Prefetching required images (skip if cached)..."
+    . "$ROOT_DIR/scripts/lib.sh"; prefetch_image portainer/agent:latest || true
+  else
+    echo "[DRY-RUN][PORTAINER] 跳过镜像预拉取"
+  fi
 
   # 导入必需镜像到集群（避免镜像拉取失败）
   if [ "$provider" = "k3d" ]; then
-    echo "[PORTAINER] Importing images to k3d cluster..."
-    docker pull rancher/mirrored-pause:3.6 2>/dev/null || true
-    docker pull rancher/mirrored-coredns-coredns:1.12.0 2>/dev/null || true
-    k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>/dev/null || true
+    if [ "${DRY_RUN:-}" != "1" ]; then
+      echo "[PORTAINER] Importing images to k3d cluster..."
+      . "$ROOT_DIR/scripts/lib.sh"; prefetch_image rancher/mirrored-pause:3.6 || true; prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
+      k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>/dev/null || true
+    else
+      echo "[DRY-RUN][PORTAINER] 跳过 k3d 镜像导入"
+    fi
   fi
 
   # 等待 CoreDNS 就绪（如果是 k3d）
   if [ "$provider" = "k3d" ]; then
-    echo "[PORTAINER] Waiting for CoreDNS to be ready..."
-    kubectl --context "$ctx" wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+    if [ "${DRY_RUN:-}" != "1" ]; then
+      echo "[PORTAINER] Waiting for CoreDNS to be ready..."
+      kubectl --context "$ctx" wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+    else
+      echo "[DRY-RUN][PORTAINER] 跳过等待 CoreDNS"
+    fi
   fi
 
-  # 使用 Edge Agent 注册脚本
-  "$ROOT_DIR"/scripts/register_edge_agent.sh "$name" "$provider"
+  # 如果 Edge Agent 已在 Running，则跳过注册
+  if kubectl --context "$ctx" -n portainer-edge get pod -l app=portainer-edge-agent -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q '^Running$'; then
+    echo "[EDGE] agent already Running, skip registration"
+  else
+    "$ROOT_DIR"/scripts/register_edge_agent.sh "$name" "$provider"
+  fi
 fi
 
 # 注册到 ArgoCD（基于 reg_argocd 参数）
 if [ "$reg_argocd" = 1 ]; then
   echo "[INFO] Registering cluster to ArgoCD..."
-  "$ROOT_DIR"/scripts/argocd_register.sh register "$name" "$provider" || echo "[WARNING] Failed to register to ArgoCD"
+  if [ "${DRY_RUN:-}" != "1" ]; then
+    if kubectl --context k3d-devops -n argocd get secret "cluster-${name}" >/dev/null 2>&1; then
+      echo "[ARGOCD] secret cluster-${name} exists, skip register"
+    else
+      "$ROOT_DIR"/scripts/argocd_register.sh register "$name" "$provider" || echo "[WARNING] Failed to register to ArgoCD"
+    fi
+  else
+    echo "[DRY-RUN][ARGOCD] 跳过集群注册"
+  fi
 
   # 同步 ApplicationSet（自动为新环境部署 whoami）
   echo "[INFO] Syncing ApplicationSet for whoami..."
-  "$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
+  # 轻量化：同步 ApplicationSet 影响 devops，一次即可；这里若 devops 就绪则同步
+  if [ "${DRY_RUN:-}" != "1" ]; then
+    if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
+      "$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
+    else
+      echo "[ARGOCD] devops not ready, skip appset sync"
+    fi
+  else
+    echo "[DRY-RUN][ARGOCD] 跳过 ApplicationSet 同步"
+  fi
 else
   echo "[INFO] Skipping ArgoCD registration (--no-register-argocd specified)"
 fi

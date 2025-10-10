@@ -5,13 +5,24 @@ IFS=$'\n\t'
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 main() {
+    if [ "${DRY_RUN:-}" = "1" ]; then
+        echo "[DRY-RUN][BOOTSTRAP] 将执行如下步骤:"
+        echo "  1) 创建共享网络 k3d-shared"
+        echo "  2) 准备 portainer_secrets 卷并写入管理员密码文件"
+        echo "  3) 预热关键镜像 (并行+重试)"
+        echo "  4) docker compose 启动 Portainer + HAProxy"
+        echo "  5) 等待 Portainer 就绪并添加本地 Docker endpoint"
+        echo "  6) 创建 devops 集群并安装/配置 ArgoCD (NodePort)"
+        echo "  7) 配置外部 Git 并注册到 ArgoCD"
+        echo "  8) 打印访问入口"
+        exit 0
+    fi
 	# Load configuration
 	if [ -f "$ROOT_DIR/config/clusters.env" ]; then
 		. "$ROOT_DIR/config/clusters.env"
 		# Export versions for docker-compose
 		export PORTAINER_VERSION="${PORTAINER_VERSION:-2.33.2-alpine}"
 		export HAPROXY_VERSION="${HAPROXY_VERSION:-3.2.6-alpine3.22}"
-		export GITEA_VERSION="${GITEA_VERSION:-1.22-rootless}"
 	fi
 	: "${HAPROXY_HOST:=192.168.51.30}"
 	: "${HAPROXY_HTTP_PORT:=80}"
@@ -38,8 +49,27 @@ main() {
 	docker run --rm -v portainer_secrets:/run/secrets alpine:3.20 \
 		sh -lc "umask 077; printf '%s' '$PORTAINER_ADMIN_PASSWORD' > /run/secrets/portainer_admin"
 
-	echo "[BOOTSTRAP] Start infrastructure (Portainer + HAProxy + Gitea)"
-	docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d
+	echo "[BOOTSTRAP] Start infrastructure (Portainer + HAProxy)"
+	docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d --remove-orphans
+
+	# 预热关键镜像（并行+重试，跳过本地已有）
+	echo "[BOOTSTRAP] Preheating core images..."
+	: "${ARGOCD_VERSION:=v3.1.8}"
+	imgs=(
+	  "library/traefik:v2.10"
+	  "traefik/whoami:v1.10.2"
+	  "portainer/agent:latest"
+	  "quay.io/argoproj/argocd:${ARGOCD_VERSION}"
+	)
+	for img in "${imgs[@]}"; do
+	  (
+	    . "$ROOT_DIR/scripts/lib.sh"
+	    if has_image "$img"; then echo "  [=] cached: $img"; exit 0; fi
+	    if prefetch_image "$img"; then echo "  [+] $img"; exit 0; fi
+	    echo "  [!] failed prefetch: $img" >&2
+	  ) &
+	done
+	wait || true
 
 	echo "[BOOTSTRAP] Waiting for Portainer to be ready..."
 	: "${PORTAINER_HTTP_PORT:=9000}"
@@ -62,10 +92,10 @@ main() {
 	echo "[BOOTSTRAP] Setup devops management cluster with ArgoCD"
 	"$ROOT_DIR/scripts/setup_devops.sh"
 
-	echo "[BOOTSTRAP] Initialize Gitea and repositories"
+	echo "[BOOTSTRAP] Validate external Git configuration"
 	"$ROOT_DIR/scripts/setup_git.sh"
 
-	echo "[BOOTSTRAP] Register Gitea repository to ArgoCD"
+	echo "[BOOTSTRAP] Register external Git repository to ArgoCD"
 	"$ROOT_DIR/scripts/register_git_to_argocd.sh" devops
 
 	echo "[READY]"
@@ -81,14 +111,9 @@ main() {
 	if [ "${HAPROXY_HTTP_PORT}" != "80" ]; then
 		argocd_url="${argocd_url}:${HAPROXY_HTTP_PORT}"
 	fi
-	gitea_url="http://git.devops.${BASE_DOMAIN}"
-	if [ "${HAPROXY_HTTP_PORT}" != "80" ]; then
-		gitea_url="${gitea_url}:${HAPROXY_HTTP_PORT}"
-	fi
 	echo "- Portainer: ${portainer_url} (admin/$PORTAINER_ADMIN_PASSWORD)"
 	echo "- HAProxy:   ${haproxy_url}/stat"
 	echo "- ArgoCD:    ${argocd_url}"
-	echo "- Gitea:     ${gitea_url} (gitea/gitea123456)"
 }
 
 main "$@"

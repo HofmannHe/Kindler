@@ -36,8 +36,10 @@ register_cluster_kubectl() {
     api_server="https://${container_ip}:6443"
     echo "[INFO] Using container IP for API server: $api_server"
   else
-    # kind: 使用 kubeconfig 中的地址
+    # kind: 使用 kubeconfig 中的地址，若为 127.0.0.1 或 0.0.0.0 则改为 host.k3d.internal
     api_server=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.server}")
+    api_server=${api_server/127.0.0.1/host.k3d.internal}
+    api_server=${api_server/0.0.0.0/host.k3d.internal}
   fi
 
   # 获取 CA 证书
@@ -112,7 +114,11 @@ EOF
 
   # 创建 ArgoCD cluster secret
   echo "[INFO] Creating ArgoCD cluster secret..."
-  cat <<EOF | kubectl --context k3d-devops apply -f -
+  insecure=false
+  if [[ "$provider" != "k3d" ]]; then insecure=true; fi
+
+  if [[ "$provider" == "k3d" ]]; then
+    cat <<EOF | kubectl --context k3d-devops apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
@@ -128,11 +134,33 @@ stringData:
     {
       "bearerToken": "${token}",
       "tlsClientConfig": {
-        "insecure": false,
+        "insecure": ${insecure},
         "caData": "${ca_data}"
       }
     }
 EOF
+  else
+    cat <<EOF | kubectl --context k3d-devops apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-${cluster_name}
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: ${cluster_name}
+  server: ${api_server}
+  config: |
+    {
+      "bearerToken": "${token}",
+      "tlsClientConfig": {
+        "insecure": true
+      }
+    }
+EOF
+  fi
 
   echo "[SUCCESS] Cluster ${cluster_name} registered to ArgoCD"
   echo "[INFO] Verify with: kubectl --context k3d-devops get secrets -n argocd -l argocd.argoproj.io/secret-type=cluster"

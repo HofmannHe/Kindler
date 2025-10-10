@@ -89,6 +89,9 @@ create_kind() {
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ${name}
+networking:
+  # 关键：API 绑定 0.0.0.0，便于 devops(k3d) 中的 ArgoCD 通过 host.k3d.internal:<port> 访问
+  apiServerAddress: "0.0.0.0"
 nodes:
 - role: control-plane
   extraPortMappings:
@@ -104,6 +107,9 @@ YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ${name}
+networking:
+  # 关键：API 绑定 0.0.0.0，便于 devops(k3d) 中的 ArgoCD 通过 host.k3d.internal:<port> 访问
+  apiServerAddress: "0.0.0.0"
 nodes:
 - role: control-plane
 YAML

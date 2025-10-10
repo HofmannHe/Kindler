@@ -1,6 +1,6 @@
 # GitOps 工作流
 
-本文档说明 Kindler 中的 GitOps 工作流程，基于 Gitea + ArgoCD + ApplicationSet 实现自动化部署。
+本文档说明 Kindler 中的 GitOps 工作流程，基于外部 Git 服务（示例：Gitea） + ArgoCD + ApplicationSet 实现自动化部署。
 
 ## 架构概览
 
@@ -16,7 +16,7 @@
 │    │    └─> master    → prod 环境                          │
 │    │                                                         │
 │    ↓                                                         │
-│  Gitea (Git 服务)                                           │
+│  外部 Git 服务 (示例：Gitea)                                │
 │    │                                                         │
 │    ↓                                                         │
 │  ArgoCD (同步引擎)                                          │
@@ -32,11 +32,11 @@
 
 ## 核心组件
 
-### 1. Gitea
-- **位置**: devops 集群
-- **访问**: http://git.devops.192.168.51.30.sslip.io
+### 1. 外部 Git 服务（以 Gitea 为例）
+- **部署位置**: 外部服务（可复用企业 Git 平台，或自建 Gitea 等）
+- **配置来源**: `config/git.env`（由 `config/git.env.example` 复制并填写）
 - **用途**: 托管应用代码和配置
-- **账户**: gitea / (secrets.env 中的密码)
+- **账号信息**: `config/git.env` / `config/secrets.env`
 
 ### 2. ArgoCD
 - **位置**: devops 集群
@@ -237,7 +237,7 @@ template:
     name: 'whoami-{{.env}}'
   spec:
     source:
-      repoURL: http://git.devops.192.168.51.30.sslip.io/gitea/whoami.git
+      repoURL: https://git.example.com/demo/whoami.git
       path: deploy
       targetRevision: '{{.branch}}'
       helm:

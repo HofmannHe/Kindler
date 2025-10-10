@@ -15,6 +15,7 @@
 - 🛠️ **Flexible Backends**: Support both kind and k3d Kubernetes distributions
 - 📦 **Automated Registration**: Auto-register clusters to Portainer and ArgoCD
 - 🔒 **Production-ready**: TLS support with automatic redirects
+- 🔄 **Unified Ingress (NodePort)**: Always route via NodePort for both kind and k3d, so apps don’t care about the distro
 
 ## Architecture
 
@@ -29,12 +30,12 @@ graph TB
 
     subgraph Gateway["HAProxy Gateway (haproxy-gw)"]
         HAP[Unified Entry<br/>80/443]
-        ROUTES["Routing Rules:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• git.devops.*<br/>• whoami.&lt;env&gt;.*"]
+        ROUTES["Routing Rules:<br/>• portainer.devops.*<br/>• argocd.devops.*<br/>• whoami.&lt;env&gt;.*"]
     end
 
     subgraph Management["Management Layer (devops cluster)"]
         PORT[Portainer CE<br/>Container/Cluster Mgmt]
-        GITEA[Gitea<br/>Git Service]
+    GITSVC[External Git<br/>Service]
         ARGOCD[ArgoCD<br/>GitOps Engine]
         APPSET[ApplicationSet<br/>Dynamic App Generation]
     end
@@ -47,17 +48,17 @@ graph TB
     end
 
     USER -->|Access Services| HAP
-    DEV -->|Push Code| GITEA
+    DEV -->|Push Code| GITSVC
 
     HAP --> ROUTES
     ROUTES -.->|Management UI| PORT
     ROUTES -.->|GitOps UI| ARGOCD
-    ROUTES -.->|Git Service| GITEA
+    ROUTES -.->|Git Service| GITSVC
     ROUTES -.->|App Access| Business
 
     PORT -->|Edge Agent<br/>Monitor/Deploy| Business
 
-    GITEA -->|Watch Changes| ARGOCD
+    GITSVC -->|Watch Changes| ARGOCD
     ARGOCD --> APPSET
     APPSET -->|Generate Application| ARGOCD
     ARGOCD -->|kubectl Deploy| Business
@@ -69,15 +70,15 @@ graph TB
 
     class HAP,ROUTES gateway
     class PORT management
-    class GITEA,ARGOCD,APPSET gitops
+    class GITSVC,ARGOCD,APPSET gitops
     class ENV1,ENV2,ENV3,ENV4 business
 ```
 
 > **Description**:
 > - **HAProxy**: Unified gateway for domain-based routing
-> - **devops cluster**: Runs infrastructure services (Portainer, Gitea, ArgoCD)
+> - **devops cluster**: Runs infrastructure services (Portainer, ArgoCD)
 > - **Business clusters**: Defined in `config/environments.csv`, auto-registered to Portainer and ArgoCD
-> - **GitOps flow**: Code push → Gitea → ArgoCD watches → ApplicationSet generates → Auto-deploy
+> - **GitOps flow**: Code push → External Git service → ArgoCD watches → ApplicationSet generates → Auto-deploy
 
 ### Request Flow
 
@@ -127,6 +128,8 @@ sequenceDiagram
 2. **Configure environment** (optional, defaults are provided)
    ```bash
    # Edit configuration files as needed
+   cp config/git.env.example config/git.env  # External Git settings (keep local only)
+   nano config/git.env          # Fill Git repository URL & credentials
    nano config/clusters.env    # HAProxy host, base domain, versions
    nano config/secrets.env     # Admin passwords
    nano config/environments.csv # Cluster definitions
@@ -142,43 +145,66 @@ sequenceDiagram
    - Create `devops` management cluster
    - Deploy ArgoCD
 
-4. **Access management interfaces**
+4. **Create everything (3 kind + 3 k3d) with timing and health checks**
+   ```bash
+   # Optional full clean first
+   ./scripts/clean.sh
+
+   # One-click bring-up (includes bootstrap)
+   ./scripts/full_cycle.sh --concurrency 3
+   ```
+
+5. **Access management interfaces**
    - Portainer: `https://<HAPROXY_HOST>` (self-signed cert, defaults to `https://192.168.51.30`)
    - ArgoCD: `http://<HAPROXY_HOST>` (defaults to `http://192.168.51.30`)
      - Username: `admin`
      - Password: See `config/secrets.env`
 
-### Create Business Clusters
+### Create/Delete Business Clusters (manually)
 
 Create clusters defined in `config/environments.csv`:
 
 ```bash
-# Create a single environment
+# Create a single environment (CSV-driven defaults)
 ./scripts/create_env.sh -n dev
 
-# Create multiple environments from CSV
-for env in dev uat prod; do
-  ./scripts/create_env.sh -n $env
-done
+# Create multiple environments (from CSV)
+for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n "$env"; done
+
+# Stop/Start
+./scripts/stop_env.sh -n dev
+./scripts/start_env.sh -n dev
+
+# Permanently delete (also prunes CSV/Portainer/ArgoCD/HAProxy)
+./scripts/delete_env.sh -n dev
 ```
 
-The script will automatically:
+The create script automatically:
 - ✅ Create the Kubernetes cluster (kind/k3d based on CSV config)
 - ✅ Register to Portainer via Edge Agent
 - ✅ Register to ArgoCD with kubectl context
 - ✅ Configure HAProxy domain routing (if enabled in CSV)
 
-### Access Your Clusters
+### Access Your Clusters & Apps
 
 Access points depend on your configuration in `config/clusters.env` and `config/environments.csv`:
 
-- **Portainer**: `https://portainer.devops.$BASE_DOMAIN` (default base domain: `192.168.51.30.sslip.io` → `https://portainer.devops.192.168.51.30.sslip.io`)
-- **ArgoCD**: `http://argocd.devops.$BASE_DOMAIN`
-- **Business Apps** (via domain routing, default base domain: `local`):
+- Management
+  - Portainer: `https://portainer.devops.$BASE_DOMAIN` (e.g. https://portainer.devops.192.168.51.30.sslip.io)
+    - Username: `admin`, Password: `config/secrets.env: PORTAINER_ADMIN_PASSWORD`
+  - ArgoCD: `http://argocd.devops.$BASE_DOMAIN` (e.g. http://argocd.devops.192.168.51.30.sslip.io)
+    - Username: `admin`, Password: `config/secrets.env: ARGOCD_ADMIN_PASSWORD`
+  - HAProxy stats: `http://haproxy.devops.$BASE_DOMAIN/stat`
+
+- whoami (via HAProxy Host-based routing, NodePort 30080)
   ```bash
-  # Example with default configuration (HAProxy HTTP port = 80)
-  curl -H 'Host: dev.local' http://192.168.51.30
-  curl -H 'Host: uat.local' http://192.168.51.30
+  BASE=192.168.51.30
+  curl -I -H 'Host: whoami.dev.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.uat.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.prod.192.168.51.30.sslip.io' http://$BASE
+  curl -I -H 'Host: whoami.devk3d.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.uatk3d.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.prodk3d.192.168.51.30.sslip.io' http://$BASE
   ```
 
 ## GitOps Workflow
@@ -186,44 +212,44 @@ Access points depend on your configuration in `config/clusters.env` and `config/
 Kindler includes a complete GitOps workflow for automated code-to-deployment.
 
 ### Core Components
-- **Gitea**: Git service hosting application code (Access: http://git.devops.192.168.51.30.sslip.io)
+- **External Git service**: Hosts application repositories (configure via `config/git.env`)
 - **ArgoCD**: GitOps engine monitoring Git changes and auto-deploying (Access: http://argocd.devops.192.168.51.30.sslip.io)
 - **ApplicationSet**: Dynamically generates ArgoCD Applications, driven by `config/environments.csv`
 
 ### Branch to Environment Mapping
 
-| Git Branch | Auto-deploys to | Domain Example |
-|------------|----------------|----------------|
-| **develop** | dev, dev-k3d | whoami.dev.192.168.51.30.sslip.io |
-| **release** | uat, uat-k3d | whoami.uat.192.168.51.30.sslip.io |
-| **master** | prod, prod-k3d | whoami.prod.192.168.51.30.sslip.io |
+- Branch name equals environment name. ArgoCD syncs branch=<env> to cluster=<env>.
+- Examples: `dev`, `uat`, `prod`, `dev-k3d`, `uat-k3d`, `prod-k3d`.
 
 ### Quick Experience
 
 ```bash
-# 1. Access Gitea to create/modify applications
-open http://git.devops.192.168.51.30.sslip.io
+# 1. Ensure config/git.env points to your external repository
 
-# 2. Push code to develop branch
+# 2. Push code to the environment branch (e.g. dev/uat/prod/...)
 cd /path/to/your/app
 git push origin develop
 
-# 3. ArgoCD auto-detects and deploys to dev environment
+# 3. ArgoCD auto-detects and deploys to the matching environment
 # 4. Monitor deployment progress in ArgoCD UI
 open http://argocd.devops.192.168.51.30.sslip.io
 
 # 5. Verify deployment
-curl http://whoami.dev.192.168.51.30.sslip.io
+curl -I -H 'Host: whoami.dev.192.168.51.30.sslip.io' http://192.168.51.30
 ```
 
 ### whoami Demo Application
 
-bootstrap.sh automatically creates the `whoami` demo repository to demonstrate GitOps workflow:
+Copy the Helm chart under `examples/whoami` into your external repository to demonstrate the workflow:
 
-- **Repository**: http://git.devops.192.168.51.30.sslip.io/gitea/whoami
-- **Branches**: develop, release, master
+- **Repository**: configurable via `config/git.env`
+- **Branches**: env-named branches (dev/uat/prod/dev-k3d/uat-k3d/prod-k3d)
 - **Type**: Helm Chart (deploy/ directory)
 - **Config Differences**: Only domain differs, all other configs identical (minimal difference principle)
+
+Note:
+- The `devops` management cluster does not deploy whoami; only business clusters from `config/environments.csv` are targeted.
+- Environments are CSV-driven. Do not hardcode names in manifests/scripts; use `scripts/sync_applicationset.sh` to regenerate.
 
 **Access Examples**:
 ```bash
@@ -250,6 +276,7 @@ kindler/
 ├── config/            # Configuration files
 │   ├── environments.csv    # Environment definitions
 │   ├── clusters.env        # Cluster image versions
+│   ├── git.env.example     # External Git config template (copy to git.env)
 │   └── secrets.env         # Passwords and tokens
 ├── scripts/           # Management scripts
 │   ├── bootstrap.sh        # Initialize infrastructure
@@ -299,12 +326,12 @@ K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
 
 ### Port Configuration
 
-Default ports are configured in HAProxy. Modify `compose/haproxy/haproxy.cfg` if needed:
+Default ports are configured through HAProxy. Override via `HAPROXY_HTTP_PORT` / `HAPROXY_HTTPS_PORT` if required:
 
-- Portainer HTTPS: `23343` (default)
-- Portainer HTTP: `23380` (redirects to HTTPS)
-- ArgoCD: `23800` (default)
-- Cluster Routes: `23080` (default)
+- Portainer HTTPS: exposed at HAProxy HTTPS port (default `443`)
+- Portainer HTTP: exposed at HAProxy HTTP port (default `80`, auto-redirects to HTTPS)
+- ArgoCD: exposed at HAProxy HTTP port (`80` by default)
+- Business applications: routed via HAProxy HTTP port with domain-based routing
 
 ### Domain Configuration
 
@@ -396,7 +423,7 @@ HAPROXY_HOST=192.168.51.30  # Gateway entry point
 | ArgoCD | 23800 | HTTP | GitOps interface | Yes (haproxy.cfg) |
 | Cluster Routes | 23080 | HTTP | Domain-based routing | Yes (haproxy.cfg) |
 
-> **Note**: All ports can be customized by editing `compose/haproxy/haproxy.cfg` and restarting HAProxy.
+> **Note**: All ports can be customized by editing `compose/infrastructure/haproxy.cfg` and restarting HAProxy.
 
 ## Verification
 
@@ -561,7 +588,7 @@ curl http://prod.local
 Each environment gets automatic HAProxy configuration:
 
 ```haproxy
-# Frontend ACL (in compose/haproxy/haproxy.cfg)
+# Frontend ACL (in compose/infrastructure/haproxy.cfg)
 frontend fe_http
   bind *:80
 

@@ -25,7 +25,11 @@ echo "- HAPROXY_HOST: $HAPROXY_HOST" >>"$report"
 echo "- BASE_DOMAIN: $BASE_DOMAIN" >>"$report"
 
 echo "\n## Containers" >>"$report"
-docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | sed -n '1,30p' >>"$report" || true
+if [ "${DRY_RUN:-}" = "1" ]; then
+  echo "(dry-run) skipped docker ps" >>"$report"
+else
+  docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | sed -n '1,30p' >>"$report" || true
+fi
 
 echo "\n## Curl" >>"$report"
 portainer_http_url="http://$HAPROXY_HOST"
@@ -41,19 +45,32 @@ if [ "$HAPROXY_HTTP_PORT" != "80" ]; then
 	service_http_url="${service_http_url}:$HAPROXY_HTTP_PORT"
 fi
 
-echo "\n- Portainer HTTP (${HAPROXY_HTTP_PORT})" >>"$report"
-{ curl -sI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
-echo "\n- Portainer HTTPS (${HAPROXY_HTTPS_PORT})" >>"$report"
-{ curl -skI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_https_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
-echo "\n- Ingress Host ($host_fqdn via ${HAPROXY_HTTP_PORT})" >>"$report"
-{ curl -sI -H "Host: $host_fqdn" "$service_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+if [ "${DRY_RUN:-}" = "1" ]; then
+  echo "\n- Portainer HTTP (${HAPROXY_HTTP_PORT})" >>"$report"
+  echo "  (dry-run) skipped curl" >>"$report"
+  echo "\n- Portainer HTTPS (${HAPROXY_HTTPS_PORT})" >>"$report"
+  echo "  (dry-run) skipped curl" >>"$report"
+  echo "\n- Ingress Host ($host_fqdn via ${HAPROXY_HTTP_PORT})" >>"$report"
+  echo "  (dry-run) skipped curl" >>"$report"
+else
+  echo "\n- Portainer HTTP (${HAPROXY_HTTP_PORT})" >>"$report"
+  { curl -sI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+  echo "\n- Portainer HTTPS (${HAPROXY_HTTPS_PORT})" >>"$report"
+  { curl -skI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_https_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+  echo "\n- Ingress Host ($host_fqdn via ${HAPROXY_HTTP_PORT})" >>"$report"
+  { curl -sI -H "Host: $host_fqdn" "$service_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+fi
 
 echo "
 ## Portainer Endpoints" >>"$report"
-if jwt=$("$ROOT_DIR"/scripts/portainer.sh api-login 2>/dev/null); then
-	curl -skH "Authorization: Bearer $jwt" "${portainer_https_url}/api/endpoints" | (jq -r '.[] | "- \(.Id) \(.Name) type=\(.Type) url=\(.URL)"' 2>/dev/null || cat) >>"$report" || true
+if [ "${DRY_RUN:-}" = "1" ]; then
+  echo "(dry-run) skipped API calls" >>"$report"
 else
-	echo "- login failed" >>"$report"
+  if jwt=$("$ROOT_DIR"/scripts/portainer.sh api-login 2>/dev/null); then
+    curl -skH "Authorization: Bearer $jwt" "${portainer_https_url}/api/endpoints" | (jq -r '.[] | "- \(.Id) \(.Name) type=\(.Type) url=\(.URL)"' 2>/dev/null || cat) >>"$report" || true
+  else
+    echo "- login failed" >>"$report"
+  fi
 fi
 
 echo "\n---\n" >>"$report"

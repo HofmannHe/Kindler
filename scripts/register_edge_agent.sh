@@ -15,6 +15,16 @@ usage() {
 CLUSTER_NAME="$1"
 PROVIDER="$2"
 
+if [ "${DRY_RUN:-}" = "1" ]; then
+  echo "[DRY-RUN][EDGE] 计划为集群 ${CLUSTER_NAME}(${PROVIDER}) 执行 Edge Agent 注册:"
+  echo "  - 登录 Portainer 获取 JWT"
+  echo "  - 确认 Portainer 已连接到集群 Docker 网络"
+  echo "  - 调用 /api/endpoints 创建 Edge Environment"
+  echo "  - 使用 kubectl 应用 edge-agent.yaml (替换 EDGE_ID/EDGE_KEY)"
+  echo "  - 等待 Edge Agent Pod 进入 Running 状态"
+  exit 0
+fi
+
 # 加载密钥
 if [ -f "$ROOT_DIR/config/secrets.env" ]; then
 	. "$ROOT_DIR/config/secrets.env"
@@ -28,29 +38,47 @@ fi
 : "${PORTAINER_HTTP_PORT:=9000}"
 : "${PORTAINER_HTTPS_PORT:=9443}"
 : "${HAPROXY_HTTPS_PORT:=443}"
+# 优先使用容器直连（HTTP:9000），减少对 DNS/HAProxy 的依赖
 if [ -z "${PORTAINER_URL:-}" ]; then
-	if [ -n "${BASE_DOMAIN:-}" ]; then
-		if [ "${HAPROXY_HTTPS_PORT}" = "443" ]; then
-			PORTAINER_URL="https://portainer.devops.${BASE_DOMAIN}"
-		else
-			PORTAINER_URL="https://portainer.devops.${BASE_DOMAIN}:${HAPROXY_HTTPS_PORT}"
-		fi
-	elif [ -n "${HAPROXY_HOST:-}" ]; then
-		if [ "${HAPROXY_HTTPS_PORT}" = "443" ]; then
-			PORTAINER_URL="https://${HAPROXY_HOST}"
-		else
-			PORTAINER_URL="https://${HAPROXY_HOST}:${HAPROXY_HTTPS_PORT}"
-		fi
-	else
-		PORTAINER_URL="https://127.0.0.1:${PORTAINER_HTTPS_PORT}"
-	fi
+  # 优先取 compose 的 infrastructure 网络 IP，避免多网络拼接
+  PORTAINER_IP=$(docker inspect portainer-ce --format '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' 2>/dev/null || true)
+  if [ -z "$PORTAINER_IP" ]; then
+    # 回退：取第一个网络的 IP（通过 jq）
+    if command -v jq >/dev/null 2>&1; then
+      PORTAINER_IP=$(docker inspect portainer-ce 2>/dev/null | jq -r '.[0].NetworkSettings.Networks | to_entries[0].value.IPAddress // ""')
+    else
+      PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}')
+    fi
+  fi
+  if [ -n "$PORTAINER_IP" ]; then
+    PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
+  elif [ -n "${BASE_DOMAIN:-}" ]; then
+    if [ "${HAPROXY_HTTPS_PORT}" = "443" ]; then
+      PORTAINER_URL="https://portainer.devops.${BASE_DOMAIN}"
+    else
+      PORTAINER_URL="https://portainer.devops.${BASE_DOMAIN}:${HAPROXY_HTTPS_PORT}"
+    fi
+  elif [ -n "${HAPROXY_HOST:-}" ]; then
+    if [ "${HAPROXY_HTTPS_PORT}" = "443" ]; then
+      PORTAINER_URL="https://${HAPROXY_HOST}"
+    else
+      PORTAINER_URL="https://${HAPROXY_HOST}:${HAPROXY_HTTPS_PORT}"
+    fi
+  else
+    PORTAINER_URL="https://127.0.0.1:${PORTAINER_HTTPS_PORT}"
+  fi
 fi
 
 # 获取 JWT
-echo "[EDGE] Authenticating with Portainer..."
-JWT=$(curl -sk -X POST "$PORTAINER_URL/api/auth" \
-	-H "Content-Type: application/json" \
-	-d "{\"username\": \"admin\", \"password\": \"$PORTAINER_ADMIN_PASSWORD\"}" | jq -r '.jwt')
+echo "[EDGE] Authenticating with Portainer at $PORTAINER_URL..."
+j=; for i in 1 2 3 4 5; do
+  j=$(curl -sk -m 8 -X POST "$PORTAINER_URL/api/auth" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\": \"admin\", \"password\": \"$PORTAINER_ADMIN_PASSWORD\"}" | jq -r '.jwt' 2>/dev/null || true)
+  [ -n "$j" ] && [ "$j" != "null" ] && break
+  sleep $((i*2))
+done
+JWT="$j"
 
 if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
 	echo "[EDGE] ERROR: Failed to authenticate with Portainer" >&2
@@ -107,9 +135,20 @@ ENDPOINT_ID=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.Id')
 EDGE_KEY=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.EdgeKey')
 
 if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "null" ]; then
-	echo "[EDGE] ERROR: Failed to create Edge Environment" >&2
-	echo "$EDGE_ENV_RESPONSE" | jq '.' >&2
-	exit 1
+    # 处理名称已存在的幂等场景
+    if echo "$EDGE_ENV_RESPONSE" | grep -qi "Name is not unique"; then
+      echo "[EDGE] Edge Environment already exists: $EP_NAME (idempotent)"
+      # 查询已存在的 Endpoint ID
+      EXISTING_JSON=$(curl -sk -H "Authorization: Bearer $JWT" "$PORTAINER_URL/api/endpoints")
+      ENDPOINT_ID=$(echo "$EXISTING_JSON" | jq -r '.[] | select(.Name=="'$EP_NAME'") | .Id' | head -1)
+      if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "null" ]; then
+        echo "[EDGE] WARN: cannot resolve existing endpoint id for $EP_NAME, continue"
+      fi
+    else
+      echo "[EDGE] ERROR: Failed to create Edge Environment" >&2
+      echo "$EDGE_ENV_RESPONSE" | jq '.' >&2
+      exit 1
+    fi
 fi
 
 echo "[EDGE] Edge Environment created successfully"
@@ -128,19 +167,22 @@ sed -e "s/EDGE_ID_PLACEHOLDER/$ENDPOINT_ID/g" \
 	"$ROOT_DIR/manifests/portainer/edge-agent.yaml" |
 	kubectl --context "$CTX" apply -f -
 
-echo "[EDGE] Waiting for Edge Agent to start..."
-kubectl --context "$CTX" wait --for=condition=ready pod -l app=portainer-edge-agent -n portainer-edge --timeout=60s 2>/dev/null || true
+echo "[EDGE] Waiting for Edge Agent to be Running..."
+# wait up to ~180s for Running
+for i in $(seq 1 90); do
+  POD_STATUS=$(kubectl --context "$CTX" get pods -n portainer-edge -l app=portainer-edge-agent \
+    -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+  if [ "$POD_STATUS" = "Running" ]; then
+    break
+  fi
+  sleep 2
+done
+echo "[EDGE] Edge Agent Pod status: ${POD_STATUS:-Unknown}"
+echo "[EDGE] Edge Agent deployed"
 
-# 检查 Pod 状态
-POD_STATUS=$(kubectl --context "$CTX" get pods -n portainer-edge -l app=portainer-edge-agent -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-echo "[EDGE] Edge Agent Pod status: $POD_STATUS"
-
-if [ "$POD_STATUS" = "Running" ]; then
-	echo "[EDGE] ✅ Edge Agent deployed successfully"
-else
-	echo "[EDGE] ⚠️  Edge Agent Pod not Running yet, checking logs..."
-	kubectl --context "$CTX" logs -n portainer-edge -l app=portainer-edge-agent --tail=10 2>/dev/null || true
-fi
+# Generalized retry: preload image to cluster and retry if not Running
+. "$ROOT_DIR/scripts/lib.sh"
+ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 180 || true
 
 echo ""
 echo "[EDGE] Registration complete!"

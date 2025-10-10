@@ -70,18 +70,19 @@ add_acl() {
 	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
 
+
 add_backend() {
 	local tmp b_begin b_end ip detected_port
-	# try to resolve cluster node (kind/k3d) container IP to target NodePort
+	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
 	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
-		# kind cluster detected - use NodePort
+		# kind cluster detected - use NodePort on control-plane container IP
 		detected_port="$node_port"
-	elif ip=$(docker inspect "k3d-${name}-serverlb" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
-		# k3d cluster with shared network - use shared network IP + LoadBalancer port 80
-		detected_port=80
-	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-serverlb" 2>/dev/null); then
-		# k3d cluster (legacy mode) - use LoadBalancer port 80
-		detected_port=80
+	elif ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
+		# k3d cluster on shared network - use server-0 container IP + NodePort
+		detected_port="$node_port"
+	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
+		# k3d cluster (legacy/without shared network info) - use server-0 container IP + NodePort
+		detected_port="$node_port"
 	else
 		ip="127.0.0.1" # fallback (may not work for kind)
 		detected_port="$node_port"
@@ -131,19 +132,27 @@ reload() {
 
 case "$cmd" in
 add)
-	remove_acl || true
-	remove_backend || true
-	add_acl
-	add_backend
-	ensure_network
-	reload
-	echo "[haproxy] added route for $name (pattern: <service>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+	if [ "${DRY_RUN:-}" = "1" ]; then
+		echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+	else
+		remove_acl || true
+		remove_backend || true
+		add_acl
+		add_backend
+		ensure_network
+		reload
+		echo "[haproxy] added route for $name (pattern: <service>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+	fi
 	;;
 remove)
-	remove_acl
-	remove_backend
-	reload
-	echo "[haproxy] removed route for $name"
+	if [ "${DRY_RUN:-}" = "1" ]; then
+		echo "[DRY-RUN][haproxy] remove route for $name"
+	else
+		remove_acl
+		remove_backend
+		reload
+		echo "[haproxy] removed route for $name"
+	fi
 	;;
 *) usage ;;
 esac

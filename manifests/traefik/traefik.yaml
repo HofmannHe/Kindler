@@ -53,10 +53,13 @@ spec:
       containers:
         - name: traefik
           image: traefik:v2.10
+          imagePullPolicy: IfNotPresent
           args:
             - --providers.kubernetesIngress=true
             - --entrypoints.web.address=:80
+            - --api.insecure=true
             - --ping=true
+            - --ping.entryPoint=web
           ports:
             - name: web
               containerPort: 80
@@ -72,6 +75,13 @@ spec:
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 10
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik
+spec:
+  controller: traefik.io/ingress-controller
 ---
 apiVersion: v1
 kind: Service
