@@ -372,6 +372,33 @@ KIND_NODE_IMAGE=kindest/node:v1.31.12
 K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
 ```
 
+## 开发流程（Git Worktree）
+
+- 根目录仅承载稳定分支 `master`（或 `main`），用于实际部署与发布，保持产物稳定可预期。
+- 功能开发采用 Git worktree 模式，在本地的 `worktrees/` 目录（已加入 `.gitignore`）下为每个开发分支创建一个工作树，开发与部署相互隔离。
+
+快速上手
+```bash
+# 0) 准备本地目录（已被 .gitignore 忽略）
+mkdir -p worktrees
+
+# 1) 为功能分支创建并挂载工作树
+git worktree add worktrees/feature-x feature/x
+
+# 2) 在工作树中进行开发
+cd worktrees/feature-x
+# ... 常规开发/提交/推送 ...
+
+# 3) 完成后移除工作树
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # 可选，若分支已合并且不再需要
+```
+
+注意事项
+- CI、脚本与部署流程均不依赖 `worktrees/` 目录中的任何文件。
+- 根目录脚本与文档始终针对稳定的 `master/main` 分支。
+
 ### 端口配置
 
 **默认端口（推荐）**：

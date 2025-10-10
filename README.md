@@ -423,6 +423,33 @@ HAPROXY_HOST=192.168.51.30  # Gateway entry point
 | ArgoCD | 23800 | HTTP | GitOps interface | Yes (haproxy.cfg) |
 | Cluster Routes | 23080 | HTTP | Domain-based routing | Yes (haproxy.cfg) |
 
+## Development Workflow (Git Worktrees)
+
+- The repository root is reserved for the stable `master` (or `main`) branch to keep deployment artifacts clean and predictable.
+- Use Git worktrees for feature development under a local, ignored directory `worktrees/` (not tracked by Git).
+
+Quick usage
+```bash
+# 0) Prepare local directory (ignored by Git)
+mkdir -p worktrees
+
+# 1) Create and attach a worktree for a feature branch
+git worktree add worktrees/feature-x feature/x
+
+# 2) Develop inside the worktree
+cd worktrees/feature-x
+# ... edit/commit/push as usual ...
+
+# 3) Remove worktree when done
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # optional, if branch merged and no longer needed
+```
+
+Notes
+- CI, scripts, and deployment flows must not depend on any files inside `worktrees/`.
+- Root-level scripts and docs always target the stable `master/main`.
+
 > **Note**: All ports can be customized by editing `compose/infrastructure/haproxy.cfg` and restarting HAProxy.
 
 ## Verification
