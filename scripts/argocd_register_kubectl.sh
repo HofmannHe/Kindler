@@ -147,13 +147,13 @@ EOF
 apiVersion: v1
 kind: Secret
 metadata:
-  name: cluster-${cluster_name}
+  name: cluster-${eff}
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
 type: Opaque
 stringData:
-  name: ${cluster_name}
+  name: ${eff}
   server: ${api_server}
   config: |
     {
@@ -173,17 +173,20 @@ unregister_cluster_kubectl() {
   local cluster_name="$1"
   local provider="${2:-k3d}"
 
+  . "$ROOT_DIR/scripts/lib.sh"
+  local eff; eff="$(effective_name "$cluster_name")"
   local context_name
   if [[ "$provider" == "k3d" ]]; then
-    context_name="k3d-${cluster_name}"
+    context_name="k3d-${eff}"
   else
-    context_name="kind-${cluster_name}"
+    context_name="kind-${eff}"
   fi
 
   echo "[INFO] Unregistering cluster ${cluster_name} from ArgoCD..."
 
-  # 删除 ArgoCD cluster secret
-  kubectl --context k3d-devops delete secret "cluster-${cluster_name}" -n argocd --ignore-not-found=true
+  # 删除 ArgoCD cluster secret（兼容老名称和命名空间后缀名称）
+  kubectl --context k3d-devops delete secret "cluster-${cluster_name}" -n argocd --ignore-not-found=true || true
+  kubectl --context k3d-devops delete secret "cluster-${eff}" -n argocd --ignore-not-found=true || true
 
   # 删除集群中的 ServiceAccount 和 RBAC
   if kubectl config get-contexts "${context_name}" &>/dev/null; then

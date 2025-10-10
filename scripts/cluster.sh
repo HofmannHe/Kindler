@@ -57,8 +57,16 @@ create_k3d() {
   # 使用共享网络以支持 ArgoCD 跨集群连接
   local network_arg="--network k3d-shared"
 
+  # 在命名空间工作树下避免端口冲突：不映射 host 端口（通过 HAProxy+NodePort 访问）
+  local port_args
+  if [ -n "${KINDLER_NS:-}" ]; then
+    port_args=""
+  else
+    port_args="--port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
+  fi
+
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
-  run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
+  run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 ${port_args}"
   limit_node_resources k3d "$name"
 
   # 修正kubeconfig中的0.0.0.0地址为127.0.0.1
@@ -84,7 +92,8 @@ create_kind() {
   need_cmd kind || return 0
   local cfg
   cfg="$(mktemp)"
-  if [ -n "${http_port:-}" ] && [ -n "${https_port:-}" ]; then
+  # When KINDLER_NS is set, avoid host port mappings to prevent conflicts with master/dev
+  if [ -z "${KINDLER_NS:-}" ] && [ -n "${http_port:-}" ] && [ -n "${https_port:-}" ]; then
     cat >"$cfg" <<YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
