@@ -50,7 +50,7 @@
 - **外部 Git 服务**: 托管应用代码（在 `config/git.env` 中配置）
 - **ArgoCD**: 监听 Git 仓库变化，自动部署到集群
 - **ApplicationSet**: 从 `config/environments.csv` 动态生成 Applications
-- **分支映射**: develop→dev, release→uat, master→prod
+- **分支映射**: 分支名与环境名一一对应（如 `dev`、`uat`、`prod`、`dev-k3d` 等），ArgoCD 将分支 `<env>` 的代码同步到集群 `<env>`
 - **示例应用**: whoami (仅域名差异，遵循最小化差异原则)
 
 ### 网络拓扑
@@ -133,3 +133,32 @@
 - 当最小基准建立之后，要严格遵循最小变更原则，非必要不变更
 - 每次修订README等文档的时候需要同时修订中英文版本
 - devops集群不应该部署whoami服务，应该部署到其它业务集群上。另外注意这些集群名称包括域名不应存在硬编码，因为环境配置csv中的环境名称是可能增删改的，测试用例也需要覆盖环境名增删改
+
+## 开发模式（Git Flow + Git Worktree）
+
+- 目标：实现“部署与开发隔离”。项目根目录仅承载 `master`（或 `main`）稳定分支，供用户直接使用与部署；开发分支使用 `git worktree` 挂载到本地 `worktrees/` 目录下。
+- 目录规范：
+  - 在项目根目录创建 `worktrees/`（已加入 `.gitignore`），该目录不纳入版本控制。
+  - `worktrees/<branch-name>/` 对应一个开发分支的工作树。
+- 使用示例：
+  ```bash
+  # 准备本地工作树根目录（已在 .gitignore 中忽略）
+  mkdir -p worktrees
+
+  # 创建并挂载新特性分支（基于 master/main）
+  git worktree add worktrees/feature-x feature/x
+
+  # 切换到工作树开发
+  cd worktrees/feature-x
+  # 开发、提交、推送...
+
+  # 回到主仓部署目录（master/main），不受工作树改动影响
+  cd ../../  # 返回项目根目录
+
+  # 完成后移除工作树
+  git worktree remove worktrees/feature-x
+  git branch -D feature/x   # 如需删除分支
+  ```
+- 约束：
+  - 所有部署脚本、CI/测试不得依赖 `worktrees/` 内容；生产使用始终以根目录的 `master/main` 为准。
+  - 文档/脚本若需说明开发流程，统一指向 `git worktree` 方式；避免在根目录创建临时开发文件。
