@@ -8,11 +8,13 @@ register_cluster_kubectl() {
   local cluster_name="$1"
   local provider="${2:-k3d}"
 
+  . "$ROOT_DIR/scripts/lib.sh"
+  local eff; eff="$(effective_name "$cluster_name")"
   local context_name
   if [[ "$provider" == "k3d" ]]; then
-    context_name="k3d-${cluster_name}"
+    context_name="k3d-${eff}"
   else
-    context_name="kind-${cluster_name}"
+    context_name="kind-${eff}"
   fi
 
   echo "[INFO] Registering cluster ${context_name} to ArgoCD via kubectl..."
@@ -27,7 +29,7 @@ register_cluster_kubectl() {
   local api_server
   if [[ "$provider" == "k3d" ]]; then
     # k3d: 使用容器内网 IP（共享网络 k3d-shared）
-    local container_name="k3d-${cluster_name}-server-0"
+    local container_name="k3d-${eff}-server-0"
     local container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container_name" 2>/dev/null | head -1)
     if [[ -z "$container_ip" ]]; then
       echo "[ERROR] Failed to get container IP for $container_name"
@@ -118,17 +120,18 @@ EOF
   if [[ "$provider" != "k3d" ]]; then insecure=true; fi
 
   if [[ "$provider" == "k3d" ]]; then
-    cat <<EOF | kubectl --context k3d-devops apply -f -
+  # Secret name uses effective cluster name to avoid collisions
+  cat <<EOF | kubectl --context k3d-devops apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
-  name: cluster-${cluster_name}
+  name: cluster-${eff}
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
 type: Opaque
 stringData:
-  name: ${cluster_name}
+  name: ${eff}
   server: ${api_server}
   config: |
     {

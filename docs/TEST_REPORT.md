@@ -1708,11 +1708,16 @@ curl http://whoami.doctest.192.168.51.30.sslip.io
 # 404 page not found
 ```
 
-**已知问题**: 
-- ⚠️ ArgoCD 无法连接到业务集群（跨集群连接问题）
-- 错误: `dial tcp 127.0.0.1:38669: connect: connection refused`
+**历史问题（已修复）**:
+- 现象: ArgoCD 无法连接到业务集群（跨集群连接问题）
+- 错误: `dial tcp 127.0.0.1:<port>: connect: connection refused` 或证书 SAN 不匹配
 - 影响: whoami 应用无法自动部署
-- 状态: 已知问题，已在文档中说明
+- 修复: 
+  - kind 集群：ArgoCD Cluster Secret 使用 `https://host.k3d.internal:<port>` 并设置 `tlsClientConfig.insecure=true`（不附带 caData）
+  - k3d 集群：使用容器内网 IP（k3d-shared 网络）`https://<server-ip>:6443` 且保留 caData 严格校验
+  - 统一补充 IngressClass=traefik；whoami 镜像预热导入（pullPolicy=Never）
+  - 参考提交: 96014ae, 23af34b
+  - 现状: ArgoCD `Sync=Synced`，curl 验证 six whoami 域名均 200 OK（见文末最新验证）
 
 **路由验证**:
 - ✅ HAProxy 路由正常（返回 404 而非 "not found"）
@@ -3257,3 +3262,27 @@ gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (heal
   - ArgoCD: http://argocd.devops.192.168.51.30.sslip.io -> 200/302 (as configured)
   - Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io -> 200 OK
   - Portainer HTTP redirect: http://portainer.devops.192.168.51.30.sslip.io -> 301 Moved Permanently
+
+## Reconfigure Host Run @ 2025-10-10T16:45:03+08:00
+- host: 192.168.51.35, base_domain: 192.168.51.30.sslip.io
+- portainer-http (portainer.devops.192.168.51.30.sslip.io): DRY
+- argocd (argocd.devops.192.168.51.30.sslip.io): DRY
+- whoami-dev (whoami.dev.192.168.51.30.sslip.io): DRY
+- whoami-uat (whoami.uat.192.168.51.30.sslip.io): DRY
+- whoami-prod (whoami.prod.192.168.51.30.sslip.io): DRY
+- whoami-dev-k3d (whoami.devk3d.192.168.51.30.sslip.io): DRY
+- whoami-uat-k3d (whoami.uatk3d.192.168.51.30.sslip.io): DRY
+- whoami-prod-k3d (whoami.prodk3d.192.168.51.30.sslip.io): DRY
+- whoami-debug-k3d (whoami.debugk3d.192.168.51.30.sslip.io): DRY
+- whoami-test-final (whoami.testfinal.192.168.51.30.sslip.io): DRY
+- whoami-test-k3d-fixed (whoami.testk3dfixed.192.168.51.30.sslip.io): DRY
+
+## IP alias validation @ 2025-10-10T16:51:49+08:00
+- portainer.devops.192.168.51.35.sslip.io -> 301
+- argocd.devops.192.168.51.35.sslip.io -> 200
+- whoami.dev.192.168.51.35.sslip.io -> 404
+- whoami.uat.192.168.51.35.sslip.io -> 404
+- whoami.prod.192.168.51.35.sslip.io -> 404
+- whoami.devk3d.192.168.51.35.sslip.io -> 404
+- whoami.uatk3d.192.168.51.35.sslip.io -> 404
+- whoami.prodk3d.192.168.51.35.sslip.io -> 404

@@ -54,8 +54,8 @@ generate_applicationset() {
     [[ "$env" == "devops" ]] && continue
 
     local branch=$(get_branch_for_env "$env")
-    local label_env
-    label_env="$(env_label "$env")"
+    local label_env; label_env="$(host_label "$env")"
+    local cluster_name; cluster_name="$(effective_name "$env")"
 
     if [ $first -eq 1 ]; then
       first=0
@@ -67,7 +67,7 @@ generate_applicationset() {
     elements="${elements}      - env: ${env}
         hostEnv: ${label_env}
         branch: ${branch}
-        clusterName: ${env}"
+        clusterName: ${cluster_name}"
 
   done < <(grep -v '^[[:space:]]*$' "$CSV_FILE")
 
@@ -88,7 +88,7 @@ spec:
 ${elements}
   template:
     metadata:
-      name: 'whoami-{{.env}}'
+      name: 'whoami-{{.env}}{{env \"KINDLER_NS\"}}'
       labels:
         app: whoami
         env: '{{.env}}'
