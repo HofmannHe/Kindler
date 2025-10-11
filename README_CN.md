@@ -110,6 +110,12 @@ sequenceDiagram
 
 ## 快速开始
 
+> 必做三步（回退/重装后建议先执行）
+> 1) `./scripts/haproxy_sync.sh --prune`
+> 2) `./scripts/setup_devops.sh`
+> 3) `./scripts/sync_applicationset.sh`
+
+
 ### 前置要求
 
 - Docker Engine (20.10+)
@@ -371,6 +377,114 @@ dev-k3d,k3d,30080,19002,true,true,18091,18444
 KIND_NODE_IMAGE=kindest/node:v1.31.12
 K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
 ```
+
+## 开发流程（Git Worktree）
+
+- 根目录仅承载稳定分支 `master`（或 `main`），用于实际部署与发布，保持产物稳定可预期。
+- 功能开发采用 Git worktree 模式，在本地的 `worktrees/` 目录（已加入 `.gitignore`）下为每个开发分支创建一个工作树，开发与部署相互隔离。
+
+快速上手
+```bash
+# 0) 准备本地目录（已被 .gitignore 忽略）
+mkdir -p worktrees
+
+# 1) 为功能分支创建并挂载工作树
+git worktree add worktrees/feature-x feature/x
+
+# 2) 在工作树中进行开发
+cd worktrees/feature-x
+# ... 常规开发/提交/推送 ...
+
+# 3) 完成后移除工作树
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # 可选，若分支已合并且不再需要
+```
+
+注意事项
+- CI、脚本与部署流程均不依赖 `worktrees/` 目录中的任何文件。
+- 根目录脚本与文档始终针对稳定的 `master/main` 分支。
+
+## 用户配置指南
+
+### 更换主机 / 切换新的 IP
+
+方案 A — 使用 sslip.io（零配置 DNS，推荐）
+- 编辑 `config/clusters.env`：
+  - `HAPROXY_HOST=<新IP>`（例 `192.168.88.10`）
+  - `BASE_DOMAIN=<新IP>.sslip.io`（例 `192.168.88.10.sslip.io`）
+
+方案 B — 使用本地域名
+- 编辑 `config/clusters.env`：
+  - `HAPROXY_HOST=<新IP>`
+  - `BASE_DOMAIN=local`
+- 更新 `/etc/hosts`（或内网 DNS）：将 `portainer.devops.local`、`argocd.devops.local`、`whoami.<env>.local` 指向新 IP。
+
+方案 C — 一键脚本
+```bash
+# 为默认网卡临时增加别名并切换到 192.168.51.35
+# (ip 别名需要 root；如无权限可去掉 --add-alias)
+sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+```
+
+修改 `clusters.env` 后的最小操作（手动路径）
+```bash
+# 1) 同步 HAProxy 路由
+./scripts/haproxy_sync.sh --prune
+
+# 2) 更新 devops 集群的 ArgoCD Ingress（按 BASE_DOMAIN 重建）
+./scripts/setup_devops.sh
+
+# 3) 重新生成业务集群 ApplicationSet（更新 Ingress host）
+./scripts/sync_applicationset.sh
+
+# 4) 验证（以 sslip.io 为例）
+BASE=<新IP>
+curl -I -H "Host: portainer.devops.$BASE.sslip.io" http://$BASE   # 301
+curl -I -H "Host: argocd.devops.$BASE.sslip.io"  http://$BASE     # 200/302
+curl -I -H "Host: whoami.dev.$BASE.sslip.io"     http://$BASE     # 200
+```
+
+说明
+- 仅更换 IP/域名时，无需重建集群；HAProxy 与 Ingress host 均由 `BASE_DOMAIN` 推导，按上述脚本刷新即可。
+- 如外部端口也调整，请在 `config/clusters.env` 设置 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 并重启 compose：
+  ```bash
+  docker compose -f compose/infrastructure/docker-compose.yml down && \
+  docker compose -f compose/infrastructure/docker-compose.yml up -d
+  ```
+
+（可选）全量重拉起
+```bash
+./scripts/clean.sh
+./scripts/full_cycle.sh --concurrency 3
+```
+
+## 开发流程（Git Worktree）
+
+- 根目录仅承载稳定分支 `master`（或 `main`），用于实际部署与发布，保持产物稳定可预期。
+- 功能开发采用 Git worktree 模式，在本地的 `worktrees/` 目录（已加入 `.gitignore`）下为每个开发分支创建一个工作树，开发与部署相互隔离。
+
+快速上手
+```bash
+# 0) 准备本地目录（已被 .gitignore 忽略）
+mkdir -p worktrees
+
+# 1) 为功能分支创建并挂载工作树
+git worktree add worktrees/feature-x feature/x
+
+# 2) 在工作树中进行开发
+cd worktrees/feature-x
+# ... 常规开发/提交/推送 ...
+
+# 3) 完成后移除工作树
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # 可选，若分支已合并且不再需要
+```
+
+注意事项
+- CI、脚本与部署流程均不依赖 `worktrees/` 目录中的任何文件。
+- 根目录脚本与文档始终针对稳定的 `master/main` 分支。
 
 ### 端口配置
 

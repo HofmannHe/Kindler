@@ -110,6 +110,12 @@ sequenceDiagram
 
 ## Quick Start
 
+> Must-do Trilogy (after rollback/reinstall)
+> 1) `./scripts/haproxy_sync.sh --prune`
+> 2) `./scripts/setup_devops.sh`
+> 3) `./scripts/sync_applicationset.sh`
+
+
 ### Prerequisites
 
 - Docker Engine (20.10+)
@@ -422,6 +428,89 @@ HAPROXY_HOST=192.168.51.30  # Gateway entry point
 | Portainer HTTPS | 23343 | HTTPS | Management UI | Yes (haproxy.cfg) |
 | ArgoCD | 23800 | HTTP | GitOps interface | Yes (haproxy.cfg) |
 | Cluster Routes | 23080 | HTTP | Domain-based routing | Yes (haproxy.cfg) |
+
+## Development Workflow (Git Worktrees)
+
+- The repository root is reserved for the stable `master` (or `main`) branch to keep deployment artifacts clean and predictable.
+- Use Git worktrees for feature development under a local, ignored directory `worktrees/` (not tracked by Git).
+
+Quick usage
+```bash
+# 0) Prepare local directory (ignored by Git)
+mkdir -p worktrees
+
+# 1) Create and attach a worktree for a feature branch
+git worktree add worktrees/feature-x feature/x
+
+# 2) Develop inside the worktree
+cd worktrees/feature-x
+# ... edit/commit/push as usual ...
+
+# 3) Remove worktree when done
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # optional, if branch merged and no longer needed
+```
+
+Notes
+- CI, scripts, and deployment flows must not depend on any files inside `worktrees/`.
+- Root-level scripts and docs always target the stable `master/main`.
+
+## User Configuration Guide
+
+This project is designed to be portable across hosts. Below are common tasks when changing machines or network settings.
+
+### Change Host IP / Gateway Domain
+
+Option A — Use sslip.io (zero‑DNS)
+- Edit `config/clusters.env`:
+  - `HAPROXY_HOST=<new_host_ip>` (e.g. `192.168.88.10`)
+  - `BASE_DOMAIN=<new_host_ip>.sslip.io` (e.g. `192.168.88.10.sslip.io`)
+
+Option B — Local domain
+- Edit `config/clusters.env`:
+  - `HAPROXY_HOST=<new_host_ip>`
+  - `BASE_DOMAIN=local`
+- Update `/etc/hosts` (or LAN DNS): map `portainer.devops.local`, `argocd.devops.local`, and `whoami.<env>.local` to the new IP.
+
+Option C — One‑click script
+```bash
+# Add a temporary alias to your default NIC and reconfigure to 192.168.51.35
+# (ip alias requires root; omit --add-alias if not permitted)
+sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+```
+
+After editing `clusters.env`, refresh components
+```bash
+# 1) Refresh HAProxy routes
+./scripts/haproxy_sync.sh --prune
+
+# 2) Update devops ArgoCD Ingress
+./scripts/setup_devops.sh
+
+# 3) Regenerate ApplicationSet for business clusters
+./scripts/sync_applicationset.sh
+
+# 4) Verify (example for sslip.io)
+BASE=<new_host_ip>
+curl -I -H "Host: portainer.devops.$BASE.sslip.io" http://$BASE   # 301
+curl -I -H "Host: argocd.devops.$BASE.sslip.io"  http://$BASE     # 200/302
+curl -I -H "Host: whoami.dev.$BASE.sslip.io"     http://$BASE     # 200
+```
+
+Notes
+- Clusters do not need recreation for IP/domain changes; HAProxy and Ingress hosts derive from `BASE_DOMAIN`.
+- If external ports change, set `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` and restart compose:
+  ```bash
+  docker compose -f compose/infrastructure/docker-compose.yml down && \
+  docker compose -f compose/infrastructure/docker-compose.yml up -d
+  ```
+
+Full re-initialize (optional)
+```bash
+./scripts/clean.sh
+./scripts/full_cycle.sh --concurrency 3
+```
 
 > **Note**: All ports can be customized by editing `compose/infrastructure/haproxy.cfg` and restarting HAProxy.
 
