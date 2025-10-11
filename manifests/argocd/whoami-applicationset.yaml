@@ -34,18 +34,6 @@ spec:
         hostEnv: prodk3d
         branch: prod-k3d
         clusterName: prod-k3d
-      - env: debug-k3d
-        hostEnv: debugk3d
-        branch: debug-k3d
-        clusterName: debug-k3d
-      - env: test-final
-        hostEnv: testfinal
-        branch: test-final
-        clusterName: test-final
-      - env: test-k3d-fixed
-        hostEnv: testk3dfixed
-        branch: test-k3d-fixed
-        clusterName: test-k3d-fixed
   template:
     metadata:
       name: 'whoami-{{.env}}'

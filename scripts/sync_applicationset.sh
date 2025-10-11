@@ -53,6 +53,13 @@ generate_applicationset() {
     # 跳过 devops 环境（不部署 whoami）
     [[ "$env" == "devops" ]] && continue
 
+    # 严格模式：仅包含已在 ArgoCD 注册的集群（cluster-<env>）
+    if [ "${STRICT_MODE:-1}" = "1" ]; then
+      if ! kubectl --context k3d-devops -n argocd get secret "cluster-${env}" >/dev/null 2>&1; then
+        continue
+      fi
+    fi
+
     local branch=$(get_branch_for_env "$env")
     local label_env
     label_env="$(env_label "$env")"
@@ -140,6 +147,12 @@ apply_applicationset() {
 
   log "✓ ApplicationSet 已应用到 ArgoCD"
 }
+
+# 参数解析（默认严格模式，--no-strict 可关闭）
+STRICT_MODE=1
+for arg in "$@"; do
+  if [ "$arg" = "--no-strict" ]; then STRICT_MODE=0; fi
+done
 
 main() {
   generate_applicationset

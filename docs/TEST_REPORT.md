@@ -3257,3 +3257,45 @@ gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (heal
   - ArgoCD: http://argocd.devops.192.168.51.30.sslip.io -> 200/302 (as configured)
   - Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io -> 200 OK
   - Portainer HTTP redirect: http://portainer.devops.192.168.51.30.sslip.io -> 301 Moved Permanently
+
+---
+# Smoke Test @ 2025-10-11 09:03:26 UTC
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+
+## Actions Executed
+- haproxy_sync.sh --prune (prune stale routes)
+- setup_devops.sh (update be_argocd → 10.100.0.10:30800)
+- sync_applicationset.sh (branch = env)
+- argocd_register_kubectl.sh register <env> kind (dev/uat/prod; server=https://192.168.51.30:<port>)
+- Preloaded images: traefik:v2.10, traefik/whoami:v1.10.2 (kind+k3d)
+- Restarted pods: traefik, whoami (all envs)
+- haproxy_route.sh add <env> --node-port 30080 (dev/uat/prod/dev-k3d/uat-k3d/prod-k3d)
+
+## Curl Results
+- Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io → 200
+- Portainer HTTP:  http://portainer.devops.192.168.51.30.sslip.io → 301
+- HAProxy stats:  http://haproxy.devops.192.168.51.30.sslip.io/stat → 200
+- ArgoCD:         http://argocd.devops.192.168.51.30.sslip.io/ → 200
+- whoami.dev:     whoami.dev.192.168.51.30.sslip.io → 200
+- whoami.uat:     whoami.uat.192.168.51.30.sslip.io → 200
+- whoami.prod:    whoami.prod.192.168.51.30.sslip.io → 200
+- whoami.devk3d:  whoami.devk3d.192.168.51.30.sslip.io → 200
+- whoami.uatk3d:  whoami.uatk3d.192.168.51.30.sslip.io → 200
+- whoami.prodk3d: whoami.prodk3d.192.168.51.30.sslip.io → 200
+
+Note: Portainer endpoint health check via API was skipped due to admin password mismatch. Set PORTAINER_ADMIN_PASSWORD to the current admin password in config/secrets.env and re-run: ./scripts/portainer.sh api-login && curl -sk -H "Authorization: Bearer $(./scripts/portainer.sh api-login)" "$(./scripts/portainer.sh api-base)/api/endpoints"
+# Portainer Endpoints @ 2025-10-11 20:36:25
+- base: https://192.168.51.30
+- [1] dockerhost Type=1 Status=1 URL=unix:///var/run/docker.sock
+- [2] devops Type=7 Status=1 URL=10.100.0.4
+- [3] uat Type=7 Status=1 URL=172.19.0.5
+- [4] prod Type=7 Status=1 URL=172.19.0.5
+- [5] dev Type=7 Status=1 URL=172.19.0.5
+- [6] devk3d Type=7 Status=1 URL=10.100.0.4
+- [7] uatk3d Type=7 Status=1 URL=10.100.0.4
+- [8] prodk3d Type=7 Status=1 URL=10.100.0.4
+- [9] devk3dns Type=7 Status=1 URL=10.100.0.4
+- [10] uatk3dns Type=7 Status=1 URL=10.100.0.4
+- [11] prodk3dns Type=7 Status=1 URL=10.100.0.4
+

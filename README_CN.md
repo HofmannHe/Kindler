@@ -372,6 +372,114 @@ KIND_NODE_IMAGE=kindest/node:v1.31.12
 K3D_IMAGE=rancher/k3s:v1.31.5-k3s1
 ```
 
+## 开发流程（Git Worktree）
+
+- 根目录仅承载稳定分支 `master`（或 `main`），用于实际部署与发布，保持产物稳定可预期。
+- 功能开发采用 Git worktree 模式，在本地的 `worktrees/` 目录（已加入 `.gitignore`）下为每个开发分支创建一个工作树，开发与部署相互隔离。
+
+快速上手
+```bash
+# 0) 准备本地目录（已被 .gitignore 忽略）
+mkdir -p worktrees
+
+# 1) 为功能分支创建并挂载工作树
+git worktree add worktrees/feature-x feature/x
+
+# 2) 在工作树中进行开发
+cd worktrees/feature-x
+# ... 常规开发/提交/推送 ...
+
+# 3) 完成后移除工作树
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # 可选，若分支已合并且不再需要
+```
+
+注意事项
+- CI、脚本与部署流程均不依赖 `worktrees/` 目录中的任何文件。
+- 根目录脚本与文档始终针对稳定的 `master/main` 分支。
+
+## 用户配置指南
+
+### 更换主机 / 切换新的 IP
+
+方案 A — 使用 sslip.io（零配置 DNS，推荐）
+- 编辑 `config/clusters.env`：
+  - `HAPROXY_HOST=<新IP>`（例 `192.168.88.10`）
+  - `BASE_DOMAIN=<新IP>.sslip.io`（例 `192.168.88.10.sslip.io`）
+
+方案 B — 使用本地域名
+- 编辑 `config/clusters.env`：
+  - `HAPROXY_HOST=<新IP>`
+  - `BASE_DOMAIN=local`
+- 更新 `/etc/hosts`（或内网 DNS）：将 `portainer.devops.local`、`argocd.devops.local`、`whoami.<env>.local` 指向新 IP。
+
+方案 C — 一键脚本
+```bash
+# 为默认网卡临时增加别名并切换到 192.168.51.35
+# (ip 别名需要 root；如无权限可去掉 --add-alias)
+sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+```
+
+修改 `clusters.env` 后的最小操作（手动路径）
+```bash
+# 1) 同步 HAProxy 路由
+./scripts/haproxy_sync.sh --prune
+
+# 2) 更新 devops 集群的 ArgoCD Ingress（按 BASE_DOMAIN 重建）
+./scripts/setup_devops.sh
+
+# 3) 重新生成业务集群 ApplicationSet（更新 Ingress host）
+./scripts/sync_applicationset.sh
+
+# 4) 验证（以 sslip.io 为例）
+BASE=<新IP>
+curl -I -H "Host: portainer.devops.$BASE.sslip.io" http://$BASE   # 301
+curl -I -H "Host: argocd.devops.$BASE.sslip.io"  http://$BASE     # 200/302
+curl -I -H "Host: whoami.dev.$BASE.sslip.io"     http://$BASE     # 200
+```
+
+说明
+- 仅更换 IP/域名时，无需重建集群；HAProxy 与 Ingress host 均由 `BASE_DOMAIN` 推导，按上述脚本刷新即可。
+- 如外部端口也调整，请在 `config/clusters.env` 设置 `HAPROXY_HTTP_PORT`/`HAPROXY_HTTPS_PORT` 并重启 compose：
+  ```bash
+  docker compose -f compose/infrastructure/docker-compose.yml down && \
+  docker compose -f compose/infrastructure/docker-compose.yml up -d
+  ```
+
+（可选）全量重拉起
+```bash
+./scripts/clean.sh
+./scripts/full_cycle.sh --concurrency 3
+```
+
+## 开发流程（Git Worktree）
+
+- 根目录仅承载稳定分支 `master`（或 `main`），用于实际部署与发布，保持产物稳定可预期。
+- 功能开发采用 Git worktree 模式，在本地的 `worktrees/` 目录（已加入 `.gitignore`）下为每个开发分支创建一个工作树，开发与部署相互隔离。
+
+快速上手
+```bash
+# 0) 准备本地目录（已被 .gitignore 忽略）
+mkdir -p worktrees
+
+# 1) 为功能分支创建并挂载工作树
+git worktree add worktrees/feature-x feature/x
+
+# 2) 在工作树中进行开发
+cd worktrees/feature-x
+# ... 常规开发/提交/推送 ...
+
+# 3) 完成后移除工作树
+cd -
+git worktree remove worktrees/feature-x
+git branch -D feature/x   # 可选，若分支已合并且不再需要
+```
+
+注意事项
+- CI、脚本与部署流程均不依赖 `worktrees/` 目录中的任何文件。
+- 根目录脚本与文档始终针对稳定的 `master/main` 分支。
+
 ### 端口配置
 
 **默认端口（推荐）**：
@@ -751,6 +859,82 @@ agents: 2
 测试结果记录在 `docs/TEST_REPORT.md` 中。
 
 ## 故障排除
+
+### 回退/恢复后出现 404 或 503 的自愈流程
+
+场景：回退配置文件（如 haproxy.cfg）或重装基础组件后，ArgoCD/应用访问出现 404/503。
+
+推荐步骤（按顺序执行）：
+
+1) 清理并重建 HAProxy 动态路由（移除失效后端）
+   ```bash
+   ./scripts/haproxy_sync.sh --prune
+   ```
+
+2) 修复 devops 集群的 ArgoCD 回源与域名路由（会更新 haproxy 的 be_argocd 指向当前 devops 节点 IP:NodePort）
+   ```bash
+   ./scripts/setup_devops.sh
+   ```
+
+3) 重新生成并应用 ApplicationSet（分支名=环境名，确保 Ingress 按 host 生成）
+   ```bash
+   ./scripts/sync_applicationset.sh
+   ```
+
+4) 让 ArgoCD 能跨集群访问 kind（重要）
+   - 脚本已将 kind 的 API server 统一改写为 `https://$HAPROXY_HOST:<hostPort>` 的可达地址。
+   - 重新注册 kind 集群：
+     ```bash
+     ./scripts/argocd_register_kubectl.sh register dev kind
+     ./scripts/argocd_register_kubectl.sh register uat kind
+     ./scripts/argocd_register_kubectl.sh register prod kind
+     ```
+
+5) 预热镜像并重启关键 Pod（避免 ImagePullBackOff/ErrImageNeverPull）
+   - 为所有集群导入镜像（按需）：
+     ```bash
+     docker pull traefik:v2.10 traefik/whoami:v1.10.2
+     # kind：将镜像导入到 control-plane 的 containerd
+     docker save traefik:v2.10 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+     docker save traefik/whoami:v1.10.2 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+     # k3d：使用 k3d image import 导入到集群
+     k3d image import traefik:v2.10 -c dev-k3d
+     k3d image import traefik/whoami:v1.10.2 -c dev-k3d
+     ```
+   - 重启各集群的 traefik 和 whoami Pod：
+     ```bash
+     kubectl --context kind-dev -n traefik  delete pod -l app=traefik --force --grace-period=0
+     kubectl --context kind-dev -n default delete pod -l app.kubernetes.io/name=whoami --force --grace-period=0
+     # 其它 env 类似（uat/prod 以及 *-k3d）
+     ```
+
+6) 确保 HAProxy 后端指向正确 NodePort（统一 NodePort=30080）
+   ```bash
+   ./scripts/haproxy_route.sh add dev  --node-port 30080
+   ./scripts/haproxy_route.sh add uat  --node-port 30080
+   ./scripts/haproxy_route.sh add prod --node-port 30080
+   ./scripts/haproxy_route.sh add dev-k3d  --node-port 30080
+   ./scripts/haproxy_route.sh add uat-k3d  --node-port 30080
+   ./scripts/haproxy_route.sh add prod-k3d --node-port 30080
+   ```
+
+7) 验证（预期均为 200 或应用输出）
+   ```bash
+   BASE=192.168.51.30
+   curl -I https://portainer.devops.$BASE.sslip.io
+   curl -I http://argocd.devops.$BASE.sslip.io/
+   curl -I -H 'Host: whoami.dev.$BASE.sslip.io'     http://$BASE
+   curl -I -H 'Host: whoami.uat.$BASE.sslip.io'     http://$BASE
+   curl -I -H 'Host: whoami.prod.$BASE.sslip.io'    http://$BASE
+   curl -I -H 'Host: whoami.devk3d.$BASE.sslip.io'  http://$BASE
+   curl -I -H 'Host: whoami.uatk3d.$BASE.sslip.io'  http://$BASE
+   curl -I -H 'Host: whoami.prodk3d.$BASE.sslip.io' http://$BASE
+   ```
+
+常见原因：
+- 回退覆盖了 haproxy.cfg 中的动态 be_argocd/后端 IP → 需运行 `setup_devops.sh` 重写。
+- k3d/镜像拉取受限 → 需本地导入镜像并重启 Pod。
+- kind 的 API 通过 `host.k3d.internal` 不可解析 → 现已改为 `https://$HAPROXY_HOST:<port>`，请按第4步重新注册。
 
 ### Portainer Edge Agent 无法连接
 
