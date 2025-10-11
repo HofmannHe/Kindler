@@ -3283,3 +3283,5 @@ gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (heal
 - whoami.devk3d:  whoami.devk3d.192.168.51.30.sslip.io → 200
 - whoami.uatk3d:  whoami.uatk3d.192.168.51.30.sslip.io → 200
 - whoami.prodk3d: whoami.prodk3d.192.168.51.30.sslip.io → 200
+
+Note: Portainer endpoint health check via API was skipped due to admin password mismatch. Set PORTAINER_ADMIN_PASSWORD to the current admin password in config/secrets.env and re-run: ./scripts/portainer.sh api-login && curl -sk -H "Authorization: Bearer $(./scripts/portainer.sh api-login)" "$(./scripts/portainer.sh api-base)/api/endpoints"
