@@ -91,5 +91,5 @@ if [ $prune -eq 1 ]; then
 	done
 fi
 
-docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
-echo "[sync] done (reloaded once)"
+"$ROOT_DIR"/scripts/haproxy_render.sh >/dev/null 2>&1 || true
+echo "[sync] done (renderer applied)"
