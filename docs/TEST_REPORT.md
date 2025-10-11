@@ -3257,3 +3257,29 @@ gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 28 hours (heal
   - ArgoCD: http://argocd.devops.192.168.51.30.sslip.io -> 200/302 (as configured)
   - Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io -> 200 OK
   - Portainer HTTP redirect: http://portainer.devops.192.168.51.30.sslip.io -> 301 Moved Permanently
+
+---
+# Smoke Test @ 2025-10-11 09:03:26 UTC
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+
+## Actions Executed
+- haproxy_sync.sh --prune (prune stale routes)
+- setup_devops.sh (update be_argocd → 10.100.0.10:30800)
+- sync_applicationset.sh (branch = env)
+- argocd_register_kubectl.sh register <env> kind (dev/uat/prod; server=https://192.168.51.30:<port>)
+- Preloaded images: traefik:v2.10, traefik/whoami:v1.10.2 (kind+k3d)
+- Restarted pods: traefik, whoami (all envs)
+- haproxy_route.sh add <env> --node-port 30080 (dev/uat/prod/dev-k3d/uat-k3d/prod-k3d)
+
+## Curl Results
+- Portainer HTTPS: https://portainer.devops.192.168.51.30.sslip.io → 200
+- Portainer HTTP:  http://portainer.devops.192.168.51.30.sslip.io → 301
+- HAProxy stats:  http://haproxy.devops.192.168.51.30.sslip.io/stat → 200
+- ArgoCD:         http://argocd.devops.192.168.51.30.sslip.io/ → 200
+- whoami.dev:     whoami.dev.192.168.51.30.sslip.io → 200
+- whoami.uat:     whoami.uat.192.168.51.30.sslip.io → 200
+- whoami.prod:    whoami.prod.192.168.51.30.sslip.io → 200
+- whoami.devk3d:  whoami.devk3d.192.168.51.30.sslip.io → 200
+- whoami.uatk3d:  whoami.uatk3d.192.168.51.30.sslip.io → 200
+- whoami.prodk3d: whoami.prodk3d.192.168.51.30.sslip.io → 200

@@ -766,6 +766,77 @@ Run smoke tests for a cluster:
 Test results are logged to `docs/TEST_REPORT.md`.
 
 ## Troubleshooting
+### 404/503 after rollback or reinstall (self-heal)
+
+If you rolled back config (e.g., haproxy.cfg) or reinstalled components, you may see 404/503.
+
+Recommended sequence:
+
+1) Prune and resync HAProxy routes (remove stale backends)
+```bash
+./scripts/haproxy_sync.sh --prune
+```
+
+2) Fix devops ArgoCD backend + host routing (updates haproxy be_argocd to current devops Node IP:NodePort)
+```bash
+./scripts/setup_devops.sh
+```
+
+3) Regenerate and apply ApplicationSet (branch name = env name)
+```bash
+./scripts/sync_applicationset.sh
+```
+
+4) Make ArgoCD reach kind clusters (important)
+- The script now sets kind API server to `https://$HAPROXY_HOST:<hostPort>`
+- Re-register kind clusters:
+```bash
+./scripts/argocd_register_kubectl.sh register dev kind
+./scripts/argocd_register_kubectl.sh register uat kind
+./scripts/argocd_register_kubectl.sh register prod kind
+```
+
+5) Preload images and restart Pods (avoid ImagePullBackOff / ErrImageNeverPull)
+```bash
+docker pull traefik:v2.10 traefik/whoami:v1.10.2
+# kind (import into control-plane containerd)
+docker save traefik:v2.10 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+docker save traefik/whoami:v1.10.2 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+# k3d (cluster import)
+k3d image import traefik:v2.10 -c dev-k3d
+k3d image import traefik/whoami:v1.10.2 -c dev-k3d
+# restart pods
+after importing, delete pods in traefik and whoami namespaces to force restart
+```
+
+6) Ensure HAProxy backends use correct NodePort (unified 30080)
+```bash
+./scripts/haproxy_route.sh add dev  --node-port 30080
+./scripts/haproxy_route.sh add uat  --node-port 30080
+./scripts/haproxy_route.sh add prod --node-port 30080
+./scripts/haproxy_route.sh add dev-k3d  --node-port 30080
+./scripts/haproxy_route.sh add uat-k3d  --node-port 30080
+./scripts/haproxy_route.sh add prod-k3d --node-port 30080
+```
+
+7) Verify (expect 200 or app output)
+```bash
+BASE=192.168.51.30
+curl -I https://portainer.devops.$BASE.sslip.io
+curl -I http://argocd.devops.$BASE.sslip.io/
+curl -I -H 'Host: whoami.dev.$BASE.sslip.io'     http://$BASE
+curl -I -H 'Host: whoami.uat.$BASE.sslip.io'     http://$BASE
+curl -I -H 'Host: whoami.prod.$BASE.sslip.io'    http://$BASE
+curl -I -H 'Host: whoami.devk3d.$BASE.sslip.io'  http://$BASE
+curl -I -H 'Host: whoami.uatk3d.$BASE.sslip.io'  http://$BASE
+curl -I -H 'Host: whoami.prodk3d.$BASE.sslip.io' http://$BASE
+```
+
+Common causes:
+- Rolling back overwrote haproxy be_argocd/current backend IP
+- k3d image pulls blocked → import images locally and restart pods
+- kind API was using host.k3d.internal (unresolvable) → now uses `https://$HAPROXY_HOST:<port>`; re-register
+
 
 ### Portainer Edge Agent Not Connecting
 

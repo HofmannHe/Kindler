@@ -36,10 +36,24 @@ register_cluster_kubectl() {
     api_server="https://${container_ip}:6443"
     echo "[INFO] Using container IP for API server: $api_server"
   else
-    # kind: 使用 kubeconfig 中的地址，若为 127.0.0.1 或 0.0.0.0 则改为 host.k3d.internal
-    api_server=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.server}")
-    api_server=${api_server/127.0.0.1/host.k3d.internal}
-    api_server=${api_server/0.0.0.0/host.k3d.internal}
+    # kind: 直接使用宿主机可达的 0.0.0.0:<port> 发布端口，改写为 https://$HAPROXY_HOST:<port>
+    # 这样在 k3d(devops) 集群中的 ArgoCD Pod 也能访问到宿主机 IP 上的该端口
+    # 读取宿主机 IP（HAPROXY_HOST）
+    if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+    : "${HAPROXY_HOST:=127.0.0.1}"
+    # 解析 kind 控制面容器映射的 6443 宿主机端口
+    host_port=$(docker port "${cluster_name}-control-plane" 6443/tcp 2>/dev/null | awk -F: '/0.0.0.0/ {print $2; exit}')
+    if [ -z "$host_port" ]; then
+      # 回退：从 kubeconfig 读取 server，再尽量提取端口
+      api_server=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.server}")
+      host_port=$(printf '%s' "$api_server" | awk -F: '{print $3}')
+    fi
+    if [ -z "$host_port" ]; then
+      echo "[ERROR] cannot determine host port for kind API (cluster=$cluster_name)" >&2
+      return 1
+    fi
+    api_server="https://${HAPROXY_HOST}:${host_port}"
+    echo "[INFO] Using host API server for kind: $api_server"
   fi
 
   # 获取 CA 证书

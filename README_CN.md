@@ -860,6 +860,82 @@ agents: 2
 
 ## 故障排除
 
+### 回退/恢复后出现 404 或 503 的自愈流程
+
+场景：回退配置文件（如 haproxy.cfg）或重装基础组件后，ArgoCD/应用访问出现 404/503。
+
+推荐步骤（按顺序执行）：
+
+1) 清理并重建 HAProxy 动态路由（移除失效后端）
+   ```bash
+   ./scripts/haproxy_sync.sh --prune
+   ```
+
+2) 修复 devops 集群的 ArgoCD 回源与域名路由（会更新 haproxy 的 be_argocd 指向当前 devops 节点 IP:NodePort）
+   ```bash
+   ./scripts/setup_devops.sh
+   ```
+
+3) 重新生成并应用 ApplicationSet（分支名=环境名，确保 Ingress 按 host 生成）
+   ```bash
+   ./scripts/sync_applicationset.sh
+   ```
+
+4) 让 ArgoCD 能跨集群访问 kind（重要）
+   - 脚本已将 kind 的 API server 统一改写为 `https://$HAPROXY_HOST:<hostPort>` 的可达地址。
+   - 重新注册 kind 集群：
+     ```bash
+     ./scripts/argocd_register_kubectl.sh register dev kind
+     ./scripts/argocd_register_kubectl.sh register uat kind
+     ./scripts/argocd_register_kubectl.sh register prod kind
+     ```
+
+5) 预热镜像并重启关键 Pod（避免 ImagePullBackOff/ErrImageNeverPull）
+   - 为所有集群导入镜像（按需）：
+     ```bash
+     docker pull traefik:v2.10 traefik/whoami:v1.10.2
+     # kind：将镜像导入到 control-plane 的 containerd
+     docker save traefik:v2.10 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+     docker save traefik/whoami:v1.10.2 | docker exec -i dev-control-plane ctr -n k8s.io images import -
+     # k3d：使用 k3d image import 导入到集群
+     k3d image import traefik:v2.10 -c dev-k3d
+     k3d image import traefik/whoami:v1.10.2 -c dev-k3d
+     ```
+   - 重启各集群的 traefik 和 whoami Pod：
+     ```bash
+     kubectl --context kind-dev -n traefik  delete pod -l app=traefik --force --grace-period=0
+     kubectl --context kind-dev -n default delete pod -l app.kubernetes.io/name=whoami --force --grace-period=0
+     # 其它 env 类似（uat/prod 以及 *-k3d）
+     ```
+
+6) 确保 HAProxy 后端指向正确 NodePort（统一 NodePort=30080）
+   ```bash
+   ./scripts/haproxy_route.sh add dev  --node-port 30080
+   ./scripts/haproxy_route.sh add uat  --node-port 30080
+   ./scripts/haproxy_route.sh add prod --node-port 30080
+   ./scripts/haproxy_route.sh add dev-k3d  --node-port 30080
+   ./scripts/haproxy_route.sh add uat-k3d  --node-port 30080
+   ./scripts/haproxy_route.sh add prod-k3d --node-port 30080
+   ```
+
+7) 验证（预期均为 200 或应用输出）
+   ```bash
+   BASE=192.168.51.30
+   curl -I https://portainer.devops.$BASE.sslip.io
+   curl -I http://argocd.devops.$BASE.sslip.io/
+   curl -I -H 'Host: whoami.dev.$BASE.sslip.io'     http://$BASE
+   curl -I -H 'Host: whoami.uat.$BASE.sslip.io'     http://$BASE
+   curl -I -H 'Host: whoami.prod.$BASE.sslip.io'    http://$BASE
+   curl -I -H 'Host: whoami.devk3d.$BASE.sslip.io'  http://$BASE
+   curl -I -H 'Host: whoami.uatk3d.$BASE.sslip.io'  http://$BASE
+   curl -I -H 'Host: whoami.prodk3d.$BASE.sslip.io' http://$BASE
+   ```
+
+常见原因：
+- 回退覆盖了 haproxy.cfg 中的动态 be_argocd/后端 IP → 需运行 `setup_devops.sh` 重写。
+- k3d/镜像拉取受限 → 需本地导入镜像并重启 Pod。
+- kind 的 API 通过 `host.k3d.internal` 不可解析 → 现已改为 `https://$HAPROXY_HOST:<port>`，请按第4步重新注册。
+
 ### Portainer Edge Agent 无法连接
 
 1. 检查 Edge Agent 日志:
