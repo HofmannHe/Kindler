@@ -14,8 +14,8 @@ usage() {
 Usage: $0 [--dry-run]
 
 说明：
-- 读取 environments.csv 渲染 haproxy 动态 ACL 与动态后端，一次写入并单次重启。
-- 始终以 CSV 的 haproxy_route=true 作为启用依据（隐式完成 prune）。
+- 仅渲染动态后端（BACKENDS），不改动 ACL 区域；根据 CSV (haproxy_route=true) 生成后端列表。
+- 单次重载 HAProxy。
 USG
 }
 
@@ -27,13 +27,6 @@ while [ $# -gt 0 ]; do
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
-
-ensure_gateway_networks() {
-  docker network connect k3d-shared haproxy-gw 2>/dev/null || true
-  docker network connect kind haproxy-gw 2>/dev/null || true
-}
-
-env_to_label() { env_label "$1"; }
 
 resolve_ip() {
   local env="$1" ip=""
@@ -53,61 +46,41 @@ is_true() {
   case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in 1|y|yes|true|on) return 0;; *) return 1;; esac
 }
 
-render_blocks() {
+render_backends() {
   [ -f "$CSV" ] || { echo "[render] CSV not found: $CSV" >&2; exit 1; }
   [ -f "$CFG" ] || { echo "[render] CFG not found: $CFG" >&2; exit 1; }
-  local BASE_DOMAIN_LOCAL="$BASE_DOMAIN"
-  if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
-  : "${BASE_DOMAIN_LOCAL:=${BASE_DOMAIN:-local}}"
-
-  # build lists
-  local ACL="" BE=""
+  tmp_be=$(mktemp)
   while IFS=, read -r env provider node_port pf_port reg_portainer haproxy_route http_port https_port; do
     [[ "$env" =~ ^[[:space:]]*# ]] && continue
     [ -n "$env" ] || continue
     if [ -n "${haproxy_route:-}" ] && ! is_true "$haproxy_route"; then
       continue
     fi
-    local label="$(env_to_label "$env")"
-    local ip port
-    ip="$(resolve_ip "$env")"; port="${node_port:-30080}"
-    ACL+=$(printf '  acl host_%s  hdr_reg(host) -i ^[^.]+\\.%s\\.[^:]+'"\n"'  use_backend be_%s if host_%s'"\n" "$env" "$label" "$env" "$env")
-    BE+=$(printf 'backend be_%s'"\n"'  server s1 %s:%s'"\n" "$env" "$ip" "$port")
+    ip=$(resolve_ip "$env"); port="${node_port:-30080}"
+    printf 'backend be_%s\n  server s1 %s:%s\n' "$env" "$ip" "$port" >> "$tmp_be"
   done < <(grep -v '^\s*$' "$CSV")
 
-  # write back to cfg: replace between markers for ACL; replace backends block between BEGIN and the first 'backend be_portainer_https'
-  local tmp="$CFG.tmp"
-  awk -v acl="$ACL" '
-    BEGIN{inacl=0}
-    {
-      if ($0 ~ /# BEGIN DYNAMIC ACL/) {print; print acl; inacl=1; next}
-      if (inacl && $0 ~ /# END DYNAMIC ACL/) {print; inacl=0; next}
-      if (!inacl) print
-    }
-  ' "$CFG" > "$tmp.1"
-
-  awk -v be="$BE" '
+  tmp="$CFG.tmp"
+  awk -v befile="$tmp_be" '
     BEGIN{inbe=0}
     {
-      if ($0 ~ /# BEGIN DYNAMIC BACKENDS/) {print; print be; inbe=1; next}
+      if ($0 ~ /# BEGIN DYNAMIC BACKENDS/) {print; system("cat " befile); inbe=1; next}
       if (inbe && $0 ~ /^backend be_portainer_https/) {inbe=0}
       if (!inbe) print
     }
-  ' "$tmp.1" > "$tmp.2"
-
-  mv "$tmp.2" "$CFG"
-  rm -f "$tmp.1"
+  ' "$CFG" > "$tmp"
+  mv "$tmp" "$CFG"
+  rm -f "$tmp_be"
 }
 
 main() {
-  ensure_gateway_networks
-  render_blocks
+  render_backends
   if [ "$dry" = 1 ]; then
-    echo "[haproxy] dry-run render complete (no restart)."
+    echo "[haproxy] dry-run backend render complete (no restart)."
   else
     docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || \
       docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
-    echo "[haproxy] rendered and reloaded."
+    echo "[haproxy] backends rendered and reloaded."
   fi
 }
 
