@@ -88,7 +88,8 @@ spec:
 ${elements}
   template:
     metadata:
-      name: 'whoami-{{.env}}{{env \"KINDLER_NS\"}}'
+      # 使用 hostEnv 作为名称后缀（已包含命名空间后缀），避免依赖控制器环境变量
+      name: 'whoami-{{.hostEnv}}'
       labels:
         app: whoami
         env: '{{.env}}'

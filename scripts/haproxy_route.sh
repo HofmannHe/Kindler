@@ -4,8 +4,9 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
-DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
+# 在工作树中操作根目录下的 HAProxy（共享网关），避免创建重复实例
+CFG="$ROOT_DIR/../../compose/infrastructure/haproxy.cfg"
+DCMD=(docker compose -f "$ROOT_DIR/../../compose/infrastructure/docker-compose.yml")
 
 # load base domain suffix from config if present
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi

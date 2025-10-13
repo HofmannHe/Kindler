@@ -13,8 +13,9 @@ if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . 
 
 env_name="${1:-dev}"
 service_name="${2:-whoami}"
-env_label="$(env_label "$env_name")"
-host_fqdn="${service_name}.${env_label}.${BASE_DOMAIN}"
+# 使用 host_label 确保在 KINDLER_NS 下追加命名空间后缀（如 devns）
+host_env_label="$(host_label "$env_name")"
+host_fqdn="${service_name}.${host_env_label}.${BASE_DOMAIN}"
 report="$ROOT_DIR/docs/TEST_REPORT.md"
 ts="$(date '+%Y-%m-%d %H:%M:%S')"
 

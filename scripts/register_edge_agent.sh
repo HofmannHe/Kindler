@@ -14,6 +14,8 @@ usage() {
 
 CLUSTER_NAME="$1"
 PROVIDER="$2"
+. "$ROOT_DIR/scripts/lib.sh"
+EFF_NAME="$(effective_name "$CLUSTER_NAME")"
 
 if [ "${DRY_RUN:-}" = "1" ]; then
   echo "[DRY-RUN][EDGE] 计划为集群 ${CLUSTER_NAME}(${PROVIDER}) 执行 Edge Agent 注册:"
@@ -86,15 +88,15 @@ if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
 fi
 
 # 构造 Edge Environment 名称
-EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3d -> devk3d
+EP_NAME=$(echo "$EFF_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3d-ns -> devk3dns
 
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
 # 获取 Portainer 在集群网络中的 IP
 if [ "$PROVIDER" = "k3d" ]; then
-	cluster_node="k3d-${CLUSTER_NAME}-server-0"
+	cluster_node="k3d-${EFF_NAME}-server-0"
 else
-	cluster_node="${CLUSTER_NAME}-control-plane"
+	cluster_node="${EFF_NAME}-control-plane"
 fi
 
 NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
@@ -102,7 +104,7 @@ NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
 
 if [ -z "$NETWORK_NAME" ] || [ "$NETWORK_NAME" = "null" ]; then
 	if [ "$PROVIDER" = "k3d" ]; then
-		NETWORK_NAME="k3d-${CLUSTER_NAME}"
+		NETWORK_NAME="k3d-${EFF_NAME}"
 	else
 		NETWORK_NAME="kind"
 	fi
@@ -159,7 +161,7 @@ echo "[EDGE]   Name: $EP_NAME"
 echo "[EDGE] Deploying Edge Agent to cluster..."
 
 CTX_PREFIX=$([ "$PROVIDER" = "k3d" ] && echo k3d || echo kind)
-CTX="$CTX_PREFIX-$CLUSTER_NAME"
+CTX="$CTX_PREFIX-$EFF_NAME"
 
 # 使用 sed 替换 YAML 中的占位符并应用
 sed -e "s/EDGE_ID_PLACEHOLDER/$ENDPOINT_ID/g" \
@@ -182,7 +184,7 @@ echo "[EDGE] Edge Agent deployed"
 
 # Generalized retry: preload image to cluster and retry if not Running
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 180 || true
+ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$EFF_NAME" 'portainer/agent:latest' 180 || true
 
 echo ""
 echo "[EDGE] Registration complete!"
