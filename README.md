@@ -110,6 +110,12 @@ sequenceDiagram
 
 ## Quick Start
 
+> Must-do Trilogy (after rollback/reinstall)
+> 1) `./scripts/haproxy_sync.sh --prune`
+> 2) `./scripts/setup_devops.sh`
+> 3) `./scripts/sync_applicationset.sh`
+
+
 ### Prerequisites
 
 - Docker Engine (20.10+)

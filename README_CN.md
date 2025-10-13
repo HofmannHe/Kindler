@@ -110,6 +110,12 @@ sequenceDiagram
 
 ## 快速开始
 
+> 必做三步（回退/重装后建议先执行）
+> 1) `./scripts/haproxy_sync.sh --prune`
+> 2) `./scripts/setup_devops.sh`
+> 3) `./scripts/sync_applicationset.sh`
+
+
 ### 前置要求
 
 - Docker Engine (20.10+)

@@ -129,6 +129,9 @@ remove_backend() {
 }
 
 reload() {
+	if [ -n "${NO_RELOAD:-}" ] && [ "${NO_RELOAD}" = "1" ]; then
+		return 0
+	fi
 	if ! "${DCMD[@]}" restart >/dev/null 2>&1; then
 		"${DCMD[@]}" up -d >/dev/null
 	fi
