@@ -16,6 +16,9 @@
 - 📦 **自动注册**: 自动将集群注册到 Portainer 和 ArgoCD
 - 🔒 **生产就绪**: 支持 TLS 和自动重定向
 - 🔄 **统一 Ingress（NodePort）**：无论 k3d 还是 kind，均通过 NodePort 暴露入口，应用无需感知差异
+- 🏢 **多项目管理**: 支持多个项目，提供命名空间隔离、资源配额和项目级路由
+- 🔐 **项目隔离**: 每个项目运行在独立的命名空间中，配备 ResourceQuota 和 NetworkPolicy
+- 🌐 **项目级路由**: 支持项目特定域名模式，如 `<service>.<project>.<env>.<BASE_DOMAIN>`
 
 ## 架构
 
@@ -523,6 +526,82 @@ BASE_DOMAIN=local           # 使用本地域名
 HAPROXY_HOST=192.168.51.30  # 内网 IP
 ```
 需配合 `/etc/hosts` 或内网 DNS 使用。
+
+## 多项目管理
+
+Kindler 支持多项目管理，允许在同一个基础设施上运行多个独立的项目，并提供适当的隔离。
+
+### 项目管理命令
+
+#### 创建项目
+```bash
+./scripts/project_manage.sh create \
+  --project demo-app \
+  --env dev-k3d \
+  --team backend \
+  --cpu-limit 2 \
+  --memory-limit 4Gi \
+  --description "演示应用"
+```
+
+#### 列出项目
+```bash
+# 列出所有项目
+./scripts/project_manage.sh list
+
+# 列出指定环境的项目
+./scripts/project_manage.sh list --env dev-k3d
+```
+
+#### 查看项目详情
+```bash
+./scripts/project_manage.sh show --project demo-app --env dev-k3d
+```
+
+#### 删除项目
+```bash
+./scripts/project_manage.sh delete --project demo-app --env dev-k3d
+```
+
+### 项目级 HAProxy 路由
+
+#### 添加项目路由
+```bash
+./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
+```
+
+#### 移除项目路由
+```bash
+./scripts/haproxy_project_route.sh remove demo-app --env dev-k3d
+```
+
+### ArgoCD 项目管理
+
+#### 创建 AppProject
+```bash
+./scripts/argocd_project.sh create \
+  --project demo-app \
+  --repo https://github.com/example/demo-app.git \
+  --namespace project-demo-app
+```
+
+#### 添加应用
+```bash
+./scripts/argocd_project.sh add-app \
+  --project demo-app \
+  --app whoami \
+  --path deploy/ \
+  --env dev-k3d
+```
+
+### 项目隔离特性
+
+- **命名空间隔离**: 每个项目运行在独立的 Kubernetes 命名空间中
+- **资源配额**: 每个项目的 CPU 和内存限制
+- **网络策略**: 控制项目间的网络访问
+- **项目级域名**: 支持 `<service>.<project>.<env>.<BASE_DOMAIN>` 模式
+
+详细文档请参考 [PROJECT_MANAGEMENT.md](./docs/PROJECT_MANAGEMENT.md)。
 
 ## 管理命令
 
