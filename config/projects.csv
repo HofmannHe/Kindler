@@ -1,0 +1,5 @@
+# project,env,namespace,team,cpu_limit,memory_limit,ingress_domain,created_at,description
+# 示例项目配置
+# project-a,dev,project-a,frontend,2,4Gi,project-a.dev.192.168.51.30.sslip.io,2025-10-13,Frontend application for project A
+# project-b,dev,project-b,backend,4,8Gi,project-b.dev.192.168.51.30.sslip.io,2025-10-13,Backend API for project B
+# project-a,uat,project-a,frontend,2,4Gi,project-a.uat.192.168.51.30.sslip.io,2025-10-13,Frontend application for project A (UAT)
