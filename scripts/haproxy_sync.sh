@@ -57,6 +57,7 @@ if [ ${#records[@]} -eq 0 ]; then
 fi
 
 echo "[sync] adding/updating routes from CSV..."
+NO_RELOAD=1 export NO_RELOAD
 for entry in "${records[@]}"; do
 	IFS=, read -r n p flag <<<"$entry"
 	IFS=$'\n\t'
@@ -65,7 +66,7 @@ for entry in "${records[@]}"; do
 		continue
 	fi
     p="${p:-30080}"
-    "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
+    NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
 done
 
 if [ $prune -eq 1 ]; then
@@ -86,9 +87,10 @@ if [ $prune -eq 1 ]; then
 			break
 		done
 		if [ $keep -eq 0 ]; then
-			"$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
+			NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
 		fi
 	done
 fi
 
-echo "[sync] done"
+"$ROOT_DIR"/scripts/haproxy_render.sh >/dev/null 2>&1 || true
+echo "[sync] done (renderer applied)"
