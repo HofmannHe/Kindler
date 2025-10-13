@@ -9,6 +9,6 @@ metadata:
     managed-by: kindler
     created-at: PROJECT_CREATED_AT_PLACEHOLDER
   annotations:
-    kindler.io/project-description: PROJECT_DESCRIPTION_PLACEHOLDER
-    kindler.io/cpu-limit: PROJECT_CPU_LIMIT_PLACEHOLDER
-    kindler.io/memory-limit: PROJECT_MEMORY_LIMIT_PLACEHOLDER
+    kindler.io/project-description: "PROJECT_DESCRIPTION_PLACEHOLDER"
+    kindler.io/cpu-limit: "PROJECT_CPU_LIMIT_PLACEHOLDER"
+    kindler.io/memory-limit: "PROJECT_MEMORY_LIMIT_PLACEHOLDER"

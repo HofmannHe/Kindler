@@ -51,7 +51,14 @@ parse_projects_csv() {
 # 查找项目配置
 find_project() {
   local project="$1" env="$2"
-  parse_projects_csv | awk -F, -v p="$project" -v e="$env" '$1==p && $2==e {print; exit}'
+  local result
+  result=$(parse_projects_csv | awk -F, -v p="$project" -v e="$env" '$1==p && $2==e {print; exit}')
+  if [ -n "$result" ]; then
+    echo "$result"
+    return 0
+  else
+    return 1
+  fi
 }
 
 # 列出项目
@@ -256,9 +263,12 @@ delete_project() {
   local provider=$(provider_for "$env")
   local ctx="$([ "$provider" = "k3d" ] && echo "k3d-${env}" || echo "kind-${env}")"
   
-  # 删除命名空间（这会删除所有相关资源）
+  # 删除命名空间（带超时）
   echo "[PROJECT] 删除命名空间: $p_namespace"
-  kubectl --context "$ctx" delete namespace "$p_namespace" --ignore-not-found=true
+  timeout 30 kubectl --context "$ctx" delete namespace "$p_namespace" --ignore-not-found=true || {
+    echo "[PROJECT] 强制删除命名空间: $p_namespace"
+    kubectl --context "$ctx" delete namespace "$p_namespace" --force --grace-period=0 --ignore-not-found=true || true
+  }
   
   # 从 projects.csv 中移除
   echo "[PROJECT] 更新项目配置"
