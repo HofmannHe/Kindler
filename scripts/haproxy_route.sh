@@ -4,9 +4,8 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-# 在工作树中操作根目录下的 HAProxy（共享网关），避免创建重复实例
-CFG="$ROOT_DIR/../../compose/infrastructure/haproxy.cfg"
-DCMD=(docker compose -f "$ROOT_DIR/../../compose/infrastructure/docker-compose.yml")
+CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
 
 # load base domain suffix from config if present
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -21,13 +20,11 @@ usage() {
 cmd="${1:-}"
 name="${2:-}"
 shift 2 || true
-base_env="$name"
-. "$ROOT_DIR/scripts/lib.sh"
-label="$(host_label "$base_env")"
-[ -n "$label" ] || label="$(printf '%s' "$base_env" | tr '[:upper:]' '[:lower:]')"
-provider="$(provider_for "$base_env")"
+label="$(env_label "$name")"
+[ -n "$label" ] || label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+provider="$(provider_for "$name")"
 case "$provider" in
-k3d) network_name="k3d-$(effective_name "$base_env")" ;;
+k3d) network_name="k3d-${name}" ;;
 kind) network_name="kind" ;;
 *) network_name="" ;;
 esac
@@ -61,14 +58,42 @@ done
 [ -n "$cmd" ] && [ -n "$name" ] || usage
 
 add_acl() {
-	local tmp acl_begin acl_end
+	local tmp acl_begin acl_end cluster_type env_name
 	acl_begin="^[[:space:]]*# BEGIN DYNAMIC ACL"
 	acl_end="^[[:space:]]*# END DYNAMIC ACL"
+	
+	# Determine cluster type and environment name for naming convention
+	case "$provider" in
+		k3d) 
+			cluster_type="k3d"
+			# 对于 k3d 环境，提取环境名（去掉 -k3d 后缀）
+			env_name="${name%-k3d}"
+			;;
+		kind) 
+			cluster_type="kind"
+			env_name="$name"
+			;;
+		*) 
+			cluster_type="unknown"
+			env_name="$label"
+			;;
+	esac
+	
 	tmp=$(mktemp)
-	awk -v n="$(effective_name "$base_env")" -v l="$label" -v B="$acl_begin" -v E="$acl_end" '
+	awk -v n="$name" -v en="$env_name" -v ct="$cluster_type" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
-    $0 ~ B {print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." l "\\.[^:]+"; print "  use_backend be_" n " if host_" n; ins=1}
+    $0 ~ B {
+      if (ct == "unknown") {
+        # Fallback to old naming convention
+        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." en "\\.[^:]+"
+      } else {
+        # New naming convention: {service}.{cluster_type}.{env}.{base_domain}
+        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." ct "\\." en "\\.[^:]+"
+      }
+      print "  use_backend be_" n " if host_" n
+      ins=1
+    }
   ' "$CFG" >"$tmp"
 	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
@@ -77,14 +102,13 @@ add_acl() {
 add_backend() {
 	local tmp b_begin b_end ip detected_port
 	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
-	local eff; eff="$(effective_name "$base_env")"
-	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${eff}-control-plane" 2>/dev/null); then
+	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
 		# kind cluster detected - use NodePort on control-plane container IP
 		detected_port="$node_port"
-	elif ip=$(docker inspect "k3d-${eff}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
+	elif ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
 		# k3d cluster on shared network - use server-0 container IP + NodePort
 		detected_port="$node_port"
-	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${eff}-server-0" 2>/dev/null); then
+	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
 		# k3d cluster (legacy/without shared network info) - use server-0 container IP + NodePort
 		detected_port="$node_port"
 	else
@@ -94,7 +118,7 @@ add_backend() {
 	b_begin="^# BEGIN DYNAMIC BACKENDS"
 	b_end="^# END DYNAMIC BACKENDS"
 	tmp=$(mktemp)
-	awk -v n="$(effective_name "$base_env")" -v B="$b_begin" -v E="$b_end" -v p="$detected_port" '
+	awk -v n="$name" -v B="$b_begin" -v E="$b_end" -v p="$detected_port" '
     {print $0}
     $0 ~ B {print "backend be_" n "\n  server s1 REPLACE_IP:" p}
   ' "$CFG" >"$tmp"
@@ -106,7 +130,7 @@ add_backend() {
 remove_acl() {
 	local tmp
 	tmp=$(mktemp)
-	awk -v n="$(effective_name "$base_env")" '
+	awk -v n="$name" '
     BEGIN{skip=0}
     {
       if ($0 ~ "^[[:space:]]*acl[[:space:]]+host_" n "[[:space:]]+") next;
@@ -120,7 +144,7 @@ remove_acl() {
 remove_backend() {
 	local tmp
 	tmp=$(mktemp)
-	awk -v n="$(effective_name "$base_env")" 'BEGIN{inblk=0}
+	awk -v n="$name" 'BEGIN{inblk=0}
     /^backend be_/ {inblk=($2=="be_" n)}
     inblk {next}
     {print $0}
@@ -139,8 +163,20 @@ reload() {
 
 case "$cmd" in
 add)
+	# Determine environment name for output
+	output_env_name=""
+	case "$provider" in
+		k3d) output_env_name="${name%-k3d}" ;;
+		kind) output_env_name="$name" ;;
+		*) output_env_name="$label" ;;
+	esac
+	
 	if [ "${DRY_RUN:-}" = "1" ]; then
-		echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	else
 		remove_acl || true
 		remove_backend || true
@@ -148,7 +184,11 @@ add)
 		add_backend
 		ensure_network
 		reload
-		echo "[haproxy] added route for $name (pattern: <service>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[haproxy] added route for $name (pattern: <service>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[haproxy] added route for $name (pattern: <service>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	fi
 	;;
 remove)

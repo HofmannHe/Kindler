@@ -15,10 +15,7 @@
 - 🛠️ **Flexible Backends**: Support both kind and k3d Kubernetes distributions
 - 📦 **Automated Registration**: Auto-register clusters to Portainer and ArgoCD
 - 🔒 **Production-ready**: TLS support with automatic redirects
-- 🔄 **Unified Ingress (NodePort)**: Always route via NodePort for both kind and k3d, so apps don't care about the distro
-- 🏢 **Multi-Project Management**: Support multiple projects with namespace isolation, resource quotas, and project-level routing
-- 🔐 **Project Isolation**: Each project runs in its own namespace with ResourceQuota and NetworkPolicy
-- 🌐 **Project-level Routing**: Support project-specific domain patterns like `<service>.<project>.<env>.<BASE_DOMAIN>`
+- 🔄 **Unified Ingress (NodePort)**: Always route via NodePort for both kind and k3d, so apps don’t care about the distro
 
 ## Architecture
 
@@ -208,12 +205,13 @@ Access points depend on your configuration in `config/clusters.env` and `config/
 - whoami (via HAProxy Host-based routing, NodePort 30080)
   ```bash
   BASE=192.168.51.30
-  curl -I -H 'Host: whoami.dev.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.uat.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.prod.192.168.51.30.sslip.io' http://$BASE
-  curl -I -H 'Host: whoami.devk3d.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.uatk3d.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.prodk3d.192.168.51.30.sslip.io' http://$BASE
+  # New naming convention: {service}.{cluster_type}.{env}.{base_domain}
+  curl -I -H 'Host: whoami.kind.dev.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.kind.uat.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.kind.prod.192.168.51.30.sslip.io' http://$BASE
+  curl -I -H 'Host: whoami.k3d.dev.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.k3d.uat.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.k3d.prod.192.168.51.30.sslip.io' http://$BASE
   ```
 
 ## GitOps Workflow
@@ -350,82 +348,6 @@ Set base domain in `config/clusters.env`:
 BASE_DOMAIN=local  # Clusters will be accessible as <env>.local
 HAPROXY_HOST=192.168.51.30  # Gateway entry point
 ```
-
-## Multi-Project Management
-
-Kindler supports multi-project management, allowing multiple independent projects to run on the same infrastructure with proper isolation.
-
-### Project Management Commands
-
-#### Create Project
-```bash
-./scripts/project_manage.sh create \
-  --project demo-app \
-  --env dev-k3d \
-  --team backend \
-  --cpu-limit 2 \
-  --memory-limit 4Gi \
-  --description "Demo application"
-```
-
-#### List Projects
-```bash
-# List all projects
-./scripts/project_manage.sh list
-
-# List projects in specific environment
-./scripts/project_manage.sh list --env dev-k3d
-```
-
-#### View Project Details
-```bash
-./scripts/project_manage.sh show --project demo-app --env dev-k3d
-```
-
-#### Delete Project
-```bash
-./scripts/project_manage.sh delete --project demo-app --env dev-k3d
-```
-
-### Project-level HAProxy Routing
-
-#### Add Project Route
-```bash
-./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
-```
-
-#### Remove Project Route
-```bash
-./scripts/haproxy_project_route.sh remove demo-app --env dev-k3d
-```
-
-### ArgoCD Project Management
-
-#### Create AppProject
-```bash
-./scripts/argocd_project.sh create \
-  --project demo-app \
-  --repo https://github.com/example/demo-app.git \
-  --namespace project-demo-app
-```
-
-#### Add Application
-```bash
-./scripts/argocd_project.sh add-app \
-  --project demo-app \
-  --app whoami \
-  --path deploy/ \
-  --env dev-k3d
-```
-
-### Project Isolation Features
-
-- **Namespace Isolation**: Each project runs in its own Kubernetes namespace
-- **Resource Quotas**: CPU and memory limits per project
-- **Network Policies**: Control inter-project network access
-- **Project-level Domains**: Support for `<service>.<project>.<env>.<BASE_DOMAIN>` pattern
-
-For detailed documentation, see [PROJECT_MANAGEMENT.md](./docs/PROJECT_MANAGEMENT.md).
 
 ## Management Commands
 

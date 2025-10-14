@@ -11,3 +11,6 @@ prod-k3d,k3d,30080,39002,true,true,38091,38444
 debug-k3d,k3d,30080,19004,false,false,48091,48444
 test-final,k3d,30080,19005,true,false,38092,38445
 test-k3d-fixed,k3d,30080,19006,true,false,38093,38446
+# rttr 专用测试环境
+rttr-dev,k3d,30080,19010,true,true,18100,18500
+rttr-uat,k3d,30080,19011,true,true,28100,28500

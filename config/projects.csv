@@ -1,3 +1,5 @@
 # project,env,namespace,team,cpu_limit,memory_limit,ingress_domain,created_at,description
-new-app,dev-k3d,project-new-app,backend,1,2Gi,new-app.dev-k3d.192.168.51.35.sslip.io,2025-10-13,New application
-e2e-test,dev-k3d,project-e2e-test,testing,1,2Gi,e2e-test.dev-k3d.192.168.51.35.sslip.io,2025-10-13,End-to-end test project
+# 示例项目配置
+# project-a,dev,project-a,frontend,2,4Gi,project-a.dev.192.168.51.30.sslip.io,2025-10-13,Frontend application for project A
+# project-b,dev,project-b,backend,4,8Gi,project-b.dev.192.168.51.30.sslip.io,2025-10-13,Backend API for project B
+# project-a,uat,project-a,frontend,2,4Gi,project-a.uat.192.168.51.30.sslip.io,2025-10-13,Frontend application for project A (UAT)
