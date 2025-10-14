@@ -14,8 +14,6 @@ usage() {
 
 CLUSTER_NAME="$1"
 PROVIDER="$2"
-. "$ROOT_DIR/scripts/lib.sh"
-EFF_NAME="$(effective_name "$CLUSTER_NAME")"
 
 if [ "${DRY_RUN:-}" = "1" ]; then
   echo "[DRY-RUN][EDGE] 计划为集群 ${CLUSTER_NAME}(${PROVIDER}) 执行 Edge Agent 注册:"
@@ -88,15 +86,15 @@ if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
 fi
 
 # 构造 Edge Environment 名称
-EP_NAME=$(echo "$EFF_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3d-ns -> devk3dns
+EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3d -> devk3d
 
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
 # 获取 Portainer 在集群网络中的 IP
 if [ "$PROVIDER" = "k3d" ]; then
-	cluster_node="k3d-${EFF_NAME}-server-0"
+	cluster_node="k3d-${CLUSTER_NAME}-server-0"
 else
-	cluster_node="${EFF_NAME}-control-plane"
+	cluster_node="${CLUSTER_NAME}-control-plane"
 fi
 
 NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
@@ -104,7 +102,7 @@ NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
 
 if [ -z "$NETWORK_NAME" ] || [ "$NETWORK_NAME" = "null" ]; then
 	if [ "$PROVIDER" = "k3d" ]; then
-		NETWORK_NAME="k3d-${EFF_NAME}"
+		NETWORK_NAME="k3d-${CLUSTER_NAME}"
 	else
 		NETWORK_NAME="kind"
 	fi
@@ -140,11 +138,16 @@ if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "null" ]; then
     # 处理名称已存在的幂等场景
     if echo "$EDGE_ENV_RESPONSE" | grep -qi "Name is not unique"; then
       echo "[EDGE] Edge Environment already exists: $EP_NAME (idempotent)"
-      # 查询已存在的 Endpoint ID
+      # 查询已存在的 Endpoint ID 和 Edge Key
       EXISTING_JSON=$(curl -sk -H "Authorization: Bearer $JWT" "$PORTAINER_URL/api/endpoints")
       ENDPOINT_ID=$(echo "$EXISTING_JSON" | jq -r '.[] | select(.Name=="'$EP_NAME'") | .Id' | head -1)
+      EDGE_KEY=$(echo "$EXISTING_JSON" | jq -r '.[] | select(.Name=="'$EP_NAME'") | .EdgeKey' | head -1)
       if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "null" ]; then
         echo "[EDGE] WARN: cannot resolve existing endpoint id for $EP_NAME, continue"
+      fi
+      if [ -z "$EDGE_KEY" ] || [ "$EDGE_KEY" = "null" ]; then
+        echo "[EDGE] WARN: cannot resolve existing edge key for $EP_NAME, will use null"
+        EDGE_KEY="null"
       fi
     else
       echo "[EDGE] ERROR: Failed to create Edge Environment" >&2
@@ -161,7 +164,7 @@ echo "[EDGE]   Name: $EP_NAME"
 echo "[EDGE] Deploying Edge Agent to cluster..."
 
 CTX_PREFIX=$([ "$PROVIDER" = "k3d" ] && echo k3d || echo kind)
-CTX="$CTX_PREFIX-$EFF_NAME"
+CTX="$CTX_PREFIX-$CLUSTER_NAME"
 
 # 使用 sed 替换 YAML 中的占位符并应用
 sed -e "s/EDGE_ID_PLACEHOLDER/$ENDPOINT_ID/g" \
@@ -184,7 +187,7 @@ echo "[EDGE] Edge Agent deployed"
 
 # Generalized retry: preload image to cluster and retry if not Running
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$EFF_NAME" 'portainer/agent:latest' 180 || true
+ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 180 || true
 
 echo ""
 echo "[EDGE] Registration complete!"

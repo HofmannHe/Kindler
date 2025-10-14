@@ -7,9 +7,6 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 PROJECTS_CSV="$ROOT_DIR/config/projects.csv"
 
-# 加载配置
-load_env
-
 usage() {
   cat >&2 <<USAGE
 Usage: $0 {add|remove} <project-name> --env <env> [--node-port <port>]

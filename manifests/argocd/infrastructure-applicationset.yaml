@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infrastructure
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - list:
+      elements:
+      # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
+      - env: dev
+        clusterName: dev
+        provider: kind
+        portainerEdgeId: "3"
+        portainerEdgeKey: "aHR0cDovLzE3Mi4xOS4wLjg6OTAwMHwxNzIuMTkuMC44OjgwMDB8N1FCUk9CcytrSERpaHQwRWpzbWJzY05pbU42M2x1dHJ4a3dPZElJWGlIdz18Mw"
+      - env: uat
+        clusterName: uat
+        provider: kind
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: prod
+        clusterName: prod
+        provider: kind
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: dev-k3d
+        clusterName: dev-k3d
+        provider: k3d
+        portainerEdgeId: "4"
+        portainerEdgeKey: "aHR0cDovLzEwLjEwMC4wLjEzOjkwMDB8MTAuMTAwLjAuMTM6ODAwMHw3UUJST0JzK2tIRGlodDBFanNtYnNjTmltTjYzbHV0cnhrd09kSUlYaUh3PXw0"
+      - env: uat-k3d
+        clusterName: uat-k3d
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: prod-k3d
+        clusterName: prod-k3d
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: debug-k3d
+        clusterName: debug-k3d
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: test-final
+        clusterName: test-final
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: test-k3d-fixed
+        clusterName: test-k3d-fixed
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: rttr-dev
+        clusterName: rttr-dev
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+      - env: rttr-uat
+        clusterName: rttr-uat
+        provider: k3d
+        portainerEdgeId: ""
+        portainerEdgeKey: ""
+  template:
+    metadata:
+      name: 'infrastructure-{{.env}}'
+      labels:
+        app: infrastructure
+        env: '{{.env}}'
+    spec:
+      project: default
+      source:
+        repoURL: 'http://git.devops.192.168.51.30.sslip.io/fc005/devops.git'
+        path: infrastructure
+        targetRevision: develop
+        helm:
+          releaseName: infrastructure
+          parameters:
+          # 动态设置环境相关参数
+          - name: environment.name
+            value: '{{.env}}'
+          - name: environment.provider
+            value: '{{.provider}}'
+          - name: environment.clusterName
+            value: '{{.clusterName}}'
+          # Portainer Edge Agent 配置
+          - name: portainer.edge.id
+            value: '{{.portainerEdgeId}}'
+          - name: portainer.edge.key
+            value: '{{.portainerEdgeKey}}'
+      destination:
+        # 部署到对应的集群
+        name: '{{.clusterName}}'
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
