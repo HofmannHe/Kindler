@@ -37,23 +37,23 @@ spec:
           releaseName: infrastructure
           values: |
             cluster:
-              name: {{.name}}
-              env: {{.metadata.labels.env}}
-              provider: {{.metadata.labels.provider}}
+              name: "{{.name}}"
+              env: "{{.metadata.labels.env}}"
+              provider: "{{.metadata.labels.provider}}"
             edgeAgent:
               enabled: true
               edgeId: "{{.metadata.annotations.portainer-edge-id}}"
               edgeKey: "{{.metadata.annotations.portainer-edge-key}}"
               cluster:
-                name: {{.name}}
-                env: {{.metadata.labels.env}}
-                provider: {{.metadata.labels.provider}}
+                name: "{{.name}}"
+                env: "{{.metadata.labels.env}}"
+                provider: "{{.metadata.labels.provider}}"
             traefik:
               enabled: true
               cluster:
-                name: {{.name}}
-                env: {{.metadata.labels.env}}
-                provider: {{.metadata.labels.provider}}
+                name: "{{.name}}"
+                env: "{{.metadata.labels.env}}"
+                provider: "{{.metadata.labels.provider}}"
       destination:
         server: '{{.server}}'
         namespace: kube-system
