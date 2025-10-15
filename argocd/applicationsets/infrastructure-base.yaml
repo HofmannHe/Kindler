@@ -35,25 +35,33 @@ spec:
         targetRevision: master
         helm:
           releaseName: infrastructure
-          values: |
-            cluster:
-              name: "{{.name}}"
-              env: "{{.metadata.labels.env}}"
-              provider: "{{.metadata.labels.provider}}"
-            edgeAgent:
-              enabled: true
-              edgeId: "{{.metadata.annotations.portainer-edge-id}}"
-              edgeKey: "{{.metadata.annotations.portainer-edge-key}}"
-              cluster:
-                name: "{{.name}}"
-                env: "{{.metadata.labels.env}}"
-                provider: "{{.metadata.labels.provider}}"
-            traefik:
-              enabled: true
-              cluster:
-                name: "{{.name}}"
-                env: "{{.metadata.labels.env}}"
-                provider: "{{.metadata.labels.provider}}"
+          parameters:
+          - name: cluster.name
+            value: '{{.name}}'
+          - name: cluster.env
+            value: '{{.metadata.labels.env}}'
+          - name: cluster.provider
+            value: '{{.metadata.labels.provider}}'
+          - name: edgeAgent.enabled
+            value: 'true'
+          - name: edgeAgent.edgeId
+            value: '{{.metadata.annotations.portainer-edge-id}}'
+          - name: edgeAgent.edgeKey
+            value: '{{.metadata.annotations.portainer-edge-key}}'
+          - name: edgeAgent.cluster.name
+            value: '{{.name}}'
+          - name: edgeAgent.cluster.env
+            value: '{{.metadata.labels.env}}'
+          - name: edgeAgent.cluster.provider
+            value: '{{.metadata.labels.provider}}'
+          - name: traefik.enabled
+            value: 'true'
+          - name: traefik.cluster.name
+            value: '{{.name}}'
+          - name: traefik.cluster.env
+            value: '{{.metadata.labels.env}}'
+          - name: traefik.cluster.provider
+            value: '{{.metadata.labels.provider}}'
       destination:
         server: '{{.server}}'
         namespace: kube-system
