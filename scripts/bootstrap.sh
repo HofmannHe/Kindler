@@ -20,9 +20,10 @@ main() {
 	# Load configuration
 	if [ -f "$ROOT_DIR/config/clusters.env" ]; then
 		. "$ROOT_DIR/config/clusters.env"
-		# Export versions for docker-compose
+		# Export versions and network config for docker-compose
 		export PORTAINER_VERSION="${PORTAINER_VERSION:-2.33.2-alpine}"
 		export HAPROXY_VERSION="${HAPROXY_VERSION:-3.2.6-alpine3.22}"
+		export HAPROXY_FIXED_IP="${HAPROXY_FIXED_IP:-10.100.255.100}"
 	fi
 	: "${HAPROXY_HOST:=192.168.51.30}"
 	: "${HAPROXY_HTTP_PORT:=80}"
@@ -89,8 +90,21 @@ main() {
 	echo "[BOOTSTRAP] Adding local Docker endpoint to Portainer..."
 	"$ROOT_DIR/scripts/portainer_add_local.sh"
 
-	echo "[BOOTSTRAP] Setup devops management cluster with ArgoCD"
-	"$ROOT_DIR/scripts/setup_devops.sh"
+	# 检查 devops 集群是否已存在（幂等性）
+	if k3d cluster list 2>/dev/null | grep -q '^devops\s'; then
+		echo "[BOOTSTRAP] devops cluster already exists, skipping creation"
+		# 检查 ArgoCD 是否已安装
+		if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1 && \
+		   kubectl --context k3d-devops get deploy -n argocd argocd-server >/dev/null 2>&1; then
+			echo "[BOOTSTRAP] ArgoCD already installed in devops cluster"
+		else
+			echo "[BOOTSTRAP] Installing ArgoCD in existing devops cluster"
+			"$ROOT_DIR/scripts/setup_devops.sh"
+		fi
+	else
+		echo "[BOOTSTRAP] Setup devops management cluster with ArgoCD"
+		"$ROOT_DIR/scripts/setup_devops.sh"
+	fi
 
 	echo "[BOOTSTRAP] Validate external Git configuration"
 	"$ROOT_DIR/scripts/setup_git.sh"

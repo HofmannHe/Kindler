@@ -43,10 +43,14 @@ register_cluster_kubectl() {
     return 1
   fi
 
-  # 读取 Portainer 凭证
+  # 读取 Portainer 凭证（如果没有则使用空字符串）
   local credentials=$(get_portainer_credentials "$cluster_name" "$provider")
   local edge_id=$(echo "$credentials" | cut -d'|' -f1)
   local edge_key=$(echo "$credentials" | cut -d'|' -f2)
+  
+  # 确保 annotations 始终存在（即使为空）
+  if [[ -z "$edge_id" ]]; then edge_id=""; fi
+  if [[ -z "$edge_key" ]]; then edge_key=""; fi
 
   # 获取集群 API server 地址（使用容器内网 IP 以支持跨集群连接）
   local api_server
@@ -148,12 +152,10 @@ EOF
     cluster_type="management"
   fi
 
-  local annotations=""
-  if [[ -n "$edge_id" ]] && [[ -n "$edge_key" ]]; then
-    annotations="
+  # 始终添加 annotations（即使为空），以便 ApplicationSet 可以解析
+  local annotations="
     portainer-edge-id: \"$edge_id\"
     portainer-edge-key: \"$edge_key\""
-  fi
 
   if [[ "$provider" == "k3d" ]]; then
     cat <<EOF | kubectl --context k3d-devops apply -f -

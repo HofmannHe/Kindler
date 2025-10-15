@@ -205,12 +205,13 @@ Access points depend on your configuration in `config/clusters.env` and `config/
 - whoami (via HAProxy Host-based routing, NodePort 30080)
   ```bash
   BASE=192.168.51.30
-  curl -I -H 'Host: whoami.dev.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.uat.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.prod.192.168.51.30.sslip.io' http://$BASE
-  curl -I -H 'Host: whoami.devk3d.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.uatk3d.192.168.51.30.sslip.io'  http://$BASE
-  curl -I -H 'Host: whoami.prodk3d.192.168.51.30.sslip.io' http://$BASE
+  # New naming convention: {service}.{cluster_type}.{env}.{base_domain}
+  curl -I -H 'Host: whoami.kind.dev.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.kind.uat.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.kind.prod.192.168.51.30.sslip.io' http://$BASE
+  curl -I -H 'Host: whoami.k3d.dev.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.k3d.uat.192.168.51.30.sslip.io'  http://$BASE
+  curl -I -H 'Host: whoami.k3d.prod.192.168.51.30.sslip.io' http://$BASE
   ```
 
 ## GitOps Workflow

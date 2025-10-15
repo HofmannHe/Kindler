@@ -46,9 +46,9 @@ provider_for() {
 	local line provider
 	line=$(csv_lookup "$env" || true)
 	if [ -n "$line" ]; then
-		IFS=, read -r _env provider _np _pf _rp _hr _hp _hs <<<"$line"
-		IFS=$'
-	'
+		IFS=, read -r _env provider _np _pf _rp _hr _hp _hs _subnet <<<"$line"
+		IFS=$'\n\t'
+		provider=$(echo "${provider:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
 		if [ -n "${provider:-}" ]; then
 			echo "$provider"
 			return
@@ -67,9 +67,11 @@ ports_for() {
 	local env="$1" line hp hs
 	line=$(csv_lookup "$env" || true)
 	if [ -n "$line" ]; then
-		IFS=, read -r _env _prov _np _pf _rp _hr hp hs <<<"$line"
-		IFS=$'
-	'
+		IFS=, read -r _env _prov _np _pf _rp _hr hp hs _subnet <<<"$line"
+		IFS=$'\n\t'
+		# trim whitespace
+		hp=$(echo "${hp:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
+		hs=$(echo "${hs:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
 		if [ -n "${hp:-}" ] && [ -n "${hs:-}" ]; then
 			echo "$hp $hs"
 			return
@@ -89,7 +91,26 @@ csv_lookup() {
 	local n="$1" csv="$ROOT_DIR/config/environments.csv"
 	[ -f "$csv" ] || return 1
 	# return comma-separated line for env n, ignoring comments/blank
-	awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d ''
+	awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d '
+'
+}
+
+# Get cluster subnet for environment (k3d only)
+subnet_for() {
+	local env="$1" line subnet
+	line=$(csv_lookup "$env" || true)
+	if [ -n "$line" ]; then
+		IFS=, read -r _env _prov _np _pf _rp _hr _hp _hs subnet <<<"$line"
+		IFS=$'\n\t'
+		# trim whitespace
+		subnet=$(echo "${subnet:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
+		if [ -n "$subnet" ]; then
+			echo "$subnet"
+			return
+		fi
+	fi
+	# No subnet specified
+	echo ""
 }
 
 # Preload a container image into a cluster runtime to avoid ImagePullBackOff
@@ -162,8 +183,8 @@ prefetch_image() {
 # Wait until pods match selector are Running; on failure, preload image + retry with backoff
 # Usage: ensure_pod_running_with_preload <ctx> <namespace> <label-selector> <provider> <cluster-name> <image> <timeout-seconds>
 ensure_pod_running_with_preload() {
-  local ctx="$1" ns="$2" sel="$3" provider="$4" name="$5" image="$6" timeout="${7:-180}"
-  local attempt=0 max_attempts=3 base_wait=4 status waited step
+  local ctx="$1" ns="$2" sel="$3" provider="$4" name="$5" image="$6" timeout="${7:-60}"
+  local attempt=0 max_attempts=2 base_wait=4 status waited step
 
   while [ $attempt -lt $max_attempts ]; do
     # quick wait loop before deciding to preload

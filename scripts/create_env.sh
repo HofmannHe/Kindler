@@ -182,7 +182,8 @@ if [ $reg_portainer -eq 1 ]; then
   if kubectl --context "$ctx" -n portainer-edge get pod -l app=portainer-edge-agent -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q '^Running$'; then
     echo "[EDGE] agent already Running, skip registration"
   else
-    "$ROOT_DIR"/scripts/register_edge_agent.sh "$name" "$provider"
+    # 注册 Edge Agent，允许失败（ArgoCD 会自动部署）
+    "$ROOT_DIR"/scripts/register_edge_agent.sh "$name" "$provider" || echo "[WARN] Edge Agent registration failed, will be deployed by ArgoCD"
   fi
 fi
 

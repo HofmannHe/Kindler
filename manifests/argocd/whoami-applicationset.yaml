@@ -11,41 +11,49 @@ spec:
       elements:
       # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
       - env: dev
-        hostEnv: dev
+        hostEnv: kind.dev
         branch: dev
         clusterName: dev
       - env: uat
-        hostEnv: uat
+        hostEnv: kind.uat
         branch: uat
         clusterName: uat
       - env: prod
-        hostEnv: prod
+        hostEnv: kind.prod
         branch: prod
         clusterName: prod
       - env: dev-k3d
-        hostEnv: devk3d
+        hostEnv: k3d.dev-k3d
         branch: dev-k3d
         clusterName: dev-k3d
       - env: uat-k3d
-        hostEnv: uatk3d
+        hostEnv: k3d.uat-k3d
         branch: uat-k3d
         clusterName: uat-k3d
       - env: prod-k3d
-        hostEnv: prodk3d
+        hostEnv: k3d.prod-k3d
         branch: prod-k3d
         clusterName: prod-k3d
       - env: debug-k3d
-        hostEnv: debugk3d
+        hostEnv: k3d.debug-k3d
         branch: debug-k3d
         clusterName: debug-k3d
       - env: test-final
-        hostEnv: testfinal
+        hostEnv: k3d.test-final
         branch: test-final
         clusterName: test-final
       - env: test-k3d-fixed
-        hostEnv: testk3dfixed
+        hostEnv: k3d.test-k3d-fixed
         branch: test-k3d-fixed
         clusterName: test-k3d-fixed
+      - env: rttr-dev
+        hostEnv: k3d.rttr-dev
+        branch: rttr-dev
+        clusterName: rttr-dev
+      - env: rttr-uat
+        hostEnv: k3d.rttr-uat
+        branch: rttr-uat
+        clusterName: rttr-uat
   template:
     metadata:
       name: 'whoami-{{.env}}'

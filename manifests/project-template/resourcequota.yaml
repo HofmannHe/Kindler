@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+  namespace: PROJECT_NAMESPACE_PLACEHOLDER
+spec:
+  hard:
+    requests.cpu: PROJECT_CPU_LIMIT_PLACEHOLDER
+    requests.memory: PROJECT_MEMORY_LIMIT_PLACEHOLDER
+    limits.cpu: PROJECT_CPU_LIMIT_PLACEHOLDER
+    limits.memory: PROJECT_MEMORY_LIMIT_PLACEHOLDER
+    persistentvolumeclaims: "5"
+    pods: "20"
+    services: "10"
+    secrets: "10"
+    configmaps: "10"

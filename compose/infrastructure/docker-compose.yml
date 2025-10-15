@@ -7,7 +7,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
       - portainer_secrets:/run/secrets:ro
-    command: ["--admin-password-file", "/run/secrets/portainer_admin"]
+    command: ["--admin-password-file", "/run/secrets/portainer_admin", "--trusted-origins", "portainer.devops.192.168.51.30.sslip.io"]
     networks:
       - infrastructure
 
@@ -20,15 +20,20 @@ services:
       - "${HAPROXY_HTTPS_PORT:-443}:443"
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-      - haproxy_certs:/usr/local/etc/haproxy/certs
+      - ./ssl:/usr/local/etc/haproxy/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - infrastructure
+      infrastructure:
+      k3d-shared:
+        ipv4_address: ${HAPROXY_FIXED_IP:-10.100.255.100}
 
 networks:
   infrastructure:
     name: infrastructure
+  k3d-shared:
+    external: true
+    name: k3d-shared
 
 volumes:
   portainer_data:

@@ -56,6 +56,21 @@ generate_applicationset() {
     local branch=$(get_branch_for_env "$env")
     local label_env
     label_env="$(env_label "$env")"
+    
+    # 根据新的命名规则生成 hostEnv
+    local host_env
+    case "$provider" in
+      k3d) 
+        # 对于 k3d 环境，提取环境名（去掉 -k3d 后缀）
+        local env_name="${env%-k3d}"
+        host_env="k3d.${env_name}"
+        ;;
+      kind) 
+        host_env="kind.${label_env}"
+        ;;
+      *) 
+        host_env="${label_env}" ;;  # devops 等特殊情况
+    esac
 
     if [ $first -eq 1 ]; then
       first=0
@@ -65,7 +80,7 @@ generate_applicationset() {
     fi
 
     elements="${elements}      - env: ${env}
-        hostEnv: ${label_env}
+        hostEnv: ${host_env}
         branch: ${branch}
         clusterName: ${env}"
 

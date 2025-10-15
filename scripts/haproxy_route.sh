@@ -6,6 +6,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
 CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
+LOCK_FILE="/tmp/haproxy_route.lock"
 
 # load base domain suffix from config if present
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -57,15 +58,75 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$cmd" ] && [ -n "$name" ] || usage
 
+# 获取文件锁（使用flock或mkdir作为fallback）
+acquire_lock() {
+	if command -v flock >/dev/null 2>&1; then
+		# 使用 flock (推荐)
+		exec 200>"$LOCK_FILE"
+		flock -x 200
+	else
+		# fallback: 使用 mkdir 原子性
+		local max_wait=30 waited=0
+		while ! mkdir "$LOCK_FILE.dir" 2>/dev/null; do
+			sleep 0.1
+			waited=$((waited+1))
+			if [ $waited -gt $((max_wait*10)) ]; then
+				echo "[WARN] Lock timeout, forcing acquisition" >&2
+				rm -rf "$LOCK_FILE.dir" 2>/dev/null || true
+				mkdir "$LOCK_FILE.dir" 2>/dev/null || true
+				break
+			fi
+		done
+	fi
+}
+
+# 释放文件锁
+release_lock() {
+	if command -v flock >/dev/null 2>&1; then
+		flock -u 200 2>/dev/null || true
+		exec 200>&- 2>/dev/null || true
+	else
+		rm -rf "$LOCK_FILE.dir" 2>/dev/null || true
+	fi
+}
+
 add_acl() {
-	local tmp acl_begin acl_end
+	local tmp acl_begin acl_end cluster_type env_name
 	acl_begin="^[[:space:]]*# BEGIN DYNAMIC ACL"
 	acl_end="^[[:space:]]*# END DYNAMIC ACL"
+	
+	# Determine cluster type and environment name for naming convention
+	case "$provider" in
+		k3d) 
+			cluster_type="k3d"
+			# 使用完整的环境名（包括 -k3d 后缀）
+			env_name="$name"
+			;;
+		kind) 
+			cluster_type="kind"
+			env_name="$name"
+			;;
+		*) 
+			cluster_type="unknown"
+			env_name="$label"
+			;;
+	esac
+	
 	tmp=$(mktemp)
-	awk -v n="$name" -v l="$label" -v B="$acl_begin" -v E="$acl_end" '
+	awk -v n="$name" -v en="$env_name" -v ct="$cluster_type" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
-    $0 ~ B {print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." l "\\.[^:]+"; print "  use_backend be_" n " if host_" n; ins=1}
+    $0 ~ B {
+      if (ct == "unknown") {
+        # Fallback to old naming convention
+        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." en "\\.[^:]+"
+      } else {
+        # New naming convention: {service}.{cluster_type}.{env}.{base_domain}
+        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." ct "\\." en "\\.[^:]+"
+      }
+      print "  use_backend be_" n " if host_" n
+      ins=1
+    }
   ' "$CFG" >"$tmp"
 	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
@@ -135,25 +196,47 @@ reload() {
 
 case "$cmd" in
 add)
+	# Determine environment name for output
+	output_env_name=""
+	case "$provider" in
+		k3d) output_env_name="${name%-k3d}" ;;
+		kind) output_env_name="$name" ;;
+		*) output_env_name="$label" ;;
+	esac
+	
 	if [ "${DRY_RUN:-}" = "1" ]; then
-		echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	else
+		# 获取锁保护配置文件修改
+		acquire_lock
 		remove_acl || true
 		remove_backend || true
 		add_acl
 		add_backend
 		ensure_network
 		reload
-		echo "[haproxy] added route for $name (pattern: <service>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		release_lock
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[haproxy] added route for $name (pattern: <service>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[haproxy] added route for $name (pattern: <service>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	fi
 	;;
 remove)
 	if [ "${DRY_RUN:-}" = "1" ]; then
 		echo "[DRY-RUN][haproxy] remove route for $name"
 	else
+		# 获取锁保护配置文件修改
+		acquire_lock
 		remove_acl
 		remove_backend
 		reload
+		release_lock
 		echo "[haproxy] removed route for $name"
 	fi
 	;;

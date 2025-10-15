@@ -55,6 +55,7 @@ create_k3d() {
   if [ -n "${K3D_IMAGE:-}" ]; then img_arg="--image ${K3D_IMAGE}"; fi
 
   # 使用共享网络以支持 ArgoCD 跨集群连接
+  # 注意：不能在已存在的网络上指定 --subnet，依赖 Docker IPAM 自动分配
   local network_arg="--network k3d-shared"
 
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
