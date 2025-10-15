@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infrastructure-base
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - clusters:
+      selector:
+        matchExpressions:
+        - key: argocd.argoproj.io/secret-type
+          operator: In
+          values: [cluster]
+        - key: type
+          operator: NotIn
+          values: [management]  # 排除 devops 集群
+      values:
+        # 默认值
+        edgeAgentEnabled: "true"
+        traefikEnabled: "true"
+  template:
+    metadata:
+      name: 'infrastructure-{{.name}}'
+      labels:
+        app.kubernetes.io/managed-by: argocd
+        app.kubernetes.io/part-of: infrastructure
+        env: '{{.metadata.labels.env}}'
+    spec:
+      project: default
+      source:
+        repoURL: 'http://git.devops.192.168.51.30.sslip.io/fc005/devops.git'
+        path: infrastructure
+        targetRevision: master
+        helm:
+          releaseName: infrastructure
+          values: |
+            cluster:
+              name: {{.name}}
+              env: {{.metadata.labels.env}}
+              provider: {{.metadata.labels.provider}}
+            edgeAgent:
+              enabled: true
+              edgeId: "{{.metadata.annotations.portainer-edge-id}}"
+              edgeKey: "{{.metadata.annotations.portainer-edge-key}}"
+              cluster:
+                name: {{.name}}
+                env: {{.metadata.labels.env}}
+                provider: {{.metadata.labels.provider}}
+            traefik:
+              enabled: true
+              cluster:
+                name: {{.name}}
+                env: {{.metadata.labels.env}}
+                provider: {{.metadata.labels.provider}}
+      destination:
+        server: '{{.server}}'
+        namespace: kube-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+

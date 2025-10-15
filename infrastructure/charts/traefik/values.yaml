@@ -1,0 +1,30 @@
+# Traefik Configuration
+enabled: true
+
+# 集群信息
+cluster:
+  name: ""
+  env: ""
+  provider: ""
+
+# Traefik 配置
+image:
+  repository: traefik
+  tag: v3.2.3
+  pullPolicy: IfNotPresent
+
+# NodePort 端口（默认 30080）
+nodePort: 30080
+
+# 资源限制
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Namespace
+namespace: kube-system
+
