@@ -19,18 +19,9 @@ fi
 : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 : "${PORTAINER_HTTP_PORT:=9000}"
 
-# 使用 Portainer 容器直接访问（不依赖 HAProxy 和 devops 集群）
-PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
-if [ -n "$PORTAINER_IP" ]; then
-	PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
-else
-	# Fallback to domain-based access
-	if [ "${HAPROXY_HTTPS_PORT}" = "443" ]; then
-		PORTAINER_URL="${PORTAINER_URL:-https://portainer.devops.${BASE_DOMAIN}}"
-	else
-		PORTAINER_URL="${PORTAINER_URL:-https://portainer.devops.${BASE_DOMAIN}:${HAPROXY_HTTPS_PORT}}"
-	fi
-fi
+# 使用 Portainer 在 management 网络中的固定 IP
+PORTAINER_IP="${PORTAINER_FIXED_IP:-10.100.255.101}"
+PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
 
 echo "[PORTAINER] Adding local Docker endpoint..."
 

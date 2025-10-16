@@ -31,12 +31,31 @@ kind) network_name="kind" ;;
 esac
 
 ensure_network() {
-	# HAProxy 需要连接到 k3d-shared 网络以访问所有集群
-	local shared_network="k3d-shared"
-	if docker network inspect "$shared_network" >/dev/null 2>&1; then
-		docker network connect "$shared_network" haproxy-gw 2>/dev/null || true
+	# HAProxy 需要连接到集群网络以访问集群
+	# 每个 k3d 集群使用独立网络（k3d-<name>），HAProxy 需要连接到这些网络
+	
+	# 1. k3d 集群：连接到集群的独立网络
+	if [ "$provider" = "k3d" ]; then
+		local dedicated_network="k3d-${name}"
+		if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
+			echo "[haproxy] Connecting to k3d network: $dedicated_network"
+			docker network connect "$dedicated_network" haproxy-gw 2>/dev/null || true
+		else
+			echo "[haproxy] WARN: Network $dedicated_network not found"
+		fi
+		return 0
 	fi
-	# 兼容旧的独立网络模式
+	
+	# 2. kind 集群：连接到 kind 网络（如果存在）
+	if [ "$provider" = "kind" ]; then
+		if docker network inspect "kind" >/dev/null 2>&1; then
+			echo "[haproxy] Connecting to kind network"
+			docker network connect "kind" haproxy-gw 2>/dev/null || true
+		fi
+		return 0
+	fi
+	
+	# 3. 其他情况：尝试使用 network_name 变量（兼容性）
 	if [ -n "${network_name:-}" ]; then
 		docker network connect "$network_name" haproxy-gw 2>/dev/null || true
 	fi
@@ -135,19 +154,34 @@ add_acl() {
 add_backend() {
 	local tmp b_begin b_end ip detected_port
 	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
-	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
+	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null) && [ -n "$ip" ]; then
 		# kind cluster detected - use NodePort on control-plane container IP
 		detected_port="$node_port"
-	elif ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
-		# k3d cluster on shared network - use server-0 container IP + NodePort
-		detected_port="$node_port"
-	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
-		# k3d cluster (legacy/without shared network info) - use server-0 container IP + NodePort
+	elif [ "$provider" = "k3d" ]; then
+		# k3d cluster: 优先从独立网络获取 IP，回退到共享网络
+		local dedicated_network="k3d-${name}"
+		if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
+			# 从独立网络获取 IP
+			ip=$(docker inspect "k3d-${name}-server-0" --format "{{with index .NetworkSettings.Networks \"$dedicated_network\"}}{{.IPAddress}}{{end}}" 2>/dev/null || true)
+		fi
+		if [ -z "$ip" ]; then
+			# 回退：从共享网络获取 IP
+			ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null || true)
+		fi
+		if [ -z "$ip" ]; then
+			# 最后回退：获取任意网络的 IP
+			ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null | head -1 || true)
+		fi
 		detected_port="$node_port"
 	else
 		ip="127.0.0.1" # fallback (may not work for kind)
 		detected_port="$node_port"
 	fi
+	
+	if [ -z "$ip" ] || [ "$ip" = "127.0.0.1" ]; then
+		echo "[WARN] Could not resolve container IP for cluster $name, using fallback 127.0.0.1" >&2
+	fi
+	
 	b_begin="^# BEGIN DYNAMIC BACKENDS"
 	b_end="^# END DYNAMIC BACKENDS"
 	tmp=$(mktemp)

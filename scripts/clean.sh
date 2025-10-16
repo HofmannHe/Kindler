@@ -221,9 +221,14 @@ remove_network() {
   fi
 }
 
-# try remove both infrastructure and shared k3d network
+# Remove infrastructure and management networks
 remove_network infrastructure
-remove_network k3d-shared
+remove_network management
+
+# Remove k3d cluster networks (k3d-<name>)
+for net in $(docker network ls --format '{{.Name}}' | grep '^k3d-'); do
+  remove_network "$net"
+done
 
 echo "[CLEAN] Done."
 

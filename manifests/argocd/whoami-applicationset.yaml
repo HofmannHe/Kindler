@@ -23,19 +23,19 @@ spec:
         branch: prod
         clusterName: prod
       - env: dev-k3d
-        hostEnv: k3d.dev-k3d
+        hostEnv: k3d.dev
         branch: dev-k3d
         clusterName: dev-k3d
       - env: uat-k3d
-        hostEnv: k3d.uat-k3d
+        hostEnv: k3d.uat
         branch: uat-k3d
         clusterName: uat-k3d
       - env: prod-k3d
-        hostEnv: k3d.prod-k3d
+        hostEnv: k3d.prod
         branch: prod-k3d
         clusterName: prod-k3d
       - env: debug-k3d
-        hostEnv: k3d.debug-k3d
+        hostEnv: k3d.debug
         branch: debug-k3d
         clusterName: debug-k3d
       - env: test-final

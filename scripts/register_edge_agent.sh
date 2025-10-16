@@ -91,18 +91,19 @@ EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
 # 使用 HAProxy 作为统一入口，Edge Agent 通过 HAProxy 访问 Portainer
-# 从配置文件读取 HAProxy 固定 IP 地址
-HAPROXY_IP="${HAPROXY_FIXED_IP:-10.100.255.100}"
+# 使用 host.docker.internal 让所有集群都能访问 HAProxy（通过宿主机）
+HAPROXY_HOST="${HAPROXY_HOST:-host.docker.internal}"
+HAPROXY_API_PORT="${HAPROXY_HTTP_PORT:-80}"
 
-echo "[EDGE] Using fixed HAProxy IP: $HAPROXY_IP (from HAPROXY_FIXED_IP config)"
-echo "[EDGE] Edge Agent will connect to Portainer via HAProxy (port 80 for API, port 8000 for WebSocket)"
+echo "[EDGE] Using HAProxy host: $HAPROXY_HOST:$HAPROXY_API_PORT (accessible from all clusters)"
+echo "[EDGE] Edge Agent will connect to Portainer via HAProxy (port $HAPROXY_API_PORT for API, port 8000 for WebSocket)"
 
 # 创建 Edge Environment（Edge Agent 通过 HAProxy 访问 Portainer）
 # HAProxy 80 端口处理 API 请求，8000 端口处理 WebSocket 连接
 EDGE_ENV_RESPONSE=$(curl -sk -X POST "$PORTAINER_URL/api/endpoints" \
 	-H "Authorization: Bearer $JWT" \
 	-H "Content-Type: application/x-www-form-urlencoded" \
-	-d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$HAPROXY_IP:80&GroupID=1")
+	-d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$HAPROXY_HOST:$HAPROXY_API_PORT&GroupID=1")
 
 ENDPOINT_ID=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.Id')
 EDGE_KEY=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.EdgeKey')
@@ -258,10 +259,10 @@ spec:
 EOF
 fi
 
-echo "[EDGE] Waiting for Edge Agent to be ready..."
+echo "[EDGE] Waiting for Edge Agent to be ready (max 300s = 5min)..."
 # Generalized retry: preload image to cluster and retry if not Running
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 120 || {
+ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 300 || {
 	echo "[ERROR] Edge Agent pod failed to start"
 	kubectl --context "$CTX" get pods -n portainer-edge
 	kubectl --context "$CTX" describe pods -n portainer-edge -l app=portainer-edge-agent | tail -30

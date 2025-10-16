@@ -30,18 +30,10 @@ main() {
 	: "${HAPROXY_HTTPS_PORT:=443}"
 	: "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 
-	echo "[BOOTSTRAP] Create shared Docker network for k3d clusters"
-	SHARED_NETWORK="k3d-shared"
-	if ! docker network inspect "$SHARED_NETWORK" >/dev/null 2>&1; then
-		echo "[NETWORK] Creating shared network: $SHARED_NETWORK (10.100.0.0/16)"
-		docker network create "$SHARED_NETWORK" \
-			--subnet 10.100.0.0/16 \
-			--gateway 10.100.0.1 \
-			--opt com.docker.network.bridge.name=br-k3d-shared
-		echo "[SUCCESS] Shared network created"
-	else
-		echo "[NETWORK] Shared network already exists"
-	fi
+	# 注意：不再创建全局 k3d-shared 网络
+	# 每个 k3d 集群使用独立的子网（在 cluster.sh 中创建）
+	# 这样可以避免子网重叠冲突，HAProxy 通过连接各集群网络来访问
+	echo "[BOOTSTRAP] Skip creating k3d-shared network (using dedicated subnets per cluster)"
 
 	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists"
 	if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
@@ -72,20 +64,22 @@ main() {
 	done
 	wait || true
 
-	echo "[BOOTSTRAP] Waiting for Portainer to be ready..."
-	: "${PORTAINER_HTTP_PORT:=9000}"
-	PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
-	for i in {1..30}; do
-		if curl -s http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}/api/system/status >/dev/null 2>&1; then
-			echo "[BOOTSTRAP] Portainer is ready"
-			break
-		fi
-		[ $i -eq 30 ] && {
-			echo "[ERROR] Portainer failed to start"
-			exit 1
-		}
-		sleep 2
-	done
+echo "[BOOTSTRAP] Waiting for Portainer to be ready..."
+: "${PORTAINER_HTTP_PORT:=9000}"
+# 使用 Portainer 在 management 网络中的固定 IP
+PORTAINER_IP="${PORTAINER_FIXED_IP:-10.100.255.101}"
+for i in {1..30}; do
+	if curl -s http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}/api/system/status >/dev/null 2>&1; then
+		echo "[BOOTSTRAP] Portainer is ready (IP: ${PORTAINER_IP}:${PORTAINER_HTTP_PORT})"
+		break
+	fi
+	[ $i -eq 30 ] && {
+		echo "[ERROR] Portainer failed to start"
+		docker logs portainer-ce --tail 20
+		exit 1
+	}
+	sleep 2
+done
 
 	echo "[BOOTSTRAP] Adding local Docker endpoint to Portainer..."
 	"$ROOT_DIR/scripts/portainer_add_local.sh"

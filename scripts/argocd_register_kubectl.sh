@@ -55,15 +55,24 @@ register_cluster_kubectl() {
   # 获取集群 API server 地址（使用容器内网 IP 以支持跨集群连接）
   local api_server
   if [[ "$provider" == "k3d" ]]; then
-    # k3d: 使用容器内网 IP（共享网络 k3d-shared）
+    # k3d: 使用容器内网 IP（从集群独立网络获取）
     local container_name="k3d-${cluster_name}-server-0"
-    local container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container_name" 2>/dev/null | head -1)
+    local network_name="k3d-${cluster_name}"
+    
+    # 优先从集群的独立网络获取 IP
+    local container_ip=$(docker inspect "$container_name" --format "{{with index .NetworkSettings.Networks \"$network_name\"}}{{.IPAddress}}{{end}}" 2>/dev/null || true)
+    
+    # 如果没有独立网络，回退到获取第一个网络的 IP
+    if [[ -z "$container_ip" ]]; then
+      container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container_name" 2>/dev/null | head -1)
+    fi
+    
     if [[ -z "$container_ip" ]]; then
       echo "[ERROR] Failed to get container IP for $container_name"
       return 1
     fi
     api_server="https://${container_ip}:6443"
-    echo "[INFO] Using container IP for API server: $api_server"
+    echo "[INFO] Using container IP for API server: $api_server (from network: $network_name)"
   else
     # kind: 使用 kubeconfig 中的地址，若为 127.0.0.1 或 0.0.0.0 则改为 host.k3d.internal
     api_server=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.server}")

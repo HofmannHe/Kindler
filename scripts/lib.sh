@@ -183,36 +183,79 @@ prefetch_image() {
 # Wait until pods match selector are Running; on failure, preload image + retry with backoff
 # Usage: ensure_pod_running_with_preload <ctx> <namespace> <label-selector> <provider> <cluster-name> <image> <timeout-seconds>
 ensure_pod_running_with_preload() {
-  local ctx="$1" ns="$2" sel="$3" provider="$4" name="$5" image="$6" timeout="${7:-60}"
-  local attempt=0 max_attempts=2 base_wait=4 status waited step
+  local ctx="$1" ns="$2" sel="$3" provider="$4" name="$5" image="$6" timeout="${7:-180}"
+  local attempt=0 max_attempts=5 base_wait=2 status waited step check_interval
+
+  log INFO "Waiting for pods '$sel' in $ns (max ${max_attempts} attempts, ${timeout}s per attempt)"
 
   while [ $attempt -lt $max_attempts ]; do
-    # quick wait loop before deciding to preload
+    # Smart wait loop with adaptive checking
     waited=0; step=$base_wait
+    check_interval=2  # Start with 2s checks
+    preload_triggered=0  # 追踪是否已经触发过预加载
+    
     while [ $waited -lt "$timeout" ]; do
       status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)
-      [ "$status" = "Running" ] && return 0
-      if [ $((waited % 10)) -eq 0 ]; then
-        log INFO "waiting pods '$sel' in $ns (elapsed ${waited}s/${timeout}s, attempt $((attempt+1)))"
+      
+      if [ "$status" = "Running" ]; then
+        log INFO "✓ Pods '$sel' in $ns are Running (elapsed: ${waited}s, attempt: $((attempt+1)))"
+        return 0
       fi
-      sleep $step; waited=$((waited+step))
+      
+      # 如果 Pod 在 Pending/ContainerCreating 超过 30 秒，立即预加载镜像
+      if [ "$preload_triggered" -eq 0 ] && [ $waited -gt 30 ] && [ "$status" = "Pending" ]; then
+        local reason=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+        if echo "$reason" | grep -qi "ContainerCreating\|ImagePull"; then
+          log WARN "⚡ Pod stuck in $reason for ${waited}s, preloading image immediately..."
+          preload_image_to_cluster "$provider" "$name" "$image" || log WARN "Preload failed, continuing..."
+          preload_triggered=1
+        fi
+      fi
+      
+      # Report progress every 10 seconds
+      if [ $((waited % 10)) -eq 0 ]; then
+        local pod_status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.containerStatuses[0].state}' 2>/dev/null || echo "unknown")
+        log INFO "⏳ Waiting pods '$sel' in $ns (${waited}s/${timeout}s, attempt $((attempt+1))/$max_attempts, status: ${status:-none}, state: ${pod_status})"
+      fi
+      
+      # Adaptive sleep: increase interval after first 30s
+      if [ $waited -gt 30 ] && [ $check_interval -lt 5 ]; then
+        check_interval=5
+      fi
+      
+      sleep $check_interval
+      waited=$((waited+check_interval))
     done
 
-    # not running within timeout: attempt preload + delete to restart
-    log WARN "Pods '$sel' in $ns not Running; attempt $((attempt+1))/$max_attempts — preloading '$image'"
-    preload_image_to_cluster "$provider" "$name" "$image"
+    # Not running within timeout: attempt preload + delete to restart
+    log WARN "⚠ Pods '$sel' in $ns not Running after ${timeout}s; attempt $((attempt+1))/$max_attempts — preloading '$image' and restarting"
+    
+    # Force preload image to cluster
+    preload_image_to_cluster "$provider" "$name" "$image" || log WARN "Preload failed, continuing anyway"
+    
+    # Delete pods to trigger restart
     kubectl --context "$ctx" delete pod -n "$ns" -l "$sel" --force --grace-period=0 >/dev/null 2>&1 || true
+    
+    # Wait a bit for pod to be recreated
+    sleep 5
 
-    # exponential backoff for next cycle
+    # Exponential backoff for next cycle (but cap the timeout increase)
     attempt=$((attempt+1))
-    base_wait=$((base_wait*2))
+    if [ $base_wait -lt 8 ]; then
+      base_wait=$((base_wait*2))
+    fi
   done
 
-  # final check one last time
+  # Final check one last time
   status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)
   if [ "$status" = "Running" ]; then
+    log INFO "✓ Pods '$sel' in $ns are Running (final check succeeded)"
     return 0
   fi
-  log WARN "Pods with selector '$sel' in $ns not Running after retries"
+  
+  log WARN "✗ Pods with selector '$sel' in $ns not Running after $max_attempts attempts"
+  log WARN "Pod status dump:"
+  kubectl --context "$ctx" get pods -n "$ns" -l "$sel" 2>/dev/null || true
+  kubectl --context "$ctx" describe pods -n "$ns" -l "$sel" 2>/dev/null | tail -50 || true
   return 1
 }

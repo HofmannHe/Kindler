@@ -116,6 +116,17 @@ fi
 ctx_prefix=$([ "$provider" = "k3d" ] && echo k3d || echo kind)
 ctx="$ctx_prefix-$name"
 
+# 预加载关键系统镜像到 k3d 集群（必须在任何 pod 部署前）
+if [ "$provider" = "k3d" ]; then
+  echo "[K3D] Preloading critical system images to avoid network pull failures..."
+  . "$ROOT_DIR/scripts/lib.sh"
+  prefetch_image rancher/mirrored-pause:3.6 || echo "[WARN] Failed to prefetch pause image"
+  prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || echo "[WARN] Failed to prefetch coredns image"
+  
+  echo "[K3D] Importing system images to cluster..."
+  k3d image import rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>&1 | grep -v "INFO" || echo "[WARN] Failed to import some system images"
+fi
+
 # Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
 . "$ROOT_DIR/scripts/lib.sh"
 if [ "$provider" = "kind" ]; then
@@ -149,30 +160,34 @@ if [ $reg_portainer -eq 1 ]; then
   # 使用 Edge Agent 方式（更可靠，不依赖网络镜像拉取）
   echo "[PORTAINER] Using Edge Agent mode (recommended for offline environments)"
 
-  # 预拉取镜像（本地有则跳过）
+  # 预拉取镜像并导入到集群（本地有则跳过）
   if [ "${DRY_RUN:-}" != "1" ]; then
     echo "[PORTAINER] Prefetching required images (skip if cached)..."
-    . "$ROOT_DIR/scripts/lib.sh"; prefetch_image portainer/agent:latest || true
-  else
-    echo "[DRY-RUN][PORTAINER] 跳过镜像预拉取"
-  fi
-
-  # 导入必需镜像到集群（避免镜像拉取失败）
-  if [ "$provider" = "k3d" ]; then
-    if [ "${DRY_RUN:-}" != "1" ]; then
-      echo "[PORTAINER] Importing images to k3d cluster..."
-      . "$ROOT_DIR/scripts/lib.sh"; prefetch_image rancher/mirrored-pause:3.6 || true; prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
+    . "$ROOT_DIR/scripts/lib.sh"
+    prefetch_image portainer/agent:latest || true
+    
+    # 导入镜像到集群（避免镜像拉取失败）
+    echo "[PORTAINER] Importing portainer/agent:latest to $provider cluster..."
+    if [ "$provider" = "k3d" ]; then
+      # k3d: 同时导入 CoreDNS 和 pause 镜像
+      prefetch_image rancher/mirrored-pause:3.6 || true
+      prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
       k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>/dev/null || true
     else
-      echo "[DRY-RUN][PORTAINER] 跳过 k3d 镜像导入"
+      # kind: 使用 preload_image_to_cluster 导入
+      preload_image_to_cluster kind "$name" "portainer/agent:latest" || true
     fi
+  else
+    echo "[DRY-RUN][PORTAINER] 跳过镜像预拉取和导入"
   fi
 
-  # 等待 CoreDNS 就绪（如果是 k3d）
+  # 等待 CoreDNS 就绪（如果是 k3d，增加超时时间）
   if [ "$provider" = "k3d" ]; then
     if [ "${DRY_RUN:-}" != "1" ]; then
-      echo "[PORTAINER] Waiting for CoreDNS to be ready..."
-      kubectl --context "$ctx" wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+      echo "[PORTAINER] Waiting for CoreDNS to be ready (max 180s)..."
+      kubectl --context "$ctx" wait --for=condition=ready pod -l k8s-app=kube-dns -n kube-system --timeout=180s || {
+        echo "[WARN] CoreDNS not ready within timeout, but continuing..."
+      }
     else
       echo "[DRY-RUN][PORTAINER] 跳过等待 CoreDNS"
     fi

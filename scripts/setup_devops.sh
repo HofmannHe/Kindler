@@ -84,10 +84,10 @@ else
 	kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
 fi
 
-# 等待 ArgoCD server，就绪失败则预热镜像后重试（减少超时时间）
-echo "[DEVOP] Waiting for ArgoCD server to be ready (max 180s)..."
+# 等待 ArgoCD server（增加超时时间到 10 分钟）
+echo "[DEVOP] Waiting for ArgoCD server to be ready (max 600s = 10min)..."
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 180 || {
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || {
 	echo "[ERROR] ArgoCD server failed to start within timeout"
 	kubectl --context k3d-devops get pods -n argocd -l app.kubernetes.io/name=argocd-server
 	kubectl --context k3d-devops describe pods -n argocd -l app.kubernetes.io/name=argocd-server | tail -30
@@ -133,9 +133,9 @@ INGRESS
 
 # 5. 重启 argocd-server 应用配置
 kubectl --context k3d-devops rollout restart deploy/argocd-server -n argocd
-# 使用通用预热重试再次等待 argocd-server 就绪（减少超时时间）
+# 等待 argocd-server 重启就绪（增加超时时间）
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 120 || {
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 300 || {
 	echo "[WARN] ArgoCD server restart may not be complete, but continuing..."
 }
 

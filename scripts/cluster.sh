@@ -54,9 +54,30 @@ create_k3d() {
   local img_arg=""
   if [ -n "${K3D_IMAGE:-}" ]; then img_arg="--image ${K3D_IMAGE}"; fi
 
-  # 使用共享网络以支持 ArgoCD 跨集群连接
-  # 注意：不能在已存在的网络上指定 --subnet，依赖 Docker IPAM 自动分配
-  local network_arg="--network k3d-shared"
+  # 读取集群子网配置（从 CSV）
+  local subnet network_name network_arg
+  subnet="$(subnet_for "$name")"
+  
+  if [ -n "$subnet" ]; then
+    # 使用独立子网：创建专用网络
+    network_name="k3d-${name}"
+    log INFO "Creating dedicated network for k3d cluster: $network_name (subnet: $subnet)"
+    
+    # 创建独立网络（幂等）
+    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+      # 从子网计算网关地址（使用 .1）
+      local gateway=$(echo "$subnet" | sed 's|\.0/24|.1|')
+      run "docker network create \"$network_name\" --subnet \"$subnet\" --gateway \"$gateway\" --opt com.docker.network.bridge.name=\"br-k3d-${name}\""
+      log INFO "Network $network_name created with subnet $subnet (gateway: $gateway)"
+    else
+      log INFO "Network $network_name already exists"
+    fi
+    network_arg="--network $network_name"
+  else
+    # 未指定子网：让 k3d 使用默认网络（Docker 自动分配）
+    log WARN "No subnet specified for cluster $name, using k3d default network"
+    network_arg=""  # 不指定网络，k3d 会创建默认网络 k3d-<name>
+  fi
 
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
   run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
