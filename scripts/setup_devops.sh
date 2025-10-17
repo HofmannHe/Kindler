@@ -18,22 +18,13 @@ fi
 : "${ARGOCD_VERSION:=v3.1.8}"
 : "${ARGOCD_NODEPORT:=30800}"
 
-# 检查 devops 集群是否已存在
-if k3d cluster list 2>/dev/null | grep -q '^devops\s'; then
-	echo "[DEVOP] devops cluster already exists, skipping creation"
-	# 验证集群可用
-	if ! kubectl --context k3d-devops get nodes >/dev/null 2>&1; then
-		echo "[ERROR] devops cluster exists but is not accessible" >&2
-		exit 1
-	fi
-else
-	echo "[DEVOP] Creating devops k3d cluster..."
-	"$ROOT_DIR"/scripts/create_env.sh -n devops --no-register-argocd
-
-	# 等待集群就绪
-	echo "[DEVOP] Waiting for cluster to be ready..."
-	kubectl --context k3d-devops wait --for=condition=ready node --all --timeout=60s
+# 验证 devops 集群已存在（应由 bootstrap.sh 创建）
+if ! kubectl --context k3d-devops get nodes >/dev/null 2>&1; then
+	echo "[ERROR] devops cluster not found or not accessible"
+	echo "[ERROR] Please run bootstrap.sh to create the devops cluster first"
+	exit 1
 fi
+echo "[DEVOP] devops cluster is accessible"
 
 # 预热 ArgoCD 镜像到 k3d 集群（避免拉取超时）
 echo "[DEVOP] Preloading ArgoCD images to cluster..."
@@ -109,29 +100,8 @@ password_bcrypt=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$ARGOCD_ADMIN_
 kubectl --context k3d-devops -n argocd patch secret argocd-secret -p "{\"stringData\": {\"admin.password\": \"$password_bcrypt\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
 kubectl --context k3d-devops -n argocd delete secret argocd-initial-admin-secret --ignore-not-found=true
 
-# 4. 配置 ArgoCD Ingress 以匹配域名规则
-ARGOCD_HOST="argocd.devops.${BASE_DOMAIN}"
-kubectl --context k3d-devops apply -n argocd -f - <<INGRESS
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: argocd-http
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: ${ARGOCD_HOST}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
-                port:
-                  number: 80
-INGRESS
-
-# 5. 重启 argocd-server 应用配置
+# 4. 重启 argocd-server 应用配置
+# Note: devops 集群禁用了 Traefik，直接通过 NodePort 暴露服务
 kubectl --context k3d-devops rollout restart deploy/argocd-server -n argocd
 # 等待 argocd-server 重启就绪（增加超时时间）
 . "$ROOT_DIR/scripts/lib.sh"

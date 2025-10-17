@@ -19,8 +19,12 @@ fi
 : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 : "${PORTAINER_HTTP_PORT:=9000}"
 
-# 使用 Portainer 在 management 网络中的固定 IP
-PORTAINER_IP="${PORTAINER_FIXED_IP:-10.100.255.101}"
+# 使用 Portainer 在 infrastructure 网络中的 IP
+PORTAINER_IP=$(docker inspect -f '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' portainer-ce 2>/dev/null || echo "")
+if [ -z "$PORTAINER_IP" ]; then
+	echo "[ERROR] Cannot get Portainer IP from infrastructure network"
+	exit 1
+fi
 PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
 
 echo "[PORTAINER] Adding local Docker endpoint..."

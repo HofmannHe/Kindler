@@ -10,8 +10,7 @@ services:
     command: ["--admin-password-file", "/run/secrets/portainer_admin", "--trusted-origins", "portainer.devops.192.168.51.30.sslip.io"]
     networks:
       infrastructure:
-      management:
-        ipv4_address: ${PORTAINER_FIXED_IP:-10.100.255.101}
+      k3d-shared:
 
   haproxy:
     image: haproxy:${HAPROXY_VERSION:-3.2.6-alpine3.22}
@@ -28,20 +27,15 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       infrastructure:
-      management:
-        ipv4_address: ${HAPROXY_FIXED_IP:-10.100.255.100}
+      k3d-shared:
     # 注意：HAProxy 通过 docker network connect 动态连接到各集群网络
 
 networks:
   infrastructure:
     name: infrastructure
-  management:
-    name: management
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${MANAGEMENT_SUBNET:-10.100.255.0/24}
-          gateway: ${MANAGEMENT_GATEWAY:-10.100.255.1}
+  k3d-shared:
+    name: k3d-shared
+    external: true
 
 volumes:
   portainer_data:

@@ -65,8 +65,8 @@ create_k3d() {
     
     # 创建独立网络（幂等）
     if ! docker network inspect "$network_name" >/dev/null 2>&1; then
-      # 从子网计算网关地址（使用 .1）
-      local gateway=$(echo "$subnet" | sed 's|\.0/24|.1|')
+      # 从子网计算网关地址（使用 .0.1）
+      local gateway=$(echo "$subnet" | sed -E 's|([0-9]+\.[0-9]+)\.0\.0/[0-9]+|\1.0.1|')
       run "docker network create \"$network_name\" --subnet \"$subnet\" --gateway \"$gateway\" --opt com.docker.network.bridge.name=\"br-k3d-${name}\""
       log INFO "Network $network_name created with subnet $subnet (gateway: $gateway)"
     else
@@ -74,13 +74,20 @@ create_k3d() {
     fi
     network_arg="--network $network_name"
   else
-    # 未指定子网：让 k3d 使用默认网络（Docker 自动分配）
-    log WARN "No subnet specified for cluster $name, using k3d default network"
-    network_arg=""  # 不指定网络，k3d 会创建默认网络 k3d-<name>
+    # 未指定子网：使用共享网络 k3d-shared（用于 devops 集群）
+    log INFO "No subnet specified for cluster $name, using shared network k3d-shared"
+    network_arg="--network k3d-shared"
+  fi
+
+  # devops 集群禁用 Traefik（管理集群不需要 Ingress Controller，避免端口冲突）
+  local k3s_args=""
+  if [ "$name" = "devops" ]; then
+    k3s_args='--k3s-arg "--disable=traefik@server:0"'
+    log INFO "Disabling Traefik for devops cluster (management cluster uses NodePort directly)"
   fi
 
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
-  run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
+  run "k3d cluster create ${name} ${img_arg} ${network_arg} ${k3s_args} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
   limit_node_resources k3d "$name"
 
   # 修正kubeconfig中的0.0.0.0地址为127.0.0.1

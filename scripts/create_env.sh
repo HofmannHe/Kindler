@@ -118,13 +118,27 @@ ctx="$ctx_prefix-$name"
 
 # 预加载关键系统镜像到 k3d 集群（必须在任何 pod 部署前）
 if [ "$provider" = "k3d" ]; then
-  echo "[K3D] Preloading critical system images to avoid network pull failures..."
+  echo "[K3D] Preloading critical system and Traefik images to avoid network pull failures..."
   . "$ROOT_DIR/scripts/lib.sh"
+  
+  # 基础设施镜像（pause, coredns）
   prefetch_image rancher/mirrored-pause:3.6 || echo "[WARN] Failed to prefetch pause image"
   prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || echo "[WARN] Failed to prefetch coredns image"
   
-  echo "[K3D] Importing system images to cluster..."
-  k3d image import rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>&1 | grep -v "INFO" || echo "[WARN] Failed to import some system images"
+  # k3d 内置 Traefik 所需镜像（klipper-helm 和 traefik）
+  # 这些镜像是 k3d 自动部署 Traefik 时需要的
+  prefetch_image rancher/klipper-helm:v0.9.3-build20241008 || echo "[WARN] Failed to prefetch klipper-helm image"
+  prefetch_image rancher/mirrored-library-traefik:2.11.18 || echo "[WARN] Failed to prefetch traefik image"
+  
+  echo "[K3D] Importing system and Traefik images to cluster..."
+  k3d image import \
+    rancher/mirrored-pause:3.6 \
+    rancher/mirrored-coredns-coredns:1.12.0 \
+    rancher/klipper-helm:v0.9.3-build20241008 \
+    rancher/mirrored-library-traefik:2.11.18 \
+    -c "$name" 2>&1 | grep -v "INFO" || echo "[WARN] Failed to import some images"
+  
+  echo "[K3D] All critical images imported successfully"
 fi
 
 # Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
@@ -151,9 +165,25 @@ if [ "$need_apply_traefik" -eq 1 ]; then
   "$ROOT_DIR"/scripts/traefik.sh install "$ctx" --nodeport "$node_port" || true
 fi
 
+# 连接 devops 集群到业务集群网络（k3d 独立子网）
+if [ "$provider" = "k3d" ] && [ "$name" != "devops" ]; then
+  subnet=$(subnet_for "$name")
+  if [ -n "$subnet" ]; then
+    dedicated_network="k3d-${name}"
+    echo "[NETWORK] Connecting devops cluster to $dedicated_network..."
+    docker network connect "$dedicated_network" k3d-devops-server-0 2>/dev/null || true
+    echo "[NETWORK] devops can now access $name cluster"
+  fi
+fi
+
 # Add HAProxy route (domain-based; default to node_port)
 if [ $add_haproxy -eq 1 ]; then
-  "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || true
+  echo "[HAPROXY] Adding route for cluster $name..."
+  if ! "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port"; then
+    echo "[ERROR] Failed to add HAProxy route for $name"
+    exit 1
+  fi
+  echo "[HAPROXY] Route added successfully"
 fi
 
 if [ $reg_portainer -eq 1 ]; then

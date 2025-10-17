@@ -32,16 +32,26 @@ esac
 
 ensure_network() {
 	# HAProxy 需要连接到集群网络以访问集群
-	# 每个 k3d 集群使用独立网络（k3d-<name>），HAProxy 需要连接到这些网络
+	# k3d 集群：有独立子网的使用 k3d-<name> 网络，无子网的使用共享网络 k3d-shared
 	
-	# 1. k3d 集群：连接到集群的独立网络
+	# 1. k3d 集群：检查是否有独立子网
 	if [ "$provider" = "k3d" ]; then
-		local dedicated_network="k3d-${name}"
-		if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
-			echo "[haproxy] Connecting to k3d network: $dedicated_network"
-			docker network connect "$dedicated_network" haproxy-gw 2>/dev/null || true
+		# 从 CSV 读取子网配置
+		local subnet
+		subnet="$(subnet_for "$name" 2>/dev/null || true)"
+		
+		if [ -n "$subnet" ]; then
+			# 有独立子网：连接到专用网络
+			local dedicated_network="k3d-${name}"
+			if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
+				echo "[haproxy] Connecting to k3d network: $dedicated_network"
+				docker network connect "$dedicated_network" haproxy-gw 2>/dev/null || true
+			else
+				echo "[haproxy] WARN: Network $dedicated_network not found"
+			fi
 		else
-			echo "[haproxy] WARN: Network $dedicated_network not found"
+			# 无子网（使用共享网络）：HAProxy 已在 bootstrap 时连接到 k3d-shared
+			echo "[haproxy] Cluster $name uses shared network k3d-shared (already connected)"
 		fi
 		return 0
 	fi
@@ -118,12 +128,13 @@ add_acl() {
 	case "$provider" in
 		k3d) 
 			cluster_type="k3d"
-			# 使用完整的环境名（包括 -k3d 后缀）
-			env_name="$name"
+			# 从集群名中提取环境名（去掉 -k3d 后缀）
+			env_name="${name%-k3d}"
 			;;
 		kind) 
 			cluster_type="kind"
-			env_name="$name"
+			# 从集群名中提取环境名（去掉 -kind 后缀，如果存在）
+			env_name="${name%-kind}"
 			;;
 		*) 
 			cluster_type="unknown"
@@ -219,13 +230,50 @@ remove_backend() {
 	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
 
+validate_config() {
+	# Validate HAProxy configuration using the running container
+	# This avoids permission issues with volume mounts
+	local validation_output
+	validation_output=$(docker exec haproxy-gw /usr/local/sbin/haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1)
+	
+	# Check for fatal errors (ALERT), ignore warnings
+	if echo "$validation_output" | grep -q "ALERT"; then
+		echo "[ERROR] HAProxy configuration validation failed" >&2
+		echo "$validation_output" | grep -E "(ALERT|ERROR)" | head -5 >&2 || true
+		return 1
+	fi
+	return 0
+}
+
+route_exists() {
+	# Check if route already exists (both ACL and backend)
+	local n="$1"
+	grep -q "acl host_${n}" "$CFG" && grep -q "backend be_${n}" "$CFG"
+}
+
 reload() {
 	if [ -n "${NO_RELOAD:-}" ] && [ "${NO_RELOAD}" = "1" ]; then
 		return 0
 	fi
+	
+	# Validate configuration before reloading
+	if ! validate_config; then
+		echo "[ERROR] HAProxy configuration invalid, skipping reload" >&2
+		return 1
+	fi
+	
 	if ! "${DCMD[@]}" restart >/dev/null 2>&1; then
 		"${DCMD[@]}" up -d >/dev/null
 	fi
+	
+	# Verify HAProxy is running after reload
+	sleep 2
+	if ! docker ps --filter name=haproxy-gw --filter status=running | grep -q haproxy-gw; then
+		echo "[ERROR] HAProxy failed to start after reload" >&2
+		docker logs haproxy-gw --tail 20 2>&1 || true
+		return 1
+	fi
+	return 0
 }
 
 case "$cmd" in
@@ -245,15 +293,59 @@ add)
 			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
 		fi
 	else
+		# Check if route already exists (idempotent)
+		if route_exists "$name"; then
+			echo "[haproxy] route for $name already exists, updating..."
+		fi
+		
 		# 获取锁保护配置文件修改
 		acquire_lock
+		
+		# Backup current config
+		# 确保配置文件可写
+		if [ ! -w "$CFG" ]; then
+			echo "[haproxy] Fixing config file permissions..."
+			chmod 644 "$CFG" || {
+				echo "[ERROR] Cannot write to $CFG" >&2
+				release_lock
+				exit 1
+			}
+		fi
+		
+		cp "$CFG" "${CFG}.backup" 2>/dev/null || true
+		
+		# Remove existing entries (idempotent)
 		remove_acl || true
 		remove_backend || true
+		
+		# Add new entries
 		add_acl
 		add_backend
+		
+		# Validate before reload
+		if ! validate_config; then
+			echo "[ERROR] Configuration validation failed, restoring backup" >&2
+			mv "${CFG}.backup" "$CFG" 2>/dev/null || true
+			release_lock
+			exit 1
+		fi
+		
+		# Connect HAProxy to cluster network
 		ensure_network
-		reload
+		
+		# Reload HAProxy
+		if ! reload; then
+			echo "[ERROR] HAProxy reload failed, restoring backup" >&2
+			mv "${CFG}.backup" "$CFG" 2>/dev/null || true
+			reload || true
+			release_lock
+			exit 1
+		fi
+		
+		# Cleanup backup on success
+		rm -f "${CFG}.backup" 2>/dev/null || true
 		release_lock
+		
 		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
 			echo "[haproxy] added route for $name (pattern: <service>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
 		else

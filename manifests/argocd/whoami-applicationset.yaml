@@ -34,26 +34,6 @@ spec:
         hostEnv: k3d.prod
         branch: prod-k3d
         clusterName: prod-k3d
-      - env: debug-k3d
-        hostEnv: k3d.debug
-        branch: debug-k3d
-        clusterName: debug-k3d
-      - env: test-final
-        hostEnv: k3d.test-final
-        branch: test-final
-        clusterName: test-final
-      - env: test-k3d-fixed
-        hostEnv: k3d.test-k3d-fixed
-        branch: test-k3d-fixed
-        clusterName: test-k3d-fixed
-      - env: rttr-dev
-        hostEnv: k3d.rttr-dev
-        branch: rttr-dev
-        clusterName: rttr-dev
-      - env: rttr-uat
-        hostEnv: k3d.rttr-uat
-        branch: rttr-uat
-        clusterName: rttr-uat
   template:
     metadata:
       name: 'whoami-{{.env}}'

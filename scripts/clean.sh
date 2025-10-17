@@ -226,9 +226,26 @@ remove_network infrastructure
 remove_network management
 
 # Remove k3d cluster networks (k3d-<name>)
-for net in $(docker network ls --format '{{.Name}}' | grep '^k3d-'); do
-  remove_network "$net"
-done
+echo "[CLEAN] Removing k3d cluster networks..."
+if [ "$CLEAN_DEVOPS" = "1" ]; then
+  # Clean all k3d networks including k3d-shared
+  echo "[CLEAN] Removing all k3d networks (including k3d-shared)..."
+  for net in $(docker network ls --format '{{.Name}}' | grep '^k3d-'); do
+    remove_network "$net"
+  done
+else
+  # Clean only business cluster networks, keep k3d-shared for devops
+  echo "[CLEAN] Removing business cluster networks (keeping k3d-shared)..."
+  for net in $(docker network ls --format '{{.Name}}' | grep '^k3d-' | grep -v '^k3d-shared$' | grep -v '^k3d-devops$'); do
+    echo "[CLEAN] Removing network: $net"
+    remove_network "$net"
+  done
+fi
+
+# Remove kind network (if no kind clusters remain)
+if [ "$CLEAN_DEVOPS" = "1" ] || [ "$(kind get clusters 2>/dev/null | wc -l)" -eq 0 ]; then
+  remove_network kind
+fi
 
 echo "[CLEAN] Done."
 
