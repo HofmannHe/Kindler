@@ -46,18 +46,23 @@ for cluster in $clusters; do
   # 检查 Traefik pods
   if [ "$provider" = "k3d" ]; then
     # k3d 使用内置 Traefik（在 kube-system namespace）
-    traefik_pods=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l || echo "0")
-    traefik_ready=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    traefik_pods=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    traefik_ready=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
   else
     # kind 使用我们部署的 Traefik（在 traefik namespace）
-    traefik_pods=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l || echo "0")
-    traefik_ready=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    traefik_pods=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    traefik_ready=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
   fi
   
-  traefik_pods=$(echo "$traefik_pods" | tr -d ' ')
-  traefik_ready=$(echo "$traefik_ready" | tr -d ' ')
+  # 清理可能的重复 "0"（grep -c 失败时返回0，|| echo "0" 又添加一个0）
+  traefik_pods=$(echo "$traefik_pods" | sed 's/^00$/0/')
+  traefik_ready=$(echo "$traefik_ready" | sed 's/^00$/0/')
   
-  if [ "$traefik_pods" -gt 0 ] && [ "$traefik_ready" -eq "$traefik_pods" ]; then
+  # 确保变量是有效的整数
+  traefik_pods=${traefik_pods:-0}
+  traefik_ready=${traefik_ready:-0}
+  
+  if [ "$traefik_pods" -gt 0 ] 2>/dev/null && [ "$traefik_ready" -eq "$traefik_pods" ] 2>/dev/null; then
     echo "  ✓ Traefik pods healthy ($traefik_ready/$traefik_pods)"
     passed_tests=$((passed_tests + 1))
   else

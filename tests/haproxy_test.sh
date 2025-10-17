@@ -20,12 +20,18 @@ echo ""
 echo "[1/5] Configuration Syntax"
 if docker ps --filter name=haproxy-gw --format "{{.Names}}" | grep -q haproxy-gw; then
   validation_output=$(docker exec haproxy-gw haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1)
-  validation=$(echo "$validation_output" | grep -c "ALERT" || echo "0")
+  validation=$(echo "$validation_output" | grep -c "ALERT" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+  validation=$(echo "$validation" | sed 's/^00$/0/')
+  validation=${validation:-0}
+  
   assert_equals "0" "$validation" "HAProxy configuration syntax valid (no ALERT)"
   
   # 检查是否有警告（非致命，但应该注意）
-  warnings=$(docker exec haproxy-gw haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1 | grep -c "WARNING" || echo "0")
-  if [ "$warnings" -gt 0 ]; then
+  warnings=$(docker exec haproxy-gw haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1 | grep -c "WARNING" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+  warnings=$(echo "$warnings" | sed 's/^00$/0/')
+  warnings=${warnings:-0}
+  
+  if [ "$warnings" -gt 0 ] 2>/dev/null; then
     echo "  ⚠ HAProxy configuration has $warnings warning(s)"
   fi
 else
@@ -44,9 +50,10 @@ if [ -z "$clusters" ]; then
 else
   for cluster in $clusters; do
     # 检查 ACL 定义（http 和 https frontend 各一个）
-    acl_count=$(grep -c "acl host_$cluster" "$CFG" 2>/dev/null || echo "0")
+    acl_count=$(grep -c "acl host_$cluster" "$CFG" 2>/dev/null | tr -d ' \n' || echo "0")
+    acl_count=${acl_count:-0}
     
-    if [ "$acl_count" -ge 1 ]; then
+    if [ "$acl_count" -ge 1 ] 2>/dev/null; then
       echo "  ✓ ACL for $cluster exists ($acl_count occurrences)"
       passed_tests=$((passed_tests + 1))
     else
@@ -55,8 +62,10 @@ else
     fi
     total_tests=$((total_tests + 1))
     
-    # 检查 backend 定义
-    backend_count=$(grep -c "^backend be_$cluster" "$CFG" 2>/dev/null || echo "0")
+    # 检查 backend 定义（精确匹配：backend 名称后必须是空格或行尾）
+    backend_count=$(grep -c "^backend be_${cluster}[[:space:]]*$" "$CFG" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    backend_count=$(echo "$backend_count" | sed 's/^00$/0/')
+    backend_count=${backend_count:-0}
     assert_equals "1" "$backend_count" "Backend for $cluster exists"
   done
 fi
@@ -105,17 +114,19 @@ else
     env_name="${cluster%-k3d}"
     env_name="${env_name%-kind}"
     
-    expected_pattern="\\.$provider\\.$env_name\\."
+    # HAProxy配置中的 \. 需要在grep中匹配为字面的反斜杠+点
+    expected_pattern="\\\\.$provider\\\\.$env_name\\\\."
     
-    acl_line=$(grep "acl host_$cluster" "$CFG" | head -1 2>/dev/null || echo "")
+    # 精确匹配：ACL 名称后面必须有空格
+    acl_line=$(grep "acl host_${cluster}[[:space:]]" "$CFG" | head -1 2>/dev/null || echo "")
     if [ -n "$acl_line" ]; then
       if echo "$acl_line" | grep -q "$expected_pattern"; then
         echo "  ✓ $cluster domain pattern correct ($provider.$env_name)"
         passed_tests=$((passed_tests + 1))
       else
         echo "  ✗ $cluster domain pattern incorrect"
-        echo "    Expected: $expected_pattern"
-        echo "    Actual: $acl_line"
+        echo "    Expected pattern in config: \\.$provider\\.$env_name\\."
+        echo "    Actual ACL: $acl_line"
         failed_tests=$((failed_tests + 1))
       fi
       total_tests=$((total_tests + 1))

@@ -31,8 +31,12 @@ fi
 echo ""
 echo "[2/4] Cluster Registration"
 if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
-  registered_clusters=$(kubectl --context k3d-devops get secrets -n argocd -l "argocd.argoproj.io/secret-type=cluster" --no-headers 2>/dev/null | wc -l)
-  expected_clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {count++} END {print count}' "$ROOT_DIR/config/environments.csv")
+  registered_clusters=$(kubectl --context k3d-devops get secrets -n argocd -l "argocd.argoproj.io/secret-type=cluster" --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+  registered_clusters=$(echo "$registered_clusters" | sed 's/^00$/0/')
+  registered_clusters=${registered_clusters:-0}
+  expected_clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {count++} END {print count}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "0")
+  expected_clusters=$(echo "$expected_clusters" | sed 's/^00$/0/')
+  expected_clusters=${expected_clusters:-0}
   
   assert_equals "$expected_clusters" "$registered_clusters" "All business clusters registered in ArgoCD ($registered_clusters/$expected_clusters)"
 else
@@ -45,9 +49,11 @@ fi
 echo ""
 echo "[3/4] Git Repository Connection"
 if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
-  git_repos=$(kubectl --context k3d-devops get secrets -n argocd -l "argocd.argoproj.io/secret-type=repository" --no-headers 2>/dev/null | wc -l)
+  git_repos=$(kubectl --context k3d-devops get secrets -n argocd -l "argocd.argoproj.io/secret-type=repository" --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+  git_repos=$(echo "$git_repos" | sed 's/^00$/0/')
+  git_repos=${git_repos:-0}
   
-  if [ "$git_repos" -gt 0 ]; then
+  if [ "$git_repos" -gt 0 ] 2>/dev/null; then
     echo "  ✓ Git repositories configured ($git_repos)"
     passed_tests=$((passed_tests + 1))
   else
@@ -67,24 +73,32 @@ if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
   apps=$(kubectl --context k3d-devops get applications -n argocd --no-headers 2>/dev/null | grep whoami || echo "")
   
   if [ -n "$apps" ]; then
-    total_apps=$(echo "$apps" | wc -l | tr -d ' \n')
-    synced_count=$(echo "$apps" | grep -c "Synced" || echo "0")
-    healthy_count=$(echo "$apps" | grep -c "Healthy" || echo "0")
+    total_apps=$(echo "$apps" | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    total_apps=$(echo "$total_apps" | sed 's/^00$/0/')
+    total_apps=${total_apps:-0}
+    synced_count=$(echo "$apps" | grep -c "Synced" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    synced_count=$(echo "$synced_count" | sed 's/^00$/0/')
+    synced_count=${synced_count:-0}
+    healthy_count=$(echo "$apps" | grep -c "Healthy" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+    healthy_count=$(echo "$healthy_count" | sed 's/^00$/0/')
+    healthy_count=${healthy_count:-0}
     
     echo "  Applications found: $total_apps"
     echo "  - Synced: $synced_count/$total_apps"
     echo "  - Healthy: $healthy_count/$total_apps"
     
     # 至少一半的应用应该是 Synced 状态
-    synced_threshold=$((total_apps / 2))
-    if [ "$synced_count" -ge "$synced_threshold" ]; then
-      echo "  ✓ Majority of applications synced"
-      passed_tests=$((passed_tests + 1))
-    else
-      echo "  ✗ Too few applications synced ($synced_count/$total_apps)"
-      failed_tests=$((failed_tests + 1))
+    if [ "$total_apps" -gt 0 ] 2>/dev/null; then
+      synced_threshold=$((total_apps / 2))
+      if [ "$synced_count" -ge "$synced_threshold" ] 2>/dev/null; then
+        echo "  ✓ Majority of applications synced"
+        passed_tests=$((passed_tests + 1))
+      else
+        echo "  ✗ Too few applications synced ($synced_count/$total_apps)"
+        failed_tests=$((failed_tests + 1))
+      fi
+      total_tests=$((total_tests + 1))
     fi
-    total_tests=$((total_tests + 1))
   else
     echo "  ⚠ No whoami applications found"
   fi
