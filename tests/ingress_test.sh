@@ -44,15 +44,9 @@ for cluster in $clusters; do
   fi
   
   # 检查 Traefik pods
-  if [ "$provider" = "k3d" ]; then
-    # k3d 使用内置 Traefik（在 kube-system namespace）
-    traefik_pods=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
-    traefik_ready=$(kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
-  else
-    # kind 使用我们部署的 Traefik（在 traefik namespace）
-    traefik_pods=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
-    traefik_ready=$(kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
-  fi
+  # 所有集群的 Traefik 都在 traefik namespace，使用统一的 label: app=traefik
+  traefik_pods=$(kubectl --context "$ctx" get pods -n traefik -l app=traefik --no-headers 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
+  traefik_ready=$(kubectl --context "$ctx" get pods -n traefik -l app=traefik --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
   
   # 清理可能的重复 "0"（grep -c 失败时返回0，|| echo "0" 又添加一个0）
   traefik_pods=$(echo "$traefik_pods" | sed 's/^00$/0/')
@@ -68,11 +62,7 @@ for cluster in $clusters; do
   else
     echo "  ✗ Traefik pods not healthy ($traefik_ready/$traefik_pods)"
     # 显示 pod 状态以便调试
-    if [ "$provider" = "k3d" ]; then
-      kubectl --context "$ctx" get pods -n kube-system -l app.kubernetes.io/name=traefik 2>/dev/null | head -5 || true
-    else
-      kubectl --context "$ctx" get pods -n traefik -l app.kubernetes.io/name=traefik 2>/dev/null | head -5 || true
-    fi
+    kubectl --context "$ctx" get pods -n traefik -l app=traefik 2>/dev/null | head -5 || true
     failed_tests=$((failed_tests + 1))
   fi
   total_tests=$((total_tests + 1))

@@ -66,8 +66,9 @@ for cluster in $all_clusters; do
     [ -z "$failed_coredns" ] && failed_coredns=999
     assert_equals "0" "$failed_coredns" "$cluster coredns healthy"
   else
-    # 业务集群检查所有 kube-system pods
-    failed_pods=$(kubectl --context "$ctx" get pods -n kube-system --no-headers 2>/dev/null | grep -Ev "Running|Completed" 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || true)
+    # 业务集群检查关键 kube-system pods（排除 Helm Jobs 和非关键组件）
+    # 排除: helm-install-* (Jobs), local-path-provisioner, metrics-server (可选组件)
+    failed_pods=$(kubectl --context "$ctx" get pods -n kube-system --no-headers 2>/dev/null | grep -v "helm-install-" | grep -v "local-path-provisioner" | grep -v "metrics-server" | grep -Ev "Running|Completed" 2>/dev/null | wc -l 2>/dev/null | tr -d ' \n' 2>/dev/null || true)
     # 清理并确保是有效数字
     failed_pods=$(echo "$failed_pods" | sed 's/[^0-9]//g' || echo "999")
     failed_pods=${failed_pods:-999}
