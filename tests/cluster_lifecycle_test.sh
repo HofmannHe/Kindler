@@ -35,7 +35,8 @@ trap cleanup EXIT
 ##############################################
 echo "[1/4] Creating Test Cluster: $TEST_CLUSTER"
 
-if "$ROOT_DIR/scripts/create_env.sh" -n "$TEST_CLUSTER" -p k3d --no-register-portainer --haproxy-route >/tmp/create_test.log 2>&1; then
+# 使用 --force 参数允许创建不在 CSV 中的临时集群
+if timeout 180 "$ROOT_DIR/scripts/create_env.sh" -n "$TEST_CLUSTER" -p k3d --force --no-register-portainer --haproxy-route >/tmp/create_test.log 2>&1; then
   echo "  ✓ Cluster creation completed"
   passed_tests=$((passed_tests + 1))
 else

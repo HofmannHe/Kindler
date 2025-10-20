@@ -38,6 +38,7 @@ for cluster in $clusters; do
   fi
   
   # 根据 provider 确定 Ingress Controller 类型和位置
+  # 注意：所有集群（kind 和 k3d）统一使用 Traefik
   if [ "$provider" = "k3d" ]; then
     # k3d 集群使用 Traefik，位于 kube-system namespace
     ic_namespace="kube-system"
@@ -45,11 +46,11 @@ for cluster in $clusters; do
     ic_name="Traefik"
     ingress_class="traefik"
   else
-    # kind 集群使用 ingress-nginx，位于 ingress-nginx namespace
-    ic_namespace="ingress-nginx"
-    ic_label="app.kubernetes.io/component=controller"
-    ic_name="ingress-nginx"
-    ingress_class="nginx"
+    # kind 集群也使用 Traefik，位于独立的 traefik namespace
+    ic_namespace="traefik"
+    ic_label="app.kubernetes.io/name=traefik"
+    ic_name="Traefik"
+    ingress_class="traefik"
   fi
   
   # 检查 Ingress Controller pods

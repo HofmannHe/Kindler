@@ -10,17 +10,19 @@ usage() {
   cat >&2 <<USAGE
 Usage: $0 -n <name> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] \
             [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route] \
-            [--register-argocd|--no-register-argocd] [--pf-host <addr>]
+            [--register-argocd|--no-register-argocd] [--pf-host <addr>] [--force]
 
 说明：
 - 默认参数可从 \`config/environments.csv\` 中读取（按环境名匹配），命令行传参可覆盖 CSV 默认。
 - CSV 列：env,provider,node_port,pf_port,register_portainer,haproxy_route
+- --force: 跳过 CSV 验证，允许创建不在配置清单中的集群（用于测试）
 USAGE
   exit 1
 }
 
 name=""; provider=""; reg_portainer=1; add_haproxy=1; reg_argocd=1
 pf_host_override=""; node_port=30080; pf_port=""
+force_create=0  # 强制创建模式（跳过 CSV 验证）
 # 追踪命令行明确设置的参数
 cmd_reg_portainer=""; cmd_add_haproxy=""
 
@@ -95,6 +97,7 @@ while getopts ":n:p:-:" opt; do
         no-haproxy-route) add_haproxy=0; cmd_add_haproxy=0 ;;
         register-argocd) reg_argocd=1 ;;
         no-register-argocd) reg_argocd=0 ;;
+        force) force_create=1 ;;
         node-port)
           node_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
         node-port=*) node_port="${OPTARG#node-port=}" ;;
@@ -111,15 +114,23 @@ while getopts ":n:p:-:" opt; do
 done
 [ -z "$name" ] && usage
 
-# 验证环境名是否在配置清单中（如果CSV存在）
-if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+# 验证环境名是否在配置清单中（如果CSV存在且未使用 --force）
+if [ "$force_create" = 0 ] && [ -f "$ROOT_DIR/config/environments.csv" ]; then
   # 检查环境名是否在CSV中
   if ! awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {found=1; exit} END{exit !found}' "$ROOT_DIR/config/environments.csv"; then
     echo "错误：环境名 '$name' 不在 config/environments.csv 配置清单中" >&2
     echo "可用环境：" >&2
     awk -F, '$0 !~ /^[[:space:]]*#/ && NF>0 {print "  " $1}' "$ROOT_DIR/config/environments.csv" >&2
+    echo "" >&2
+    echo "提示：使用 --force 参数可跳过此验证（用于测试）" >&2
     exit 1
   fi
+fi
+
+# 如果使用 --force 模式，显示警告
+if [ "$force_create" = 1 ]; then
+  echo "[WARN] Force mode enabled: skipping CSV validation"
+  echo "[INFO] Creating temporary cluster '$name' with provider '$provider'"
 fi
 
 # Load defaults: 优先数据库，回退到 CSV
