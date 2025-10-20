@@ -40,7 +40,7 @@ for cluster in $clusters; do
   # 根据 provider 确定 Ingress Controller 类型和位置
   # 注意：所有集群（kind 和 k3d）统一使用 Traefik，都在 traefik namespace
   ic_namespace="traefik"
-  ic_label="app.kubernetes.io/name=traefik"
+  ic_label="app=traefik"  # 使用简单的 app 标签，不是 app.kubernetes.io/name
   ic_name="Traefik"
   ingress_class="traefik"
   

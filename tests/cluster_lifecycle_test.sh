@@ -109,9 +109,9 @@ else
 fi
 total_tests=$((total_tests + 1))
 
-# 等待 10 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
-echo "  Waiting 10s for async cleanup to complete..."
-sleep 10
+# 等待 15 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
+echo "  Waiting 15s for async cleanup to complete..."
+sleep 15
 
 echo ""
 
