@@ -57,20 +57,12 @@ generate_applicationset() {
     local label_env
     label_env="$(env_label "$env")"
     
-    # 根据新的命名规则生成 hostEnv
-    local host_env
-    case "$provider" in
-      k3d) 
-        # 对于 k3d 环境，提取环境名（去掉 -k3d 后缀）
-        local env_name="${env%-k3d}"
-        host_env="k3d.${env_name}"
-        ;;
-      kind) 
-        host_env="kind.${label_env}"
-        ;;
-      *) 
-        host_env="${label_env}" ;;  # devops 等特殊情况
-    esac
+    # 使用完整集群名作为域名环境部分（避免 ACL 冲突）
+    # 例如：dev -> whoami.dev.xxx, dev-k3d -> whoami.dev-k3d.xxx
+    local host_env="$env"
+    
+    # 所有集群统一使用 traefik（kind 和 k3d 都部署了 Traefik）
+    local ingress_class="traefik"
 
     if [ $first -eq 1 ]; then
       first=0
@@ -82,7 +74,8 @@ generate_applicationset() {
     elements="${elements}      - env: ${env}
         hostEnv: ${host_env}
         branch: ${branch}
-        clusterName: ${env}"
+        clusterName: ${env}
+        ingressClass: ${ingress_class}"
 
   done < <(grep -v '^[[:space:]]*$' "$CSV_FILE")
 
@@ -119,15 +112,18 @@ ${elements}
           # 动态设置 Ingress host
           - name: ingress.host
             value: 'whoami.{{.hostEnv}}.${BASE_DOMAIN}'
+          # 动态设置 Ingress class（统一使用 traefik）
+          - name: ingress.className
+            value: '{{.ingressClass}}'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
           - name: image.tag
             value: 'v1.10.2'
           - name: image.pullPolicy
-            value: 'Never'
+            value: 'IfNotPresent'
       destination:
         # 部署到对应的集群
         name: '{{.clusterName}}'
-        namespace: default
+        namespace: whoami
       syncPolicy:
         automated:
           prune: true

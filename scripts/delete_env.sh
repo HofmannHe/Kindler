@@ -4,6 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib_db.sh"
 
 usage() { echo "Usage: $0 -n <name> [-p kind|k3d]" >&2; exit 1; }
 
@@ -40,7 +41,33 @@ echo "[DELETE] Portainer Edge Environment: $ep_name"
 echo "[DELETE] Unregistering cluster from ArgoCD..."
 "$ROOT_DIR"/scripts/argocd_register.sh unregister "$name" "$provider" || echo "[WARNING] Failed to unregister from ArgoCD"
 
-# 从 CSV 配置文件中移除环境配置
+# 删除 Git 分支
+echo "[DELETE] Removing Git branch for $name..."
+if [ -f "$ROOT_DIR/scripts/delete_git_branch.sh" ]; then
+  if "$ROOT_DIR/scripts/delete_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
+    echo "[DELETE] ✓ Git branch removed"
+  else
+    echo "[WARN] Git branch deletion failed (will continue)"
+    echo "[WARN] You can manually delete it with:"
+    echo "       scripts/delete_git_branch.sh $name"
+  fi
+else
+  echo "[WARN] delete_git_branch.sh not found, skipping Git branch deletion"
+fi
+
+# 从数据库中删除集群记录（优先）
+if db_is_available 2>/dev/null; then
+  echo "[DELETE] Removing cluster configuration from database..."
+  if db_delete_cluster "$name"; then
+    echo "[DELETE] ✓ Cluster configuration removed from database"
+  else
+    echo "[WARN] Failed to remove cluster configuration from database"
+  fi
+else
+  echo "[INFO] Database not available, skipping database cleanup"
+fi
+
+# 从 CSV 配置文件中移除环境配置（fallback）
 CSV_FILE="$ROOT_DIR/config/environments.csv"
 if [ -f "$CSV_FILE" ]; then
   echo "[DELETE] Removing $name from environments.csv..."

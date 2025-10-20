@@ -11,29 +11,35 @@ spec:
       elements:
       # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
       - env: dev
-        hostEnv: kind.dev
+        hostEnv: dev
         branch: dev
         clusterName: dev
+        ingressClass: traefik
       - env: uat
-        hostEnv: kind.uat
+        hostEnv: uat
         branch: uat
         clusterName: uat
+        ingressClass: traefik
       - env: prod
-        hostEnv: kind.prod
+        hostEnv: prod
         branch: prod
         clusterName: prod
+        ingressClass: traefik
       - env: dev-k3d
-        hostEnv: k3d.dev
+        hostEnv: dev-k3d
         branch: dev-k3d
         clusterName: dev-k3d
+        ingressClass: traefik
       - env: uat-k3d
-        hostEnv: k3d.uat
+        hostEnv: uat-k3d
         branch: uat-k3d
         clusterName: uat-k3d
+        ingressClass: traefik
       - env: prod-k3d
-        hostEnv: k3d.prod
+        hostEnv: prod-k3d
         branch: prod-k3d
         clusterName: prod-k3d
+        ingressClass: traefik
   template:
     metadata:
       name: 'whoami-{{.env}}'
@@ -52,15 +58,18 @@ spec:
           # 动态设置 Ingress host
           - name: ingress.host
             value: 'whoami.{{.hostEnv}}.192.168.51.30.sslip.io'
+          # 动态设置 Ingress class（统一使用 traefik）
+          - name: ingress.className
+            value: '{{.ingressClass}}'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
           - name: image.tag
             value: 'v1.10.2'
           - name: image.pullPolicy
-            value: 'Never'
+            value: 'IfNotPresent'
       destination:
         # 部署到对应的集群
         name: '{{.clusterName}}'
-        namespace: default
+        namespace: whoami
       syncPolicy:
         automated:
           prune: true

@@ -1,0 +1,28 @@
+version: v1
+
+cluster:
+  provider: k3d
+
+network:
+  http_port: 18090
+  https_port: 18443
+  node_port: 30080
+  pf_port: 19001
+  subnet: "10.101.0.0/16"
+
+integrations:
+  portainer:
+    enabled: true
+    tags: ["example", "k3d", "business"]
+  
+  haproxy:
+    enabled: true
+  
+  argocd:
+    enabled: true
+    labels:
+      env: example
+      provider: k3d
+      type: business
+
+

@@ -15,10 +15,14 @@ Usage: $0 [MODULE|all]
 Modules:
   services  - Service access tests (ArgoCD, Portainer, whoami, etc.)
   ingress   - Ingress Controller health tests
+  ingress_config - Ingress configuration consistency tests
   network   - Network connectivity tests
   haproxy   - HAProxy configuration tests
   clusters  - Cluster state tests
   argocd    - ArgoCD integration tests
+  e2e_services - End-to-end service validation
+  consistency - DB-Git-K8s consistency checks
+  cluster_lifecycle - Cluster create/delete lifecycle tests
   all       - Run all test modules (default)
 
 Examples:
@@ -61,14 +65,14 @@ case "$target" in
     echo "=========================================="
     echo "Started: $(date)"
     
-    for test in services ingress network haproxy clusters argocd; do
+    for test in services ingress ingress_config network haproxy clusters argocd e2e_services consistency cluster_lifecycle; do
       if ! run_test "$TESTS_DIR/${test}_test.sh" "${test^} Tests"; then
         total_failed=$((total_failed + 1))
       fi
     done
     ;;
     
-  services|ingress|network|haproxy|clusters|argocd)
+  services|ingress|ingress_config|network|haproxy|clusters|argocd|e2e_services|consistency|cluster_lifecycle)
     run_test "$TESTS_DIR/${target}_test.sh" "${target^} Tests"
     total_failed=$?
     ;;

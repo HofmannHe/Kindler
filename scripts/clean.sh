@@ -139,6 +139,11 @@ if [ -f "$ROOT_DIR/config/environments.csv" ]; then
   fi
 fi
 
+# Load Git configuration for branch cleanup
+if [ -f "$ROOT_DIR/config/git.env" ]; then
+  source "$ROOT_DIR/config/git.env"
+fi
+
 # also attempt defaults (exclude devops if CLEAN_DEVOPS=0)
 for n in dev uat prod ops; do
   up="$(echo "$n" | tr '[:lower:]' '[:upper:]')"

@@ -3,16 +3,21 @@ services:
     image: portainer/portainer-ce:latest
     container_name: portainer-ce
     restart: unless-stopped
-    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
       - portainer_secrets:/run/secrets:ro
-    command: ["--admin-password-file", "/run/secrets/portainer_admin"]
+    command: ["--admin-password-file", "/run/secrets/portainer_admin", "--trusted-origins", "portainer.devops.192.168.51.30.sslip.io"]
+    networks:
+      - infrastructure
+      - k3d-shared
 
 networks:
-  portainer_network:
-    name: portainer_network
+  infrastructure:
+    name: infrastructure
+  k3d-shared:
+    name: k3d-shared
+    external: true
 
 volumes:
   portainer_data:

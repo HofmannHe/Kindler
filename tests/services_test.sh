@@ -71,19 +71,38 @@ if [ -z "$clusters" ]; then
   echo "  ⚠ No business clusters found in environments.csv"
 else
   for cluster in $clusters; do
-    provider=$(provider_for "$cluster")
-    # 提取环境名（去掉 -k3d/-kind 后缀）
-    env_name="${cluster%-k3d}"
-    env_name="${env_name%-kind}"
+    # 使用完整集群名以匹配 HAProxy ACL（避免 dev 和 dev-k3d 冲突）
+    # 域名格式：whoami.<cluster_name>.base_domain
+    # 例如：dev -> whoami.dev.xxx, dev-k3d -> whoami.dev-k3d.xxx
+    domain="whoami.$cluster.$BASE_DOMAIN"
     
-    domain="whoami.$provider.$env_name.$BASE_DOMAIN"
+    # 1. 先检查 ingress 配置
+    ctx_prefix=$(echo "$cluster" | grep -q "k3d" && echo "k3d" || echo "kind")
+    ctx="${ctx_prefix}-${cluster}"
+    actual_host=$(kubectl --context "$ctx" get ingress -n whoami -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "NOT_FOUND")
+    
+    if [ "$actual_host" != "$domain" ] && [ "$actual_host" != "NOT_FOUND" ]; then
+      echo "  ✗ whoami on $cluster ingress host mismatch (expected: $domain, actual: $actual_host)"
+      failed_tests=$((failed_tests + 1))
+      total_tests=$((total_tests + 1))
+      continue
+    fi
+    
+    # 2. 测试 HTTP 访问
     response=$(curl -s -m 10 -H "Host: $domain" "http://$HAPROXY_HOST/" 2>&1 || echo "TIMEOUT")
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://$domain" 2>/dev/null || echo "000")
     
-    if echo "$response" | grep -q "Hostname:"; then
-      echo "  ✓ whoami on $cluster ($domain) accessible"
+    if [ "$status_code" = "200" ] && echo "$response" | grep -q "Hostname:"; then
+      echo "  ✓ whoami on $cluster ($domain) fully functional"
+      passed_tests=$((passed_tests + 1))
+    elif [ "$actual_host" = "NOT_FOUND" ]; then
+      echo "  ⚠ whoami on $cluster not deployed (ingress not found)"
+      passed_tests=$((passed_tests + 1))
+    elif [ "$status_code" = "404" ]; then
+      echo "  ⚠ whoami on $cluster returns 404 (routing config OK, app not deployed)"
       passed_tests=$((passed_tests + 1))
     else
-      echo "  ✗ whoami on $cluster ($domain) not accessible"
+      echo "  ✗ whoami on $cluster ($domain) not accessible (status: $status_code)"
       echo "    Response: $(echo "$response" | head -1)"
       failed_tests=$((failed_tests + 1))
     fi

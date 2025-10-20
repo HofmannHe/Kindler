@@ -132,8 +132,30 @@ main() {
 	echo "[BOOTSTRAP] Validate external Git configuration"
 	"$ROOT_DIR/scripts/setup_git.sh"
 
+	echo "[BOOTSTRAP] Initialize external Git devops branch"
+	"$ROOT_DIR/scripts/init_git_devops.sh"
+
+	echo "[BOOTSTRAP] Setup devops cluster storage support"
+	"$ROOT_DIR/scripts/setup_devops_storage.sh"
+
 	echo "[BOOTSTRAP] Register external Git repository to ArgoCD"
 	"$ROOT_DIR/scripts/register_git_to_argocd.sh" devops
+	
+	echo "[BOOTSTRAP] Deploy PostgreSQL via ArgoCD"
+	"$ROOT_DIR/scripts/deploy_postgresql_gitops.sh"
+	
+	echo "[BOOTSTRAP] Initialize database tables"
+	"$ROOT_DIR/scripts/init_database.sh"
+	
+	echo "[BOOTSTRAP] Sync Git branches from database"
+	if [ -f "$ROOT_DIR/scripts/sync_git_from_db.sh" ]; then
+		"$ROOT_DIR/scripts/sync_git_from_db.sh" 2>&1 | sed 's/^/  /' || echo "  [WARN] Git sync failed (can be done manually later)"
+	fi
+	
+	echo "[BOOTSTRAP] Fix HAProxy routes for business clusters"
+	if [ -f "$ROOT_DIR/scripts/fix_haproxy_routes.sh" ]; then
+		"$ROOT_DIR/scripts/fix_haproxy_routes.sh" 2>&1 | sed 's/^/  /'
+	fi
 
 	echo "[READY]"
 	portainer_url="https://portainer.devops.${BASE_DOMAIN}"

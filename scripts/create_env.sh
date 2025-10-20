@@ -4,6 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib_db.sh"
 
 usage() {
   cat >&2 <<USAGE
@@ -26,6 +27,33 @@ cmd_reg_portainer=""; cmd_add_haproxy=""
 trim() { sed -e 's/^\s\+//' -e 's/\s\+$//' ; }
 to_lower() { tr 'A-Z' 'a-z'; }
 parse_bool() { v=$(echo "$1" | to_lower); case "$v" in 1|y|yes|true|on) echo 1;; 0|n|no|false|off) echo 0;; *) echo 0;; esac; }
+
+# 从数据库加载配置（优先级高于 CSV）
+load_db_defaults() {
+  local n="$1"
+  # 检查数据库是否可用
+  if ! db_is_available 2>/dev/null; then
+    return 1  # 数据库不可用，回退到 CSV
+  fi
+  
+  # 查询集群记录
+  local record
+  record=$(db_get_cluster "$n" 2>/dev/null) || return 1
+  [ -n "$record" ] || return 1
+  
+  # 解析记录：name|provider|subnet|node_port|pf_port|http_port|https_port
+  IFS='|' read -r db_name db_provider db_subnet db_node_port db_pf_port db_http_port db_https_port <<EOF
+$record
+EOF
+  
+  # 应用配置（如果命令行未指定）
+  [ -z "$provider" ] && [ -n "$db_provider" ] && provider="$db_provider"
+  [ -z "$pf_port" ] && [ -n "$db_pf_port" ] && pf_port="$db_pf_port"
+  [ "$node_port" = 30080 ] && [ -n "$db_node_port" ] && node_port="$db_node_port"
+  
+  echo "[INFO] Loaded configuration from database"
+  return 0
+}
 
 load_csv_defaults() {
   local n="$1" csv="$ROOT_DIR/config/environments.csv"
@@ -94,8 +122,11 @@ if [ -f "$ROOT_DIR/config/environments.csv" ]; then
   fi
 fi
 
-# load CSV defaults (if provided)
-load_csv_defaults "$name"
+# Load defaults: 优先数据库，回退到 CSV
+if ! load_db_defaults "$name"; then
+  echo "[INFO] Database not available or cluster not found, falling back to CSV"
+  load_csv_defaults "$name"
+fi
 
 if [ -z "$provider" ]; then
   load_env
@@ -260,3 +291,40 @@ if [ "$reg_argocd" = 1 ]; then
 else
   echo "[INFO] Skipping ArgoCD registration (--no-register-argocd specified)"
 fi
+
+# 保存集群配置到数据库
+if db_is_available 2>/dev/null; then
+  echo "[INFO] Saving cluster configuration to database..."
+  # 从 CSV 或配置中获取 http_port 和 https_port
+  http_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | trim || echo "")
+  https_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $8; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | trim || echo "")
+  subnet=$(subnet_for "$name" 2>/dev/null || echo "")
+  
+  # 使用默认值如果未找到
+  http_port=${http_port:-18080}
+  https_port=${https_port:-18443}
+  
+  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port"; then
+    echo "[INFO] ✓ Cluster configuration saved to database"
+    
+    # 创建 Git 分支（含 whoami manifests）
+    echo "[INFO] Creating Git branch for $name..."
+    if [ -f "$ROOT_DIR/scripts/create_git_branch.sh" ]; then
+      if "$ROOT_DIR/scripts/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
+        echo "[INFO] ✓ Git branch created successfully"
+      else
+        echo "[WARN] Git branch creation failed"
+        echo "[WARN] You can manually create it later with:"
+        echo "       scripts/create_git_branch.sh $name"
+      fi
+    else
+      echo "[WARN] create_git_branch.sh not found, skipping Git branch creation"
+    fi
+  else
+    echo "[WARN] Failed to save cluster configuration to database"
+  fi
+else
+  echo "[INFO] Database not available, skipping configuration save and Git branch creation"
+fi
+
+echo "[SUCCESS] Cluster $name created successfully"

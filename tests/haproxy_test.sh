@@ -70,37 +70,50 @@ else
   done
 fi
 
-# 3. Backend 可达性测试
+# 3. Backend 端口配置测试（验证使用 http_port 而非 node_port）
 echo ""
-echo "[3/5] Backend Reachability"
-if docker ps --filter name=haproxy-gw --format "{{.Names}}" | grep -q haproxy-gw; then
-  # 提取所有业务集群的 backend
-  backends=$(awk '/^backend be_(dev|prod|uat)/ {backend=$2} /^[[:space:]]+server s1/ && backend {print backend":"$3; backend=""}' "$CFG" 2>/dev/null || echo "")
-  
-  if [ -n "$backends" ]; then
-    for backend_addr in $backends; do
-      backend_name=$(echo "$backend_addr" | cut -d: -f1)
-      ip_port=$(echo "$backend_addr" | cut -d: -f2,3)
-      ip=$(echo "$ip_port" | cut -d: -f1)
-      
-      # 从 HAProxy 容器测试 ping 连通性
-      if docker exec haproxy-gw ping -c 1 -W 2 "$ip" >/dev/null 2>&1; then
-        echo "  ✓ $backend_name ($ip) reachable from HAProxy"
-        passed_tests=$((passed_tests + 1))
-      else
-        echo "  ✗ $backend_name ($ip) unreachable from HAProxy"
-        failed_tests=$((failed_tests + 1))
-      fi
-      total_tests=$((total_tests + 1))
-    done
-  else
-    echo "  ⚠ No business cluster backends found in configuration"
-  fi
+echo "[3/5] Backend Port Configuration"
+clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+
+if [ -z "$clusters" ]; then
+  echo "  ⚠ No business clusters found in environments.csv"
 else
-  echo "  ✗ HAProxy container not running"
+  for cluster in $clusters; do
+    # 从 CSV 读取期望的 http_port
+    expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+    
+    if [ -z "$expected_port" ]; then
+      echo "  ⚠ Could not find http_port for $cluster in CSV"
+      continue
+    fi
+    
+    # 从 HAProxy 配置提取实际端口
+    actual_port=$(awk -v cluster="$cluster" '
+      /^backend be_'$cluster'[[:space:]]*$/ { in_backend=1; next }
+      in_backend && /^[[:space:]]+server s1/ { 
+        split($3, parts, ":")
+        print parts[2]
+        in_backend=0
+        exit
+      }
+      /^backend / { in_backend=0 }
+    ' "$CFG" 2>/dev/null | tr -d ' \n')
+    
+    if [ -z "$actual_port" ]; then
+      echo "  ✗ Backend for $cluster not found in HAProxy config"
+      failed_tests=$((failed_tests + 1))
+    elif [ "$actual_port" = "$expected_port" ]; then
+      echo "  ✓ $cluster backend uses correct http_port: $expected_port"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "  ✗ $cluster backend port mismatch (expected: $expected_port, actual: $actual_port)"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
 fi
 
-# 4. 域名规则一致性测试
+# 4. 域名规则一致性测试（新格式：不含 provider）
 echo ""
 echo "[4/5] Domain Pattern Consistency"
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
@@ -109,23 +122,21 @@ if [ -z "$clusters" ]; then
   echo "  ⚠ No business clusters found"
 else
   for cluster in $clusters; do
-    provider=$(provider_for "$cluster")
-    # 提取环境名（去掉 -k3d/-kind 后缀）
-    env_name="${cluster%-k3d}"
-    env_name="${env_name%-kind}"
-    
+    # 使用完整集群名以匹配 HAProxy ACL（避免 dev 和 dev-k3d 冲突）
     # HAProxy配置中的 \. 需要在grep中匹配为字面的反斜杠+点
-    expected_pattern="\\\\.$provider\\\\.$env_name\\\\."
+    # 域名模式：.<cluster>.
+    # 例如：dev -> .dev., dev-k3d -> .dev-k3d.
+    expected_pattern="\\\\.$cluster\\\\."
     
     # 精确匹配：ACL 名称后面必须有空格
     acl_line=$(grep "acl host_${cluster}[[:space:]]" "$CFG" | head -1 2>/dev/null || echo "")
     if [ -n "$acl_line" ]; then
       if echo "$acl_line" | grep -q "$expected_pattern"; then
-        echo "  ✓ $cluster domain pattern correct ($provider.$env_name)"
+        echo "  ✓ $cluster domain pattern correct (.$cluster.)"
         passed_tests=$((passed_tests + 1))
       else
         echo "  ✗ $cluster domain pattern incorrect"
-        echo "    Expected pattern in config: \\.$provider\\.$env_name\\."
+        echo "    Expected pattern in config: \\.$cluster\\."
         echo "    Actual ACL: $acl_line"
         failed_tests=$((failed_tests + 1))
       fi

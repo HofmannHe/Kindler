@@ -24,6 +24,26 @@ env_label() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
 }
 
+# 生成域名（新格式：不含 provider）
+# 参数：
+#   $1: 服务名（如 whoami）
+#   $2: 环境名（如 dev）
+#   $3: 基础域名（可选，默认从配置读取）
+# 输出：service.env.base_domain
+generate_domain() {
+	local service="$1"
+	local env="$2"
+	local base_domain="${3:-}"
+	
+	# 从配置读取基础域名
+	if [ -z "$base_domain" ]; then
+		load_env
+		base_domain="${BASE_DOMAIN:-192.168.51.30.sslip.io}"
+	fi
+	
+	echo "${service}.${env}.${base_domain}"
+}
+
 ctx_name() {
 	local env="$1"
 	case "$env" in

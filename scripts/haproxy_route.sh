@@ -120,40 +120,24 @@ release_lock() {
 }
 
 add_acl() {
-	local tmp acl_begin acl_end cluster_type env_name
+	local tmp acl_begin acl_end env_name
 	acl_begin="^[[:space:]]*# BEGIN DYNAMIC ACL"
 	acl_end="^[[:space:]]*# END DYNAMIC ACL"
 	
-	# Determine cluster type and environment name for naming convention
-	case "$provider" in
-		k3d) 
-			cluster_type="k3d"
-			# 从集群名中提取环境名（去掉 -k3d 后缀）
-			env_name="${name%-k3d}"
-			;;
-		kind) 
-			cluster_type="kind"
-			# 从集群名中提取环境名（去掉 -kind 后缀，如果存在）
-			env_name="${name%-kind}"
-			;;
-		*) 
-			cluster_type="unknown"
-			env_name="$label"
-			;;
-	esac
+	# 使用完整集群名作为域名环境部分（避免 ACL 冲突）
+	# 新的域名格式：service.cluster_name.base_domain
+	# 例如：dev -> whoami.dev.xxx, dev-k3d -> whoami.dev-k3d.xxx
+	env_name="$name"
 	
 	tmp=$(mktemp)
-	awk -v n="$name" -v en="$env_name" -v ct="$cluster_type" -v B="$acl_begin" -v E="$acl_end" '
+	# 新的 ACL 模式：匹配 service.env.base_domain
+	# 例如：whoami.dev.192.168.51.30.sslip.io
+	awk -v n="$name" -v en="$env_name" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
     $0 ~ B {
-      if (ct == "unknown") {
-        # Fallback to old naming convention
-        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." en "\\.[^:]+"
-      } else {
-        # New naming convention: {service}.{cluster_type}.{env}.{base_domain}
-        print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." ct "\\." en "\\.[^:]+"
-      }
+      # ACL 模式：匹配 <service>.<env>.<base-domain>
+      print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." en "\\.[^:]+"
       print "  use_backend be_" n " if host_" n
       ins=1
     }
@@ -164,33 +148,37 @@ add_acl() {
 
 add_backend() {
 	local tmp b_begin b_end ip detected_port
-	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
-	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null) && [ -n "$ip" ]; then
-		# kind cluster detected - use NodePort on control-plane container IP
+	
+	# 从 CSV 或数据库获取 http_port（实际暴露在宿主机的端口）
+	local http_port
+	http_port=$(awk -F, -v n="$name" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "")
+	
+	# Resolve cluster node container IP and target port
+	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null | head -1) && [ -n "$ip" ]; then
+		# kind cluster detected - 使用容器 IP:node_port（通过 Docker 网络直接访问）
 		detected_port="$node_port"
+		echo "[haproxy] kind cluster $name: using container IP $ip:$detected_port"
 	elif [ "$provider" = "k3d" ]; then
-		# k3d cluster: 优先从独立网络获取 IP，回退到共享网络
-		local dedicated_network="k3d-${name}"
-		if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
-			# 从独立网络获取 IP
-			ip=$(docker inspect "k3d-${name}-server-0" --format "{{with index .NetworkSettings.Networks \"$dedicated_network\"}}{{.IPAddress}}{{end}}" 2>/dev/null || true)
+		# k3d cluster: 获取第一个 server 节点的内部 IP
+		# HAProxy 通过 k3d 网络直接访问节点 IP:30080
+		server_name="${name}-server-0"
+		if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$server_name" 2>/dev/null | head -1) && [ -n "$ip" ]; then
+			detected_port="$node_port"
+			echo "[haproxy] k3d cluster $name: using server IP $ip:$detected_port"
+		else
+			# Fallback: 使用 serverlb
+			ip="127.0.0.1"
+			detected_port="${http_port:-$node_port}"
+			echo "[haproxy] k3d cluster $name: fallback to 127.0.0.1:$detected_port"
 		fi
-		if [ -z "$ip" ]; then
-			# 回退：从共享网络获取 IP
-			ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null || true)
-		fi
-		if [ -z "$ip" ]; then
-			# 最后回退：获取任意网络的 IP
-			ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null | head -1 || true)
-		fi
-		detected_port="$node_port"
 	else
-		ip="127.0.0.1" # fallback (may not work for kind)
-		detected_port="$node_port"
+		ip="127.0.0.1" # fallback
+		detected_port="${http_port:-$node_port}"
 	fi
 	
-	if [ -z "$ip" ] || [ "$ip" = "127.0.0.1" ]; then
-		echo "[WARN] Could not resolve container IP for cluster $name, using fallback 127.0.0.1" >&2
+	if [ -z "$ip" ]; then
+		echo "[WARN] Could not resolve IP for cluster $name, using fallback 127.0.0.1" >&2
+		ip="127.0.0.1"
 	fi
 	
 	b_begin="^# BEGIN DYNAMIC BACKENDS"

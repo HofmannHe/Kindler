@@ -115,8 +115,9 @@ docker network connect k3d-devops haproxy-gw 2>/dev/null || echo "[INFO] HAProxy
 docker restart haproxy-gw
 
 # 添加 HAProxy 路由 (使用 NodePort 30800)
-echo "[DEVOP] Adding HAProxy route..."
-"$ROOT_DIR"/scripts/haproxy_route.sh add devops --node-port 30800
+echo "[DEVOP] Skipping HAProxy dynamic route for devops (management cluster has static routes)"
+# devops 是管理集群，使用静态路由（git, portainer, argocd, haproxy）
+# 不添加动态通配路由，避免干扰特定服务路由
 
 # Ensure argocd host routing points to current devops NodePort (be_argocd)
 DEVOPS_NODE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' k3d-devops-server-0 2>/dev/null || true)

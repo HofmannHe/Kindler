@@ -49,20 +49,29 @@ echo ""
 echo "[3/5] Devops Cross-Network Access"
 devops_container="k3d-devops-server-0"
 if docker ps --filter name="$devops_container" --format "{{.Names}}" | grep -q "$devops_container"; then
-  # 检查 devops 是否连接到业务集群网络
-  for net in k3d-dev-k3d k3d-prod-k3d k3d-uat-k3d; do
-    if docker network inspect "$net" >/dev/null 2>&1; then
-      containers=$(docker network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "")
-      if echo "$containers" | grep -q "$devops_container"; then
-        echo "  ✓ devops connected to $net"
-        passed_tests=$((passed_tests + 1))
+  # 动态读取所有 k3d 业务集群
+  k3d_clusters=$(awk -F, 'NR>1 && $1!="devops" && $2~/k3d/ && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+  
+  if [ -z "$k3d_clusters" ]; then
+    echo "  ⚠ No k3d business clusters found in environments.csv"
+  else
+    for cluster in $k3d_clusters; do
+      net="k3d-$cluster"
+      if docker network inspect "$net" >/dev/null 2>&1; then
+        containers=$(docker network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "")
+        if echo "$containers" | grep -q "$devops_container"; then
+          echo "  ✓ devops connected to $net"
+          passed_tests=$((passed_tests + 1))
+        else
+          echo "  ✗ devops not connected to $net"
+          failed_tests=$((failed_tests + 1))
+        fi
+        total_tests=$((total_tests + 1))
       else
-        echo "  ✗ devops not connected to $net"
-        failed_tests=$((failed_tests + 1))
+        echo "  ⚠ Network $net does not exist (cluster may not be created yet)"
       fi
-      total_tests=$((total_tests + 1))
-    fi
-  done
+    done
+  fi
 else
   echo "  ⚠ devops cluster not running, skipping cross-network tests"
 fi
@@ -96,29 +105,38 @@ echo ""
 echo "[5/5] Business Cluster Network Isolation"
 subnets=""
 subnet_count=0
-for net in k3d-dev-k3d k3d-prod-k3d k3d-uat-k3d; do
-  if docker network inspect "$net" >/dev/null 2>&1; then
-    subnet=$(docker network inspect "$net" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")
-    if [ -n "$subnet" ]; then
-      subnets="$subnets $subnet"
-      subnet_count=$((subnet_count + 1))
-    fi
-  fi
-done
 
-if [ -n "$subnets" ]; then
-  unique_subnets=$(echo "$subnets" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
-  
-  if [ "$unique_subnets" -eq "$subnet_count" ]; then
-    echo "  ✓ All business clusters use different subnets ($unique_subnets unique)"
-    passed_tests=$((passed_tests + 1))
-  else
-    echo "  ✗ Subnet conflict detected ($unique_subnets unique out of $subnet_count)"
-    failed_tests=$((failed_tests + 1))
-  fi
-  total_tests=$((total_tests + 1))
+# 动态读取所有 k3d 业务集群
+k3d_clusters=$(awk -F, 'NR>1 && $1!="devops" && $2~/k3d/ && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+
+if [ -z "$k3d_clusters" ]; then
+  echo "  ⚠ No k3d business clusters found in environments.csv"
 else
-  echo "  ⚠ No business cluster networks found"
+  for cluster in $k3d_clusters; do
+    net="k3d-$cluster"
+    if docker network inspect "$net" >/dev/null 2>&1; then
+      subnet=$(docker network inspect "$net" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")
+      if [ -n "$subnet" ]; then
+        subnets="$subnets $subnet"
+        subnet_count=$((subnet_count + 1))
+      fi
+    fi
+  done
+  
+  if [ -n "$subnets" ]; then
+    unique_subnets=$(echo "$subnets" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+    
+    if [ "$unique_subnets" -eq "$subnet_count" ]; then
+      echo "  ✓ All business clusters use different subnets ($unique_subnets unique)"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "  ✗ Subnet conflict detected ($unique_subnets unique out of $subnet_count)"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  else
+    echo "  ⚠ No business cluster subnets found"
+  fi
 fi
 
 print_summary
