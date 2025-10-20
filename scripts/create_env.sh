@@ -303,7 +303,22 @@ else
   echo "[INFO] Skipping ArgoCD registration (--no-register-argocd specified)"
 fi
 
-# 保存集群配置到数据库
+# 创建 Git 分支（含 whoami manifests）- 必须在集群创建时执行
+echo "[INFO] Creating Git branch for $name..."
+if [ -f "$ROOT_DIR/scripts/create_git_branch.sh" ]; then
+  if "$ROOT_DIR/scripts/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
+    echo "[INFO] ✓ Git branch created successfully"
+  else
+    echo "[ERROR] Git branch creation failed"
+    echo "[ERROR] This is a critical failure - cluster cannot function without Git branch"
+    exit 1
+  fi
+else
+  echo "[ERROR] create_git_branch.sh not found"
+  exit 1
+fi
+
+# 保存集群配置到数据库（可选，失败不影响核心功能）
 if db_is_available 2>/dev/null; then
   echo "[INFO] Saving cluster configuration to database..."
   # 从 CSV 或配置中获取 http_port 和 https_port
@@ -317,25 +332,11 @@ if db_is_available 2>/dev/null; then
   
   if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port"; then
     echo "[INFO] ✓ Cluster configuration saved to database"
-    
-    # 创建 Git 分支（含 whoami manifests）
-    echo "[INFO] Creating Git branch for $name..."
-    if [ -f "$ROOT_DIR/scripts/create_git_branch.sh" ]; then
-      if "$ROOT_DIR/scripts/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
-        echo "[INFO] ✓ Git branch created successfully"
-      else
-        echo "[WARN] Git branch creation failed"
-        echo "[WARN] You can manually create it later with:"
-        echo "       scripts/create_git_branch.sh $name"
-      fi
-    else
-      echo "[WARN] create_git_branch.sh not found, skipping Git branch creation"
-    fi
   else
-    echo "[WARN] Failed to save cluster configuration to database"
+    echo "[WARN] Failed to save cluster configuration to database (non-critical)"
   fi
 else
-  echo "[INFO] Database not available, skipping configuration save and Git branch creation"
+  echo "[WARN] Database not available, skipping database save"
 fi
 
 echo "[SUCCESS] Cluster $name created successfully"

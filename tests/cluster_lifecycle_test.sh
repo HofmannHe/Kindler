@@ -77,19 +77,25 @@ else
   echo "  ⚠ DB not available, skipping DB check"
 fi
 
-# 检查 Git 分支（可选，因为可能失败）
+# 检查 Git 分支（必须存在 - 这是关键功能）
 if [ -f "$ROOT_DIR/config/git.env" ]; then
   source "$ROOT_DIR/config/git.env"
   if [ -n "${GIT_REPO_URL:-}" ]; then
-    if git ls-remote --heads "$GIT_REPO_URL" "$TEST_CLUSTER" 2>/dev/null | grep -q "$TEST_CLUSTER"; then
+    if timeout 10 git ls-remote --heads "$GIT_REPO_URL" "$TEST_CLUSTER" 2>/dev/null | grep -q "$TEST_CLUSTER"; then
       echo "  ✓ Git branch exists"
       passed_tests=$((passed_tests + 1))
     else
-      echo "  ⚠ Git branch not found (may be expected if Git service unavailable)"
-      passed_tests=$((passed_tests + 1))  # 不作为失败条件
+      echo "  ✗ Git branch not found"
+      echo "    CRITICAL: Git branch MUST be created during cluster creation"
+      echo "    This indicates create_env.sh failed to create the branch"
+      failed_tests=$((failed_tests + 1))
     fi
     total_tests=$((total_tests + 1))
+  else
+    echo "  ⚠ GIT_REPO_URL not set in git.env"
   fi
+else
+  echo "  ⚠ git.env not found, skipping Git branch check"
 fi
 
 echo ""
@@ -109,9 +115,9 @@ else
 fi
 total_tests=$((total_tests + 1))
 
-# 等待 15 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
-echo "  Waiting 15s for async cleanup to complete..."
-sleep 15
+# 等待 20 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
+echo "  Waiting 20s for async cleanup to complete..."
+sleep 20
 
 echo ""
 
