@@ -60,12 +60,8 @@ for cluster in $clusters; do
   ctx_prefix=$(echo "$cluster" | grep -q "k3d" && echo "k3d" || echo "kind")
   ctx="${ctx_prefix}-${cluster}"
   
-  # k3d 使用 traefik，kind 使用 nginx
-  if [ "$ctx_prefix" = "k3d" ]; then
-    expected_class="traefik"
-  else
-    expected_class="nginx"
-  fi
+  # 所有集群统一使用 traefik
+  expected_class="traefik"
   
   actual_class=$(kubectl --context "$ctx" get ingress -n whoami -o jsonpath='{.items[0].spec.ingressClassName}' 2>/dev/null || echo "NOT_FOUND")
   

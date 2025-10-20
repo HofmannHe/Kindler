@@ -70,7 +70,9 @@ else
   done
 fi
 
-# 3. Backend 端口配置测试（验证使用 http_port 而非 node_port）
+# 3. Backend 端口配置测试（验证使用 NodePort）
+# 注意：HAProxy 通过容器/集群网络访问，使用 NodePort 30080
+# http_port 是 host 端口映射，仅供直接调试访问
 echo ""
 echo "[3/5] Backend Port Configuration"
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
@@ -79,11 +81,11 @@ if [ -z "$clusters" ]; then
   echo "  ⚠ No business clusters found in environments.csv"
 else
   for cluster in $clusters; do
-    # 从 CSV 读取期望的 http_port
-    expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+    # 从 CSV 读取 node_port（应该是 30080）
+    expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $3; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
     
     if [ -z "$expected_port" ]; then
-      echo "  ⚠ Could not find http_port for $cluster in CSV"
+      echo "  ⚠ Could not find node_port for $cluster in CSV"
       continue
     fi
     
@@ -103,7 +105,7 @@ else
       echo "  ✗ Backend for $cluster not found in HAProxy config"
       failed_tests=$((failed_tests + 1))
     elif [ "$actual_port" = "$expected_port" ]; then
-      echo "  ✓ $cluster backend uses correct http_port: $expected_port"
+      echo "  ✓ $cluster backend uses correct node_port: $expected_port"
       passed_tests=$((passed_tests + 1))
     else
       echo "  ✗ $cluster backend port mismatch (expected: $expected_port, actual: $actual_port)"

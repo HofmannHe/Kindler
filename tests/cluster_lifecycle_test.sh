@@ -99,7 +99,7 @@ echo ""
 ##############################################
 echo "[3/4] Deleting Test Cluster: $TEST_CLUSTER"
 
-if "$ROOT_DIR/scripts/delete_env.sh" -n "$TEST_CLUSTER" -p k3d >/tmp/delete_test.log 2>&1; then
+if timeout 120 "$ROOT_DIR/scripts/delete_env.sh" -n "$TEST_CLUSTER" -p k3d >/tmp/delete_test.log 2>&1; then
   echo "  ✓ Cluster deletion completed"
   passed_tests=$((passed_tests + 1))
 else
@@ -108,6 +108,10 @@ else
   failed_tests=$((failed_tests + 1))
 fi
 total_tests=$((total_tests + 1))
+
+# 等待 10 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
+echo "  Waiting 10s for async cleanup to complete..."
+sleep 10
 
 echo ""
 
