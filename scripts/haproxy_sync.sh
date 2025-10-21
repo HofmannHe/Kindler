@@ -91,5 +91,21 @@ if [ $prune -eq 1 ]; then
 	done
 fi
 
+# 更新PostgreSQL backend IP
+echo "[sync] updating PostgreSQL backend IP..."
+DEVOPS_NODE_IP=$(docker inspect k3d-devops-server-0 2>/dev/null | \
+  grep -A 10 '"Networks":' | grep '"IPAddress"' | head -1 | \
+  awk -F'"' '{print $4}')
+
+if [ -n "$DEVOPS_NODE_IP" ]; then
+  echo "[sync] devops node IP: $DEVOPS_NODE_IP"
+  # 使用临时文件替换占位符
+  sed "s/__DEVOPS_POSTGRES_IP__/$DEVOPS_NODE_IP/g" "$CFG" > "$CFG.tmp"
+  mv "$CFG.tmp" "$CFG"
+  echo "[sync] PostgreSQL backend updated"
+else
+  echo "[sync] warning: devops集群未运行，PostgreSQL backend未更新"
+fi
+
 docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
 echo "[sync] done (reloaded once)"
