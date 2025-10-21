@@ -55,6 +55,28 @@ if [ ${#records[@]} -eq 0 ]; then
 	exit 0
 fi
 
+# 首先更新PostgreSQL backend IP（必须在任何HAProxy验证之前）
+echo "[sync] updating PostgreSQL backend IP..."
+# 获取devops集群在k3d-shared网络中的IP（PostgreSQL所在网络）
+DEVOPS_NODE_IP=$(docker inspect k3d-devops-server-0 --format '{{index .NetworkSettings.Networks "k3d-shared" "IPAddress"}}' 2>/dev/null || echo "")
+
+# 如果k3d-shared网络IP为空，使用第一个可用网络的IP
+if [ -z "$DEVOPS_NODE_IP" ] || [ "$DEVOPS_NODE_IP" = "<no value>" ]; then
+  DEVOPS_NODE_IP=$(docker inspect k3d-devops-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}')
+fi
+
+if [ -n "$DEVOPS_NODE_IP" ] && [ "$DEVOPS_NODE_IP" != "null" ]; then
+  echo "[sync] devops node IP: $DEVOPS_NODE_IP"
+  # 使用临时文件替换占位符（连接到NodePort 30432）
+  sed "s/__DEVOPS_POSTGRES_IP__/$DEVOPS_NODE_IP/g" "$CFG" > "$CFG.tmp"
+  mv "$CFG.tmp" "$CFG"
+  echo "[sync] PostgreSQL backend updated to $DEVOPS_NODE_IP:30432 (NodePort)"
+else
+  echo "[sync] warning: devops集群未运行，使用占位符127.0.0.1"
+  sed "s/__DEVOPS_POSTGRES_IP__/127.0.0.1/g" "$CFG" > "$CFG.tmp"
+  mv "$CFG.tmp" "$CFG"
+fi
+
 echo "[sync] adding/updating routes from CSV..."
 NO_RELOAD=1 export NO_RELOAD
 for entry in "${records[@]}"; do
@@ -89,22 +111,6 @@ if [ $prune -eq 1 ]; then
 			NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
 		fi
 	done
-fi
-
-# 更新PostgreSQL backend IP
-echo "[sync] updating PostgreSQL backend IP..."
-DEVOPS_NODE_IP=$(docker inspect k3d-devops-server-0 2>/dev/null | \
-  grep -A 10 '"Networks":' | grep '"IPAddress"' | head -1 | \
-  awk -F'"' '{print $4}')
-
-if [ -n "$DEVOPS_NODE_IP" ]; then
-  echo "[sync] devops node IP: $DEVOPS_NODE_IP"
-  # 使用临时文件替换占位符
-  sed "s/__DEVOPS_POSTGRES_IP__/$DEVOPS_NODE_IP/g" "$CFG" > "$CFG.tmp"
-  mv "$CFG.tmp" "$CFG"
-  echo "[sync] PostgreSQL backend updated"
-else
-  echo "[sync] warning: devops集群未运行，PostgreSQL backend未更新"
 fi
 
 docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
