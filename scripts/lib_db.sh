@@ -10,11 +10,16 @@ DB_NAME="${DB_NAME:-kindler}"
 
 # 执行 SQL 查询
 # 参数：$1 = SQL 语句
-# 返回：查询结果（stdout）
+# 返回：查询结果（stdout），错误信息（stderr）
 db_query() {
   local sql="$1"
   kubectl --context "$DB_CTX" exec -i "$DB_POD" -n "$DB_NAMESPACE" -- \
-    psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "$sql" 2>/dev/null
+    psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "$sql"
+}
+
+# db_exec 是 db_query 的别名（兼容性）
+db_exec() {
+  db_query "$@"
 }
 
 # 插入集群记录
@@ -28,23 +33,34 @@ db_insert_cluster() {
   local http_port="$6"
   local https_port="$7"
   
-  local subnet_clause=""
   if [ -n "$subnet" ]; then
-    subnet_clause=", subnet='$subnet'::CIDR"
+    # 包含 subnet
+    db_query "
+      INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port)
+      VALUES ('$name', '$provider', '$subnet'::CIDR, $node_port, $pf_port, $http_port, $https_port)
+      ON CONFLICT (name) DO UPDATE SET
+        provider = EXCLUDED.provider,
+        subnet = EXCLUDED.subnet,
+        node_port = EXCLUDED.node_port,
+        pf_port = EXCLUDED.pf_port,
+        http_port = EXCLUDED.http_port,
+        https_port = EXCLUDED.https_port,
+        updated_at = CURRENT_TIMESTAMP;
+    " >/dev/null
+  else
+    # 不包含 subnet (kind 集群)
+    db_query "
+      INSERT INTO clusters (name, provider, node_port, pf_port, http_port, https_port)
+      VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port)
+      ON CONFLICT (name) DO UPDATE SET
+        provider = EXCLUDED.provider,
+        node_port = EXCLUDED.node_port,
+        pf_port = EXCLUDED.pf_port,
+        http_port = EXCLUDED.http_port,
+        https_port = EXCLUDED.https_port,
+        updated_at = CURRENT_TIMESTAMP;
+    " >/dev/null
   fi
-  
-  db_query "
-    INSERT INTO clusters (name, provider, node_port, pf_port, http_port, https_port${subnet:+, subnet})
-    VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port${subnet:+, '$subnet'::CIDR})
-    ON CONFLICT (name) DO UPDATE SET
-      provider = EXCLUDED.provider,
-      subnet = EXCLUDED.subnet,
-      node_port = EXCLUDED.node_port,
-      pf_port = EXCLUDED.pf_port,
-      http_port = EXCLUDED.http_port,
-      https_port = EXCLUDED.https_port,
-      updated_at = CURRENT_TIMESTAMP;
-  " >/dev/null
 }
 
 # 删除集群记录

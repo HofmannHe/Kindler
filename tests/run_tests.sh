@@ -23,6 +23,7 @@ Modules:
   e2e_services - End-to-end service validation
   consistency - DB-Git-K8s consistency checks
   cluster_lifecycle - Cluster create/delete lifecycle tests
+  webui     - Web UI integration tests
   all       - Run all test modules (default)
 
 Examples:
@@ -65,14 +66,14 @@ case "$target" in
     echo "=========================================="
     echo "Started: $(date)"
     
-    for test in services ingress ingress_config network haproxy clusters argocd e2e_services consistency cluster_lifecycle; do
+    for test in services ingress ingress_config network haproxy clusters argocd e2e_services consistency cluster_lifecycle webui; do
       if ! run_test "$TESTS_DIR/${test}_test.sh" "${test^} Tests"; then
         total_failed=$((total_failed + 1))
       fi
     done
     ;;
     
-  services|ingress|ingress_config|network|haproxy|clusters|argocd|e2e_services|consistency|cluster_lifecycle)
+  services|ingress|ingress_config|network|haproxy|clusters|argocd|e2e_services|consistency|cluster_lifecycle|webui)
     run_test "$TESTS_DIR/${target}_test.sh" "${target^} Tests"
     total_failed=$?
     ;;

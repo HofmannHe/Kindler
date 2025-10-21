@@ -18,17 +18,23 @@ echo ""
 TEST_CLUSTER="test-lifecycle-$$"  # 使用 PID 确保唯一性
 
 cleanup() {
-  echo ""
-  echo "[CLEANUP] Removing test cluster if exists..."
-  "$ROOT_DIR/scripts/delete_env.sh" -n "$TEST_CLUSTER" -p k3d 2>/dev/null || true
-  
-  # 清理 Git 分支
-  if [ -f "$ROOT_DIR/scripts/delete_git_branch.sh" ]; then
-    "$ROOT_DIR/scripts/delete_git_branch.sh" "$TEST_CLUSTER" 2>/dev/null || true
+  # 只有在测试异常退出时才清理（正常流程中已经通过 delete_env.sh 清理）
+  if [ "${CLEANUP_DONE:-0}" = "0" ]; then
+    echo ""
+    echo "[CLEANUP] Removing test cluster if exists (abnormal exit)..."
+    "$ROOT_DIR/scripts/delete_env.sh" -n "$TEST_CLUSTER" -p k3d 2>/dev/null || true
+    
+    # 清理 Git 分支
+    if [ -f "$ROOT_DIR/scripts/delete_git_branch.sh" ]; then
+      "$ROOT_DIR/scripts/delete_git_branch.sh" "$TEST_CLUSTER" 2>/dev/null || true
+    fi
   fi
 }
 
 trap cleanup EXIT
+
+# 标记清理状态
+CLEANUP_DONE=0
 
 ##############################################
 # 1. 创建测试集群
@@ -65,7 +71,7 @@ total_tests=$((total_tests + 1))
 
 # 检查 DB 记录
 if db_is_available 2>/dev/null; then
-  if db_get_cluster "$TEST_CLUSTER" >/dev/null 2>&1; then
+  if db_cluster_exists "$TEST_CLUSTER" 2>/dev/null; then
     echo "  ✓ DB record exists"
     passed_tests=$((passed_tests + 1))
   else
@@ -108,6 +114,8 @@ echo "[3/4] Deleting Test Cluster: $TEST_CLUSTER"
 if timeout 120 "$ROOT_DIR/scripts/delete_env.sh" -n "$TEST_CLUSTER" -p k3d >/tmp/delete_test.log 2>&1; then
   echo "  ✓ Cluster deletion completed"
   passed_tests=$((passed_tests + 1))
+  # 标记清理已完成（防止 trap 重复执行）
+  CLEANUP_DONE=1
 else
   echo "  ✗ Cluster deletion failed"
   echo "  See /tmp/delete_test.log for details"
@@ -115,10 +123,9 @@ else
 fi
 total_tests=$((total_tests + 1))
 
-# 等待 20 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
-echo "  Waiting 20s for async cleanup to complete..."
-sleep 20
-
+# 等待 30 秒确保所有异步清理操作完成（如数据库删除、Git 分支删除）
+echo "  Waiting 30s for async cleanup to complete..."
+sleep 30
 echo ""
 
 ##############################################
@@ -138,7 +145,7 @@ total_tests=$((total_tests + 1))
 
 # 检查 DB 记录已删除
 if db_is_available 2>/dev/null; then
-  if ! db_get_cluster "$TEST_CLUSTER" >/dev/null 2>&1; then
+  if ! db_cluster_exists "$TEST_CLUSTER" 2>/dev/null; then
     echo "  ✓ DB record removed"
     passed_tests=$((passed_tests + 1))
   else

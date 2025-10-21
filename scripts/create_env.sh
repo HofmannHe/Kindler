@@ -330,10 +330,11 @@ if db_is_available 2>/dev/null; then
   http_port=${http_port:-18080}
   https_port=${https_port:-18443}
   
-  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port"; then
+  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" 2>/tmp/db_insert_error.log; then
     echo "[INFO] ✓ Cluster configuration saved to database"
   else
     echo "[WARN] Failed to save cluster configuration to database (non-critical)"
+    echo "[WARN] Error details: $(cat /tmp/db_insert_error.log 2>/dev/null || echo 'no error log')"
   fi
 else
   echo "[WARN] Database not available, skipping database save"
