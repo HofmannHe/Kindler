@@ -30,6 +30,54 @@ services:
       k3d-shared:
     # 注意：HAProxy 通过 docker network connect 动态连接到各集群网络
 
+  kindler-webui-backend:
+    build:
+      context: ../../webui/backend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-backend
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../webui/backend:/app:ro
+      - ../../scripts:/scripts:ro
+      - ../../config:/config:ro
+      - ${HOME}/.kube:/root/.kube:ro
+      - kindler-webui-data:/data
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
+      - PYTHONUNBUFFERED=1
+      - DB_PATH=/data/kindler.db
+      - CSV_PATH=/config/environments.csv
+      - SCRIPTS_DIR=/scripts
+      - OPERATION_TIMEOUT=300
+    networks:
+      infrastructure:
+      k3d-shared:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  kindler-webui-frontend:
+    build:
+      context: ../../webui/frontend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      - kindler-webui-backend
+    networks:
+      infrastructure:
+      k3d-shared:
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
 networks:
   infrastructure:
     name: infrastructure
@@ -42,3 +90,4 @@ volumes:
   portainer_secrets:
     external: true
   haproxy_certs:
+  kindler-webui-data:
