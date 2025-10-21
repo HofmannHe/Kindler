@@ -31,3 +31,29 @@ config/secrets.env
 
 # Local git worktrees (development branches)
 worktrees/
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Web UI 测试产物
+webui/.coverage
+webui/htmlcov/
+webui/.benchmarks/
+.coverage
+htmlcov/
+
+# Node.js
+webui/frontend/node_modules/
+webui/frontend/dist/
+node_modules/
+
+# Playwright MCP
+.playwright-mcp/
+
+# 临时状态文档
+*_STATUS*.md
+FINAL_STATUS_REPORT.md
