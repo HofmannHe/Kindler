@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  kindler-webui-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-backend
+    restart: unless-stopped
+    volumes:
+      # Mount Docker socket for docker commands
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount scripts directory (read-only)
+      - ../../scripts:/app/scripts:ro
+      # Mount kubeconfig for kubectl access
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
+      - PYTHONUNBUFFERED=1
+    networks:
+      - k3d-shared
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  kindler-webui-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      - kindler-webui-backend
+    networks:
+      - k3d-shared
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  k3d-shared:
+    external: true
+
