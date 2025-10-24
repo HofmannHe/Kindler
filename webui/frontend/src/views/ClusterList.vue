@@ -224,13 +224,18 @@ const columns = [
           h(
             NPopconfirm,
             {
-              onPositiveClick: () => handleDeleteCluster(row.name)
+              onPositiveClick: () => handleDeleteCluster(row.name),
+              disabled: row.name === 'devops'
             },
             {
               trigger: () => h(
                 NButton,
-                { size: 'small', type: 'error' },
-                { default: () => '删除' }
+                { 
+                  size: 'small', 
+                  type: 'error',
+                  disabled: row.name === 'devops'
+                },
+                { default: () => row.name === 'devops' ? '删除（管理集群不可删除）' : '删除' }
               ),
               default: () => `确定要删除集群 ${row.name} 吗？此操作不可逆。`
             }
@@ -431,6 +436,12 @@ const handleStopCluster = async (name) => {
 
 // Handle delete cluster
 const handleDeleteCluster = async (name) => {
+  // Double check: prevent devops cluster deletion
+  if (name === 'devops') {
+    message.error('devops 集群是管理集群，不能删除')
+    return
+  }
+  
   try {
     const response = await clusterAPI.delete(name)
     const taskId = response.data.task_id

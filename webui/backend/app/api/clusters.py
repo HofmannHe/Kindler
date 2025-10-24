@@ -196,6 +196,13 @@ async def get_cluster(name: str):
 async def delete_cluster(name: str, background_tasks: BackgroundTasks):
     """Delete a cluster (async operation)"""
     try:
+        # Protect devops cluster from deletion
+        if name == "devops":
+            raise HTTPException(
+                status_code=403,
+                detail="devops cluster cannot be deleted via WebUI (management cluster)"
+            )
+        
         # Check if cluster exists
         exists = await db_service.cluster_exists(name)
         if not exists:
