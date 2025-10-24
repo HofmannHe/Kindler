@@ -153,6 +153,39 @@ main() {
 	echo "[BOOTSTRAP] Initialize database tables"
 	"$ROOT_DIR/scripts/init_database.sh"
 	
+	echo "[BOOTSTRAP] Record devops cluster to database"
+	# devops 集群已创建，现在数据库已就绪，记录到数据库
+	. "$ROOT_DIR/scripts/lib_db.sh"
+	if db_is_available; then
+		devops_server_ip=$(docker inspect k3d-devops-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+		if [ -z "$devops_server_ip" ]; then
+			echo "[WARN] Could not detect devops server IP"
+			devops_server_ip="10.101.0.4"
+		fi
+		echo "[DEVOPS] Server IP: $devops_server_ip"
+		
+		max_retries=3
+		for attempt in $(seq 1 $max_retries); do
+			if db_insert_cluster "devops" "k3d" "" "30800" "19000" "10800" "10843" "$devops_server_ip" 2>/tmp/db_devops_bootstrap.log; then
+				echo "[DEVOPS] ✓ devops cluster recorded to database"
+				break
+			else
+				if [ $attempt -eq $max_retries ]; then
+					echo "[ERROR] Failed to record devops cluster after $max_retries attempts"
+					echo "[ERROR] Error: $(cat /tmp/db_devops_bootstrap.log 2>/dev/null || echo 'no log')"
+					echo "[ERROR] This is critical - WebUI will not show devops cluster"
+					exit 1
+				else
+					echo "[WARN] Database insert failed (attempt $attempt/$max_retries), retrying in 3s..."
+					sleep 3
+				fi
+			fi
+		done
+	else
+		echo "[ERROR] Database not available after init_database.sh - this should not happen!"
+		exit 1
+	fi
+	
 	echo "[BOOTSTRAP] Sync Git branches from database"
 	if [ -f "$ROOT_DIR/scripts/sync_git_from_db.sh" ]; then
 		"$ROOT_DIR/scripts/sync_git_from_db.sh" 2>&1 | sed 's/^/  /' || echo "  [WARN] Git sync failed (can be done manually later)"

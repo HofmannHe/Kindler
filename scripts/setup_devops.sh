@@ -150,54 +150,5 @@ echo "  Username: admin"
 echo "  Password: $ARGOCD_ADMIN_PASSWORD"
 echo ""
 
-# 保存 devops 集群到数据库（用于 WebUI 显示）
-echo "[DEVOP] Saving devops cluster configuration to database..."
-. "$ROOT_DIR/scripts/lib_db.sh"
-
-if db_is_available 2>/dev/null; then
-	# devops 集群配置
-	# devops 是 k3d 集群，但没有独立子网（使用 k3d-shared）
-	# 端口配置：node_port=30800, pf_port=19000, http_port=10800, https_port=10843
-	
-	# 动态获取 devops 集群的 server IP
-	echo "[DEVOPS] Getting devops cluster API server IP..."
-	devops_server_ip=$(docker inspect k3d-devops-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
-	if [ -z "$devops_server_ip" ]; then
-		echo "[WARN] Could not detect devops server IP, using fallback"
-		devops_server_ip="10.101.0.4"
-	else
-		echo "[DEVOPS] Detected server IP: $devops_server_ip"
-	fi
-	
-	# 重试逻辑（最多 3 次）
-	max_retries=3
-	for attempt in $(seq 1 $max_retries); do
-		if db_insert_cluster "devops" "k3d" "" "30800" "19000" "10800" "10843" "$devops_server_ip" 2>/tmp/db_devops_insert.log; then
-			echo "[DEVOPS] ✓ devops cluster saved to database"
-			break
-		else
-			if [ $attempt -eq $max_retries ]; then
-				cat <<EOF
-[ERROR] Failed to save devops cluster to database after $max_retries attempts
-  Error: $(cat /tmp/db_devops_insert.log 2>/dev/null || echo 'no error log')
-  
-  Fix Suggestions:
-    1. Check database table schema:
-       kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'
-    
-    2. Manually insert devops cluster:
-       scripts/create_env.sh -n devops  # Will UPSERT
-  
-  Note: devops cluster is running, but not in database.
-        WebUI will not show devops cluster.
-EOF
-			else
-				echo "[WARN] Database insert failed (attempt $attempt/$max_retries), retrying in 5s..."
-				sleep 5
-			fi
-		fi
-	done
-else
-	echo "[WARN] Database not available, skipping devops cluster save"
-	echo "  devops cluster will not appear in WebUI"
-fi
+# Note: devops 集群的数据库记录由 bootstrap.sh 在 init_database.sh 之后执行
+# 不在这里记录，因为 setup_devops.sh 执行时数据库还未部署
