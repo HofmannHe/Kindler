@@ -9,36 +9,57 @@ spec:
   generators:
   - list:
       elements:
-      # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
+      # 自动从数据库读取（通过 scripts/sync_applicationset.sh）
+      # 数据流：Database (clusters表) → Git Branch → ArgoCD Application
       - env: dev
         hostEnv: dev
         branch: dev
         clusterName: dev
-        ingressClass: traefik
-      - env: uat
-        hostEnv: uat
-        branch: uat
-        clusterName: uat
-        ingressClass: traefik
-      - env: prod
-        hostEnv: prod
-        branch: prod
-        clusterName: prod
         ingressClass: traefik
       - env: dev-kind
         hostEnv: dev-kind
         branch: dev-kind
         clusterName: dev-kind
         ingressClass: traefik
-      - env: uat-kind
-        hostEnv: uat-kind
-        branch: uat-kind
-        clusterName: uat-kind
+      - env: prod
+        hostEnv: prod
+        branch: prod
+        clusterName: prod
         ingressClass: traefik
       - env: prod-kind
         hostEnv: prod-kind
         branch: prod-kind
         clusterName: prod-kind
+        ingressClass: traefik
+      - env: test
+        hostEnv: test
+        branch: test
+        clusterName: test
+        ingressClass: traefik
+      - env: test-api-1123086
+        hostEnv: test-api-1123086
+        branch: test-api-1123086
+        clusterName: test-api-1123086
+        ingressClass: traefik
+      - env: test-api-1155328
+        hostEnv: test-api-1155328
+        branch: test-api-1155328
+        clusterName: test-api-1155328
+        ingressClass: traefik
+      - env: test1
+        hostEnv: test1
+        branch: test1
+        clusterName: test1
+        ingressClass: traefik
+      - env: uat
+        hostEnv: uat
+        branch: uat
+        clusterName: uat
+        ingressClass: traefik
+      - env: uat-kind
+        hostEnv: uat-kind
+        branch: uat-kind
+        clusterName: uat-kind
         ingressClass: traefik
   template:
     metadata:
@@ -51,6 +72,7 @@ spec:
       source:
         repoURL: 'http://git.devops.192.168.51.30.sslip.io/fc005/devops.git'
         path: deploy
+        # 每个集群对应一个同名的 Git 分支
         targetRevision: '{{.branch}}'
         helm:
           releaseName: whoami
@@ -58,7 +80,7 @@ spec:
           # 动态设置 Ingress host
           - name: ingress.host
             value: 'whoami.{{.hostEnv}}.192.168.51.30.sslip.io'
-          # 动态设置 Ingress class（统一使用 traefik）
+          # 统一使用 traefik Ingress Controller
           - name: ingress.className
             value: '{{.ingressClass}}'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
