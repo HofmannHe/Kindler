@@ -32,34 +32,92 @@ db_insert_cluster() {
   local pf_port="$5"
   local http_port="$6"
   local https_port="$7"
+  local server_ip="${8:-}"  # 可选，API server IP
+  
+  # 参数验证
+  if [ -z "$name" ]; then
+    echo "[ERROR] db_insert_cluster: name is required" >&2
+    return 1
+  fi
+  if [ -z "$provider" ]; then
+    echo "[ERROR] db_insert_cluster: provider is required" >&2
+    return 1
+  fi
+  if [ -z "$node_port" ]; then
+    echo "[ERROR] db_insert_cluster: node_port is required" >&2
+    return 1
+  fi
+  if [ -z "$pf_port" ]; then
+    echo "[ERROR] db_insert_cluster: pf_port is required" >&2
+    return 1
+  fi
+  if [ -z "$http_port" ]; then
+    echo "[ERROR] db_insert_cluster: http_port is required" >&2
+    return 1
+  fi
+  if [ -z "$https_port" ]; then
+    echo "[ERROR] db_insert_cluster: https_port is required" >&2
+    return 1
+  fi
   
   if [ -n "$subnet" ]; then
     # 包含 subnet
-    db_query "
-      INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port)
-      VALUES ('$name', '$provider', '$subnet'::CIDR, $node_port, $pf_port, $http_port, $https_port)
-      ON CONFLICT (name) DO UPDATE SET
-        provider = EXCLUDED.provider,
-        subnet = EXCLUDED.subnet,
-        node_port = EXCLUDED.node_port,
-        pf_port = EXCLUDED.pf_port,
-        http_port = EXCLUDED.http_port,
-        https_port = EXCLUDED.https_port,
-        updated_at = CURRENT_TIMESTAMP;
-    " >/dev/null
+    if [ -n "$server_ip" ]; then
+      db_query "
+        INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, server_ip)
+        VALUES ('$name', '$provider', '$subnet'::CIDR, $node_port, $pf_port, $http_port, $https_port, '$server_ip')
+        ON CONFLICT (name) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          subnet = EXCLUDED.subnet,
+          node_port = EXCLUDED.node_port,
+          pf_port = EXCLUDED.pf_port,
+          http_port = EXCLUDED.http_port,
+          https_port = EXCLUDED.https_port,
+          server_ip = EXCLUDED.server_ip,
+          updated_at = CURRENT_TIMESTAMP;
+      " >/dev/null
+    else
+      db_query "
+        INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port)
+        VALUES ('$name', '$provider', '$subnet'::CIDR, $node_port, $pf_port, $http_port, $https_port)
+        ON CONFLICT (name) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          subnet = EXCLUDED.subnet,
+          node_port = EXCLUDED.node_port,
+          pf_port = EXCLUDED.pf_port,
+          http_port = EXCLUDED.http_port,
+          https_port = EXCLUDED.https_port,
+          updated_at = CURRENT_TIMESTAMP;
+      " >/dev/null
+    fi
   else
     # 不包含 subnet (kind 集群)
-    db_query "
-      INSERT INTO clusters (name, provider, node_port, pf_port, http_port, https_port)
-      VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port)
-      ON CONFLICT (name) DO UPDATE SET
-        provider = EXCLUDED.provider,
-        node_port = EXCLUDED.node_port,
-        pf_port = EXCLUDED.pf_port,
-        http_port = EXCLUDED.http_port,
-        https_port = EXCLUDED.https_port,
-        updated_at = CURRENT_TIMESTAMP;
-    " >/dev/null
+    if [ -n "$server_ip" ]; then
+      db_query "
+        INSERT INTO clusters (name, provider, node_port, pf_port, http_port, https_port, server_ip)
+        VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port, '$server_ip')
+        ON CONFLICT (name) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          node_port = EXCLUDED.node_port,
+          pf_port = EXCLUDED.pf_port,
+          http_port = EXCLUDED.http_port,
+          https_port = EXCLUDED.https_port,
+          server_ip = EXCLUDED.server_ip,
+          updated_at = CURRENT_TIMESTAMP;
+      " >/dev/null
+    else
+      db_query "
+        INSERT INTO clusters (name, provider, node_port, pf_port, http_port, https_port)
+        VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port)
+        ON CONFLICT (name) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          node_port = EXCLUDED.node_port,
+          pf_port = EXCLUDED.pf_port,
+          http_port = EXCLUDED.http_port,
+          https_port = EXCLUDED.https_port,
+          updated_at = CURRENT_TIMESTAMP;
+      " >/dev/null
+    fi
   fi
 }
 

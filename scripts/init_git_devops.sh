@@ -25,6 +25,17 @@ echo ""
 echo "Git 仓库: $GIT_REPO_URL"
 echo ""
 
+# 检查 Git 服务连通性
+echo "[STEP 0/5] 检查 Git 服务连通性..."
+if ! timeout 5 git ls-remote "$GIT_REPO_URL" &>/dev/null; then
+  echo "⚠️  Git 服务不可用，跳过 devops 分支初始化"
+  echo "    这不影响核心功能，GitOps 功能将在 Git 服务可用后自动启用"
+  echo ""
+  exit 0
+fi
+echo "✓ Git 服务可访问"
+echo ""
+
 # 临时工作目录
 TMPDIR=$(mktemp -d)
 trap "rm -rf '$TMPDIR'" EXIT

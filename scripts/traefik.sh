@@ -48,7 +48,18 @@ case "$cmd" in
       log WARN "Failed to preload image to cluster, deployment may be slow"
     }
     
-    # 部署 Traefik（使用简化的配置）
+    # 根据集群类型选择配置
+    # k3d: hostPort 80 + NodePort (serverlb 转发到 server-0:80 -> hostPort)
+    # kind: NodePort only (HAProxy 直接访问容器 IP + NodePort)
+    if [ "$provider" = "k3d" ]; then
+      host_port_config="hostPort: 80"
+      echo "[TRAEFIK] Using hostPort 80 + NodePort $nodeport for k3d cluster (serverlb compatible)"
+    else
+      host_port_config=""
+      echo "[TRAEFIK] Using NodePort $nodeport for kind cluster"
+    fi
+    
+    # 部署 Traefik（根据集群类型使用不同的 Service 配置）
     echo "[TRAEFIK] Deploying Traefik manifests..."
     cat <<EOF | kubectl --context "$ctx" apply -f -
 apiVersion: v1
@@ -120,6 +131,7 @@ spec:
         ports:
         - name: web
           containerPort: 80
+          $host_port_config
         - name: admin
           containerPort: 8080
         resources:

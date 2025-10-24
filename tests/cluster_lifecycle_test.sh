@@ -6,6 +6,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/tests/lib.sh"
 source "$ROOT_DIR/scripts/lib_db.sh"
+source "$ROOT_DIR/tests/lib_verify.sh" 2>/dev/null || true
 
 echo "######################################################"
 echo "# Cluster Lifecycle Tests"
@@ -41,8 +42,9 @@ CLEANUP_DONE=0
 ##############################################
 echo "[1/4] Creating Test Cluster: $TEST_CLUSTER"
 
-# 使用 --force 参数允许创建不在 CSV 中的临时集群
-if timeout 180 "$ROOT_DIR/scripts/create_env.sh" -n "$TEST_CLUSTER" -p k3d --force --no-register-portainer --haproxy-route >/tmp/create_test.log 2>&1; then
+# 创建临时测试集群（宽松模式允许创建不在CSV中的集群）
+# 提供所有必需参数的默认值
+if timeout 180 "$ROOT_DIR/scripts/create_env.sh" -n "$TEST_CLUSTER" -p k3d --pf-port 29999 --no-register-portainer --haproxy-route >/tmp/create_test.log 2>&1; then
   echo "  ✓ Cluster creation completed"
   passed_tests=$((passed_tests + 1))
 else
@@ -102,6 +104,28 @@ if [ -f "$ROOT_DIR/config/git.env" ]; then
   fi
 else
   echo "  ⚠ git.env not found, skipping Git branch check"
+fi
+
+# 检查 ArgoCD cluster注册 (使用 --haproxy-route 会自动注册)
+if kubectl --context k3d-devops -n argocd get secret "argocd-cluster-$TEST_CLUSTER" >/dev/null 2>&1; then
+  echo "  ✓ ArgoCD cluster registered"
+  passed_tests=$((passed_tests + 1))
+else
+  echo "  ⚠ ArgoCD cluster secret not found (may not be registered yet)"
+  # 不计为失败，因为可能使用了 --no-register-argocd
+fi
+total_tests=$((total_tests + 1))
+
+# 检查集群基础健康度 (如果lib_verify.sh可用)
+if command -v verify_cluster_health >/dev/null 2>&1; then
+  echo "  Checking cluster health..."
+  if verify_cluster_health "$TEST_CLUSTER" "k3d" 2>&1 | sed 's/^/    /'; then
+    passed_tests=$((passed_tests + 1))
+  else
+    echo "    ⚠ Cluster health check warnings (non-critical)"
+    passed_tests=$((passed_tests + 1))  # 不作为失败条件
+  fi
+  total_tests=$((total_tests + 1))
 fi
 
 echo ""

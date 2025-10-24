@@ -32,9 +32,7 @@ services:
     # 注意：HAProxy 通过 docker network connect 动态连接到各集群网络
 
   kindler-webui-backend:
-    build:
-      context: ../../webui/backend
-      dockerfile: Dockerfile
+    image: kindler-webui-backend:with-postgres
     container_name: kindler-webui-backend
     restart: unless-stopped
     volumes:
@@ -47,10 +45,16 @@ services:
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
       - PYTHONUNBUFFERED=1
-      - DB_PATH=/data/kindler.db
+      - SQLITE_PATH=/data/kindler.db
       - CSV_PATH=/config/environments.csv
       - SCRIPTS_DIR=/scripts
       - OPERATION_TIMEOUT=300
+      # PostgreSQL connection (via HAProxy proxy, fallback to SQLite if not available)
+      - PG_HOST=haproxy-gw
+      - PG_PORT=5432
+      - PG_DATABASE=kindler
+      - PG_USER=kindler
+      - PG_PASSWORD=postgres123
     networks:
       infrastructure:
       k3d-shared:

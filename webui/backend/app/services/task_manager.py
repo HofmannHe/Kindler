@@ -117,8 +117,18 @@ class TaskManager:
             # Execute the coroutine
             result = await coro(*args, **kwargs)
             
-            # Mark as completed
-            success, message = result if isinstance(result, tuple) else (True, str(result))
+            # Handle different return types
+            if isinstance(result, tuple):
+                # (success: bool, message: str)
+                success, message = result
+            elif isinstance(result, bool):
+                # bool only: use default messages
+                success = result
+                message = "Operation completed successfully" if success else "Operation failed"
+            else:
+                # Treat any other non-False value as success
+                success = bool(result)
+                message = str(result)
             
             if success:
                 await self.update_task(

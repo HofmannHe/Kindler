@@ -149,3 +149,21 @@ fi
 echo "  Username: admin"
 echo "  Password: $ARGOCD_ADMIN_PASSWORD"
 echo ""
+
+# 保存 devops 集群到数据库（用于 WebUI 显示）
+echo "[DEVOP] Saving devops cluster configuration to database..."
+. "$ROOT_DIR/scripts/lib_db.sh"
+
+if db_is_available 2>/dev/null; then
+	# devops 集群配置
+	# devops 是 k3d 集群，但没有独立子网（使用 k3d-shared）
+	# 端口配置：node_port=30800, pf_port=19000, http_port=10800, https_port=10843
+	if db_insert_cluster "devops" "k3d" "" "30800" "19000" "10800" "10843" "10.101.0.4" 2>/tmp/db_devops_insert.log; then
+		echo "[DEVOP] ✓ devops cluster saved to database"
+	else
+		echo "[WARN] Failed to save devops to database (non-critical)"
+		echo "[WARN] Error: $(cat /tmp/db_devops_insert.log 2>/dev/null || echo 'no error log')"
+	fi
+else
+	echo "[WARN] Database not available, skipping devops cluster save"
+fi

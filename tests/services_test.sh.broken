@@ -8,6 +8,7 @@ IFS=$'\n\t'
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
 . "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/tests/lib_verify.sh" 2>/dev/null || true  # 加载验证库（如果存在）
 
 # 加载配置
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -95,6 +96,9 @@ else
     if [ "$status_code" = "200" ] && echo "$response" | grep -q "Hostname:"; then
       echo "  ✓ whoami on $cluster ($domain) fully functional"
       passed_tests=$((passed_tests + 1))
+    if [ "$status_code" = "200" ] && echo "$response" | grep -q "Hostname:"; then
+      echo "  ✓ whoami on $cluster ($domain) fully functional"
+      passed_tests=$((passed_tests + 1))
     else
       # 任何非200状态都是失败
       if [ "$actual_host" = "NOT_FOUND" ]; then
@@ -109,6 +113,7 @@ else
       fi
       failed_tests=$((failed_tests + 1))
     fi
+    total_tests=$((total_tests + 1))
   done
 fi
 

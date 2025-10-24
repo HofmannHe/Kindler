@@ -2,25 +2,35 @@ version: '3.8'
 
 services:
   kindler-webui-backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: kindler-webui-backend:with-postgres
     container_name: kindler-webui-backend
     restart: unless-stopped
     volumes:
       # Mount Docker socket for docker commands
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mount scripts directory (read-only)
-      - ../../scripts:/app/scripts:ro
+      # Mount scripts directory (read-only) - absolute path
+      - /home/cloud/github/hofmannhe/kindler/scripts:/app/scripts:ro
+      # Mount config directory for environment files
+      - /home/cloud/github/hofmannhe/kindler/config:/app/config:ro
+      # Mount compose directory for HAProxy config access
+      - /home/cloud/github/hofmannhe/kindler/compose:/app/compose:rw
       # Mount kubeconfig for kubectl access
       - ${HOME}/.kube:/root/.kube:ro
+      # Mount app code for hot reload (development mode)
+      - ./backend/app:/app/app:ro
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
       - PYTHONUNBUFFERED=1
+      - PG_HOST=haproxy-gw
+      - PG_PORT=5432
+      - PG_USER=kindler
+      - PG_PASSWORD=postgres123
+      - PG_DATABASE=kindler
+      - SCRIPTS_DIR=/app/scripts
     networks:
       - k3d-shared
     ports:
-      - "8000:8000"
+      - "8001:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -39,9 +49,9 @@ services:
     networks:
       - k3d-shared
     ports:
-      - "3000:80"
+      - "3001:80"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3

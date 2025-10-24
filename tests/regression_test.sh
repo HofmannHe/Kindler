@@ -1,163 +1,318 @@
 #!/usr/bin/env bash
-# 完整回归测试
-# 端到端测试：清理 → 引导 → 创建集群 → 验证
+# 完整回归测试脚本
+# 用途：自动化执行从清理到验证的完整测试流程
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_DIR="${ROOT_DIR}/logs/regression"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+ROUND=${1:-1}
 
-usage() {
-  cat <<EOF
-Usage: $0 [--skip-clean] [--skip-bootstrap] [--clusters CLUSTER1,CLUSTER2,...]
+# 创建日志目录
+mkdir -p "$LOG_DIR"
 
-Options:
-  --skip-clean      Skip environment cleanup
-  --skip-bootstrap  Skip bootstrap process
-  --clusters LIST   Comma-separated list of clusters to create (default: all from CSV)
+# 日志文件
+SUMMARY_LOG="${LOG_DIR}/regression_round${ROUND}_${TIMESTAMP}.log"
+STEP_LOG="${LOG_DIR}/step_${TIMESTAMP}.log"
 
-Examples:
-  $0                                    # Full regression test
-  $0 --skip-clean                       # Keep existing environment
-  $0 --clusters dev-k3d,prod-k3d        # Test specific clusters only
-EOF
-  exit 1
+# 颜色输出
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 日志函数
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$SUMMARY_LOG"
 }
 
-# 解析参数
-SKIP_CLEAN=0
-SKIP_BOOTSTRAP=0
-CLUSTER_LIST=""
+log_success() {
+    echo -e "${GREEN}[PASS]${NC} $*" | tee -a "$SUMMARY_LOG"
+}
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --skip-clean)
-      SKIP_CLEAN=1
-      shift
-      ;;
-    --skip-bootstrap)
-      SKIP_BOOTSTRAP=1
-      shift
-      ;;
-    --clusters)
-      CLUSTER_LIST="$2"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      ;;
-    *)
-      echo "Unknown option: $1"
-      usage
-      ;;
-  esac
-done
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $*" | tee -a "$SUMMARY_LOG"
+}
 
-echo "=========================================="
-echo "  Full Regression Test"
-echo "=========================================="
-echo "Started: $(date)"
-echo ""
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $*" | tee -a "$SUMMARY_LOG"
+}
 
-overall_start=$(date +%s)
-step_num=1
-total_steps=4
+# 执行带超时的命令（带实时输出）
+# 参数: 超时时间(秒) 描述 命令...
+run_with_timeout() {
+    local timeout_sec=$1
+    local description=$2
+    shift 2
+    local cmd="$*"
+    
+    log_info "=========================================="
+    log_info "开始: $description"
+    log_info "超时: ${timeout_sec}s"
+    log_info "命令: $cmd"
+    log_info "=========================================="
+    
+    # 使用临时文件记录输出和退出码
+    local output_file="${STEP_LOG}.$$"
+    local exit_code_file="${STEP_LOG}.$$.exit"
+    
+    # 在后台运行命令，记录输出和退出码
+    (
+        set +e
+        eval "$cmd" > "$output_file" 2>&1
+        echo $? > "$exit_code_file"
+    ) &
+    local cmd_pid=$!
+    
+    # 等待命令完成或超时，实时输出进度
+    local elapsed=0
+    local last_size=0
+    local last_tail_line=0
+    
+    while [ $elapsed -lt $timeout_sec ]; do
+        if ! kill -0 $cmd_pid 2>/dev/null; then
+            # 命令已完成
+            wait $cmd_pid 2>/dev/null || true
+            local exit_code=$(cat "$exit_code_file" 2>/dev/null || echo "1")
+            
+            # 输出最后的新内容
+            local current_size=$(wc -l < "$output_file" 2>/dev/null || echo "0")
+            echo ""
+            echo "========== 任务执行完成 =========="
+            if [ "$current_size" -gt "$last_tail_line" ]; then
+                echo "📋 最终输出 (最后10行):"
+                tail -10 "$output_file" | sed 's/^/  │ /'
+            fi
+            echo "=================================="
+            echo ""
+            
+            # 完整日志到文件
+            cat "$output_file" >> "$SUMMARY_LOG"
+            rm -f "$output_file" "$exit_code_file"
+            
+            if [ "$exit_code" -eq 0 ]; then
+                log_success "✅ $description 完成 (耗时: ${elapsed}s)"
+                return 0
+            else
+                log_error "❌ $description 失败 (退出码: $exit_code, 耗时: ${elapsed}s)"
+                return 1
+            fi
+        fi
+        
+        # 每2秒输出一次进度和最新内容（更频繁，防止网络超时）
+        if [ $((elapsed % 2)) -eq 0 ]; then
+            local current_size=$(wc -l < "$output_file" 2>/dev/null || echo "0")
+            
+            # 输出进度条（带强制刷新）
+            local progress=$((elapsed * 100 / timeout_sec))
+            echo -e "${BLUE}⏱  ${elapsed}s/${timeout_sec}s (${progress}%) | 输出: ${current_size}行${NC}" | tee -a "$SUMMARY_LOG"
+            
+            # 如果有新内容，输出最新的2行
+            if [ "$current_size" -gt "$last_tail_line" ]; then
+                echo "📝 最新进展:" | tee -a "$SUMMARY_LOG"
+                tail -n 2 "$output_file" 2>/dev/null | sed 's/^/  📄 /' | tee -a "$SUMMARY_LOG"
+                last_tail_line=$current_size
+            else
+                # 即使没有新内容，也输出心跳信息
+                echo "  💓 运行中..." | tee -a "$SUMMARY_LOG"
+            fi
+        fi
+        
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    
+    # 超时处理
+    echo ""
+    echo "=========================================="
+    log_error "⏰ $description 超时 (${timeout_sec}s)"
+    echo "=========================================="
+    kill -9 $cmd_pid 2>/dev/null || true
+    wait $cmd_pid 2>/dev/null || true
+    
+    # 输出最后10行
+    if [ -f "$output_file" ]; then
+        echo ""
+        echo "📋 超时时的输出 (最后10行):"
+        tail -10 "$output_file" | sed 's/^/  │ /'
+        echo ""
+        cat "$output_file" >> "$SUMMARY_LOG"
+        rm -f "$output_file"
+    fi
+    rm -f "$exit_code_file"
+    
+    return 1
+}
 
-# 1. Clean environment
-if [ $SKIP_CLEAN -eq 0 ]; then
-  echo "[$step_num/$total_steps] Cleaning environment..."
-  step_start=$(date +%s)
-  
-  if bash "$ROOT_DIR/scripts/clean.sh" --all; then
-    step_end=$(date +%s)
-    echo "✓ Clean completed in $((step_end - step_start))s"
-  else
-    echo "✗ Clean failed"
-    exit 1
-  fi
-else
-  echo "[$step_num/$total_steps] Skipping clean (--skip-clean)"
-fi
-step_num=$((step_num + 1))
+# 主测试流程
+main() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║                                                      ║"
+    echo "║      🚀  Kindler 完整回归测试 Round $ROUND  🚀         ║"
+    echo "║                                                      ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+    echo ""
+    log_info "⏰ 开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
+    log_info "📝 日志文件: $SUMMARY_LOG"
+    echo ""
+    echo "════════════════════════════════════════════════════════"
+    echo "  测试流程:"
+    echo "    1️⃣  完全清理环境 (300s)"
+    echo "    2️⃣  部署基础环境 (600s)"
+    echo "    3️⃣  创建业务集群 (900s = 3 x 300s)"
+    echo "    4️⃣  执行测试套件 (1020s = 6个测试)"
+    echo "════════════════════════════════════════════════════════"
+    echo ""
+    sleep 2
+    
+    # 步骤1: 完全清理
+    echo ""
+    echo "╔════════════════════════════════════════╗"
+    echo "║  步骤 1/4: 完全清理环境                ║"
+    echo "╚════════════════════════════════════════╝"
+    if ! run_with_timeout 300 "步骤1: 完全清理环境" \
+        "$ROOT_DIR/scripts/clean.sh --all --verify"; then
+        log_error "❌ 清理失败，终止测试"
+        exit 1
+    fi
+    
+    # 步骤2: 部署基础环境
+    echo ""
+    echo "╔════════════════════════════════════════╗"
+    echo "║  步骤 2/4: 部署基础环境                ║"
+    echo "╚════════════════════════════════════════╝"
+    if ! run_with_timeout 600 "步骤2: 部署基础环境" \
+        "$ROOT_DIR/scripts/bootstrap.sh"; then
+        log_error "❌ 基础环境部署失败，终止测试"
+        exit 1
+    fi
+    
+    # 步骤3: 创建业务集群（仅3个k3d集群: dev, uat, prod）
+    echo ""
+    echo "╔════════════════════════════════════════╗"
+    echo "║  步骤 3/4: 创建业务集群 (3个k3d)       ║"
+    echo "╚════════════════════════════════════════╝"
+    local cluster_count=0
+    for cluster in dev uat prod; do
+        cluster_count=$((cluster_count + 1))
+        echo ""
+        log_info "┌─────────────────────────────────────"
+        log_info "│ 创建集群 ${cluster_count}/3: $cluster"
+        log_info "└─────────────────────────────────────"
+        if ! run_with_timeout 300 "创建集群 $cluster" \
+            "$ROOT_DIR/scripts/create_env.sh -n $cluster -p k3d"; then
+            log_error "❌ 创建集群 $cluster 失败，终止测试"
+            exit 1
+        fi
+    done
+    
+    # 等待集群稳定
+    log_info "=========================================="
+    log_info "等待集群稳定（30秒）..."
+    log_info "=========================================="
+    for i in {1..30}; do
+        printf "${BLUE}⏱  等待中: %2d/30 秒${NC}\r" "$i"
+        sleep 1
+    done
+    echo ""
+    log_info "✓ 集群稳定等待完成"
+    
+    # 步骤4: 运行测试套件
+    echo ""
+    echo "╔════════════════════════════════════════╗"
+    echo "║  步骤 4/4: 执行测试套件 (共6个测试)    ║"
+    echo "╚════════════════════════════════════════╝"
+    
+    local test_modules=(
+        "portainer_test.sh:120:Portainer集成测试"
+        "haproxy_test.sh:120:HAProxy路由测试"
+        "services_test.sh:180:服务访问测试"
+        "cluster_lifecycle_test.sh:300:集群生命周期测试"
+        "four_source_consistency_test.sh:120:四源一致性测试"
+        "webui_visibility_test.sh:60:WebUI集群可见性测试"
+    )
+    
+    local failed_tests=()
+    local test_count=0
+    local total_tests=${#test_modules[@]}
+    
+    for test_info in "${test_modules[@]}"; do
+        test_count=$((test_count + 1))
+        IFS=':' read -r test_file timeout_val test_name <<< "$test_info"
+        
+        echo ""
+        echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+        log_info "┃ 🧪 测试 ${test_count}/${total_tests}: $test_name"
+        echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+        
+        if ! run_with_timeout "$timeout_val" "$test_name" \
+            "$ROOT_DIR/tests/$test_file"; then
+            log_error "❌ 测试 ${test_count}/${total_tests} 失败: $test_name"
+            failed_tests+=("$test_name")
+        else
+            log_success "✅ 测试 ${test_count}/${total_tests} 通过: $test_name"
+        fi
+        
+        # 短暂停顿，避免测试之间相互影响
+        echo "  💤 休息2秒..."
+        sleep 2
+    done
+    
+    # 测试结果汇总
+    echo ""
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║                                                      ║"
+    echo "║         📊 回归测试 Round $ROUND 结果汇总              ║"
+    echo "║                                                      ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+    echo ""
+    log_info "⏰ 开始时间: $(date -r "$SUMMARY_LOG" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'N/A')"
+    log_info "⏰ 结束时间: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+    log_info "📈 总测试数: ${total_tests}"
+    log_info "✅ 通过测试: $((total_tests - ${#failed_tests[@]}))"
+    log_info "❌ 失败测试: ${#failed_tests[@]}"
+    echo ""
+    echo "════════════════════════════════════════════════════════"
+    
+    if [ ${#failed_tests[@]} -eq 0 ]; then
+        echo ""
+        echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+        echo "┃                                                ┃"
+        echo "┃  🎉🎉🎉  所有测试通过！Round $ROUND 成功完成！  🎉🎉🎉  ┃"
+        echo "┃                                                ┃"
+        echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+        echo ""
+        log_info "📝 详细日志: $SUMMARY_LOG"
+        echo ""
+        return 0
+    else
+        echo ""
+        echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+        echo "┃                                                ┃"
+        echo "┃  ⚠️  发现失败的测试 (${#failed_tests[@]}/${total_tests})              ┃"
+        echo "┃                                                ┃"
+        echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+        echo ""
+        log_error "失败的测试列表:"
+        for test in "${failed_tests[@]}"; do
+            log_error "  ❌ $test"
+        done
+        echo ""
+        log_info "📝 详细日志: $SUMMARY_LOG"
+        log_warn "⚠️  请修复上述问题后，从 Round 1 重新开始完整回归测试"
+        echo ""
+        return 1
+    fi
+}
 
-# 2. Bootstrap
-if [ $SKIP_BOOTSTRAP -eq 0 ]; then
-  echo ""
-  echo "[$step_num/$total_steps] Running bootstrap..."
-  step_start=$(date +%s)
-  
-  if bash "$ROOT_DIR/scripts/bootstrap.sh"; then
-    step_end=$(date +%s)
-    echo "✓ Bootstrap completed in $((step_end - step_start))s"
-  else
-    echo "✗ Bootstrap failed"
-    exit 1
-  fi
-else
-  echo "[$step_num/$total_steps] Skipping bootstrap (--skip-bootstrap)"
-fi
-step_num=$((step_num + 1))
+# 捕获中断信号
+trap 'log_error "测试被中断"; exit 130' INT TERM
 
-# 3. Create business clusters
-echo ""
-echo "[$step_num/$total_steps] Creating business clusters..."
-step_start=$(date +%s)
-
-if [ -n "$CLUSTER_LIST" ]; then
-  clusters=$(echo "$CLUSTER_LIST" | tr ',' ' ')
-else
-  clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv")
-fi
-
-cluster_count=0
-failed_clusters=""
-
-for cluster in $clusters; do
-  cluster_count=$((cluster_count + 1))
-  echo "  [$cluster_count] Creating $cluster..."
-  
-  if bash "$ROOT_DIR/scripts/create_env.sh" -n "$cluster"; then
-    echo "    ✓ $cluster created"
-  else
-    echo "    ✗ $cluster creation failed"
-    failed_clusters="$failed_clusters $cluster"
-  fi
-done
-
-step_end=$(date +%s)
-
-if [ -z "$failed_clusters" ]; then
-  echo "✓ All clusters created in $((step_end - step_start))s"
-else
-  echo "✗ Some clusters failed:$failed_clusters"
-  exit 1
-fi
-step_num=$((step_num + 1))
-
-# 4. Run test suite
-echo ""
-echo "[$step_num/$total_steps] Running test suite..."
-step_start=$(date +%s)
-
-if bash "$ROOT_DIR/tests/run_tests.sh" all; then
-  step_end=$(date +%s)
-  echo "✓ Test suite passed in $((step_end - step_start))s"
-else
-  step_end=$(date +%s)
-  echo "✗ Test suite failed in $((step_end - step_start))s"
-  exit 1
-fi
-
-overall_end=$(date +%s)
-overall_duration=$((overall_end - overall_start))
-
-echo ""
-echo "=========================================="
-echo "  Regression Test Complete"
-echo "=========================================="
-echo "Completed: $(date)"
-echo "Total duration: ${overall_duration}s ($((overall_duration / 60))m $((overall_duration % 60))s)"
-echo "Status: ✓ ALL STEPS PASSED"
-
-exit 0
-
+# 执行主流程
+main
+exit $?

@@ -47,6 +47,41 @@
 4. **业务集群**: 运行实际应用的 k3d/kind 集群
 5. **PaaS 服务**: PostgreSQL 和 pgAdmin 部署在 devops 集群，供所有业务集群使用
 
+### 服务暴露原则（重要）
+
+**核心原则：业务应用必须通过 Ingress 暴露，禁止直接使用 NodePort**
+
+1. **Ingress Controller 本身**
+   - ✅ 可以使用 NodePort 暴露（Traefik Service type: NodePort）
+   - k3d 集群：serverlb 转发到节点 NodePort (30080)
+   - kind 集群：HAProxy 直接访问容器 IP + NodePort (30080)
+
+2. **业务应用**
+   - ✅ 必须创建 Ingress 资源，通过 Ingress Controller 路由
+   - ✅ Service 类型使用 ClusterIP（集群内部访问）
+   - ❌ 禁止使用 NodePort 直接暴露应用
+   - ❌ 禁止使用 hostPort 暴露应用
+
+3. **流量路径**
+   ```
+   外部请求 → HAProxy (80/443)
+            ↓
+         serverlb:80 (k3d) / 容器IP:30080 (kind)
+            ↓
+         Traefik Ingress Controller (NodePort 30080)
+            ↓
+         Ingress 规则匹配
+            ↓
+         Service (ClusterIP)
+            ↓
+         Pod
+   ```
+
+4. **验收标准**
+   - 所有业务应用必须有对应的 Ingress 资源
+   - 所有业务应用的 Service 类型必须是 ClusterIP
+   - 测试用例必须验证应用通过域名访问（而非 IP:Port）
+
 ### GitOps 工作流
 - **外部 Git 服务**: 托管应用代码（在 `config/git.env` 中配置）
 - **ArgoCD**: 监听 Git 仓库变化，自动部署到集群

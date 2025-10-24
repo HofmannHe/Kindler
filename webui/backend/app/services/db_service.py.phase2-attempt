@@ -65,7 +65,7 @@ class DBService:
             logger.info(f"Created cluster record: {cluster_data['name']}")
             return True
         except Exception as e:
-            logger.error(f"Failed to create cluster: {e}")
+            logger.error(f"Failed to create cluster: {e}", exc_info=True)  # Log full traceback
             return False
     
     async def update_cluster(self, name: str, updates: Dict) -> bool:

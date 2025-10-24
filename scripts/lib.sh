@@ -62,7 +62,18 @@ provider_for() {
 		echo "$PROVIDER"
 		return
 	fi
-	# prefer CSV if available
+	
+	# 1. 优先从数据库读取
+	if command -v db_get_cluster >/dev/null 2>&1 && db_is_available 2>/dev/null; then
+		local db_provider
+		db_provider=$(db_get_cluster "$env" 2>/dev/null | jq -r '.provider // empty' 2>/dev/null || echo "")
+		if [ -n "$db_provider" ]; then
+			echo "$db_provider"
+			return
+		fi
+	fi
+	
+	# 2. fallback到CSV if available
 	local line provider
 	line=$(csv_lookup "$env" || true)
 	if [ -n "$line" ]; then
@@ -74,12 +85,15 @@ provider_for() {
 			return
 		fi
 	fi
+	
+	# 3. 最后fallback到默认值
 	case "$env" in
-	dev) echo "${PROVIDER_DEV:-kind}" ;;
-	uat) echo "${PROVIDER_UAT:-kind}" ;;
-	prod) echo "${PROVIDER_PROD:-kind}" ;;
-	ops) echo "${PROVIDER_OPS:-kind}" ;;
-	*) echo kind ;;
+	dev) echo "${PROVIDER_DEV:-k3d}" ;;
+	uat) echo "${PROVIDER_UAT:-k3d}" ;;
+	prod) echo "${PROVIDER_PROD:-k3d}" ;;
+	ops) echo "${PROVIDER_OPS:-k3d}" ;;
+	devops) echo "k3d" ;;
+	*) echo "k3d" ;;  # 默认使用k3d而非kind
 	esac
 }
 

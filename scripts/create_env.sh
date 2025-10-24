@@ -10,19 +10,18 @@ usage() {
   cat >&2 <<USAGE
 Usage: $0 -n <name> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] \
             [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route] \
-            [--register-argocd|--no-register-argocd] [--pf-host <addr>] [--force]
+            [--register-argocd|--no-register-argocd] [--pf-host <addr>]
 
 说明：
-- 默认参数可从 \`config/environments.csv\` 中读取（按环境名匹配），命令行传参可覆盖 CSV 默认。
+- 默认参数可从 PostgreSQL 数据库或 \`config/environments.csv\` 中读取（按环境名匹配），命令行传参可覆盖默认值。
 - CSV 列：env,provider,node_port,pf_port,register_portainer,haproxy_route
-- --force: 跳过 CSV 验证，允许创建不在配置清单中的集群（用于测试）
 USAGE
   exit 1
 }
 
 name=""; provider=""; reg_portainer=1; add_haproxy=1; reg_argocd=1
 pf_host_override=""; node_port=30080; pf_port=""
-force_create=0  # 强制创建模式（跳过 CSV 验证）
+http_port=""; https_port=""; subnet=""
 # 追踪命令行明确设置的参数
 cmd_reg_portainer=""; cmd_add_haproxy=""
 
@@ -52,6 +51,9 @@ EOF
   [ -z "$provider" ] && [ -n "$db_provider" ] && provider="$db_provider"
   [ -z "$pf_port" ] && [ -n "$db_pf_port" ] && pf_port="$db_pf_port"
   [ "$node_port" = 30080 ] && [ -n "$db_node_port" ] && node_port="$db_node_port"
+  [ -z "$http_port" ] && [ -n "$db_http_port" ] && http_port="$db_http_port"
+  [ -z "$https_port" ] && [ -n "$db_https_port" ] && https_port="$db_https_port"
+  [ -z "$subnet" ] && [ -n "$db_subnet" ] && subnet="$db_subnet"
   
   echo "[INFO] Loaded configuration from database"
   return 0
@@ -64,7 +66,7 @@ load_csv_defaults() {
   local line
   line=$(awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d '\r') || true
   [ -n "$line" ] || return 0
-  IFS=, read -r c_env c_provider c_node_port c_pf_port c_reg_portainer c_haproxy_route <<EOF
+  IFS=, read -r c_env c_provider c_node_port c_pf_port c_reg_portainer c_haproxy_route c_http_port c_https_port c_subnet <<EOF
 $line
 EOF
   c_provider=$(echo "${c_provider:-}" | trim)
@@ -72,9 +74,15 @@ EOF
   c_pf_port=$(echo "${c_pf_port:-}" | trim)
   c_reg_portainer=$(echo "${c_reg_portainer:-}" | trim)
   c_haproxy_route=$(echo "${c_haproxy_route:-}" | trim)
+  c_http_port=$(echo "${c_http_port:-}" | trim)
+  c_https_port=$(echo "${c_https_port:-}" | trim)
+  c_subnet=$(echo "${c_subnet:-}" | trim)
   [ -z "$provider" ] && [ -n "${c_provider:-}" ] && provider="$c_provider"
   [ -z "$pf_port" ] && [ -n "${c_pf_port:-}" ] && pf_port="$c_pf_port"
   if [ "$node_port" = 30080 ] && [ -n "${c_node_port:-}" ]; then node_port="$c_node_port"; fi
+  [ -z "$http_port" ] && [ -n "${c_http_port:-}" ] && http_port="$c_http_port"
+  [ -z "$https_port" ] && [ -n "${c_https_port:-}" ] && https_port="$c_https_port"
+  [ -z "$subnet" ] && [ -n "${c_subnet:-}" ] && subnet="$c_subnet"
   # 只有当命令行未明确设置时才使用CSV配置（保持命令行参数优先级）
   if [ -z "$cmd_reg_portainer" ] && [ -n "${c_reg_portainer:-}" ]; then
     reg_portainer=$(parse_bool "$c_reg_portainer")
@@ -97,13 +105,18 @@ while getopts ":n:p:-:" opt; do
         no-haproxy-route) add_haproxy=0; cmd_add_haproxy=0 ;;
         register-argocd) reg_argocd=1 ;;
         no-register-argocd) reg_argocd=0 ;;
-        force) force_create=1 ;;
         node-port)
           node_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
         node-port=*) node_port="${OPTARG#node-port=}" ;;
         pf-port)
           pf_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
         pf-port=*) pf_port="${OPTARG#pf-port=}" ;;
+        http-port)
+          http_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+        http-port=*) http_port="${OPTARG#http-port=}" ;;
+        https-port)
+          https_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+        https-port=*) https_port="${OPTARG#https-port=}" ;;
         pf-host)
           pf_host_override="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
         pf-host=*) pf_host_override="${OPTARG#pf-host=}" ;;
@@ -114,23 +127,12 @@ while getopts ":n:p:-:" opt; do
 done
 [ -z "$name" ] && usage
 
-# 验证环境名是否在配置清单中（如果CSV存在且未使用 --force）
-if [ "$force_create" = 0 ] && [ -f "$ROOT_DIR/config/environments.csv" ]; then
-  # 检查环境名是否在CSV中
+# 验证环境名是否在配置清单中（宽松模式：允许创建新环境，但会警告）
+if [ -f "$ROOT_DIR/config/environments.csv" ]; then
   if ! awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {found=1; exit} END{exit !found}' "$ROOT_DIR/config/environments.csv"; then
-    echo "错误：环境名 '$name' 不在 config/environments.csv 配置清单中" >&2
-    echo "可用环境：" >&2
-    awk -F, '$0 !~ /^[[:space:]]*#/ && NF>0 {print "  " $1}' "$ROOT_DIR/config/environments.csv" >&2
-    echo "" >&2
-    echo "提示：使用 --force 参数可跳过此验证（用于测试）" >&2
-    exit 1
+    echo "[WARN] Environment '$name' not found in config/environments.csv" >&2
+    echo "[INFO] Creating new environment (will be added to database)" >&2
   fi
-fi
-
-# 如果使用 --force 模式，显示警告
-if [ "$force_create" = 1 ]; then
-  echo "[WARN] Force mode enabled: skipping CSV validation"
-  echo "[INFO] Creating temporary cluster '$name' with provider '$provider'"
 fi
 
 # Load defaults: 优先数据库，回退到 CSV
@@ -327,10 +329,25 @@ if db_is_available 2>/dev/null; then
   subnet=$(subnet_for "$name" 2>/dev/null || echo "")
   
   # 使用默认值如果未找到
+  pf_port=${pf_port:-19000}  # 默认端口转发端口
   http_port=${http_port:-18080}
   https_port=${https_port:-18443}
   
-  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" 2>/tmp/db_insert_error.log; then
+  # 获取集群API server容器IP（用于WebUI kubectl访问）
+  server_ip=""
+  if [ "$provider" = "k3d" ]; then
+    server_container="k3d-${name}-server-0"
+  else
+    server_container="${name}-control-plane"
+  fi
+  # 获取容器的第一个IP地址（通常是集群网络的IP）
+  server_ip=$(docker inspect "$server_container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+  
+  if [ -n "$server_ip" ]; then
+    echo "[INFO] Cluster API server IP: $server_ip"
+  fi
+  
+  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2>/tmp/db_insert_error.log; then
     echo "[INFO] ✓ Cluster configuration saved to database"
   else
     echo "[WARN] Failed to save cluster configuration to database (non-critical)"

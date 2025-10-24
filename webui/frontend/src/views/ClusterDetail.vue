@@ -43,16 +43,6 @@
           <n-descriptions-item label="节点状态">
             {{ status.nodes_ready }} / {{ status.nodes_total }} Ready
           </n-descriptions-item>
-          <n-descriptions-item label="Portainer 状态">
-            <n-tag :type="getStatusType(status.portainer_status)">
-              {{ status.portainer_status }}
-            </n-tag>
-          </n-descriptions-item>
-          <n-descriptions-item label="ArgoCD 状态">
-            <n-tag :type="getStatusType(status.argocd_status)">
-              {{ status.argocd_status }}
-            </n-tag>
-          </n-descriptions-item>
           <n-descriptions-item label="错误信息" v-if="status.error_message">
             <n-text type="error">{{ status.error_message }}</n-text>
           </n-descriptions-item>

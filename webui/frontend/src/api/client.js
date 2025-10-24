@@ -62,6 +62,14 @@ export const configAPI = {
   }
 }
 
+// Services API
+export const servicesAPI = {
+  // Get global services status
+  getGlobalStatus() {
+    return apiClient.get('/services')
+  }
+}
+
 // WebSocket for real-time updates
 export class TaskWebSocket {
   constructor() {

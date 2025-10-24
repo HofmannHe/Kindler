@@ -69,25 +69,29 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
                 detail=f"Cluster {cluster.name} already exists"
             )
         
-        # Pre-insert cluster record with status='creating' to satisfy foreign key constraint
-        # This allows operations logging to work before create_env.sh completes
-        cluster_record = {
+        # Pre-create database record (pending status)
+        # This allows:
+        # 1. Satisfying operations table foreign key constraint
+        # 2. User can immediately see the pending cluster
+        # 3. Avoid inconsistency on creation failure
+        success = await db_service.create_cluster({
             "name": cluster.name,
             "provider": cluster.provider,
             "node_port": cluster.node_port,
             "pf_port": cluster.pf_port,
             "http_port": cluster.http_port,
             "https_port": cluster.https_port,
-            "subnet": cluster.cluster_subnet,
-            "status": "creating"
-        }
-        
-        created = await db_service.create_cluster(cluster_record)
-        if not created:
+            "subnet": cluster.cluster_subnet or None,  # Note: 'subnet' not 'cluster_subnet'
+            # Note: register_portainer, haproxy_route, register_argocd are not stored in clusters table
+            "status": "creating"  # Special status for ongoing creation
+        })
+        if not success:
+            logger.error(f"Failed to pre-create cluster record for {cluster.name}")
             raise HTTPException(
                 status_code=500,
-                detail="Failed to create cluster record in database"
+                detail=f"Failed to create cluster record in database"
             )
+        logger.info(f"Pre-created database record for cluster {cluster.name}")
         
         # Create task
         task_id = task_manager.create_task(f"Creating cluster {cluster.name}")
@@ -105,7 +109,7 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
         async def progress_callback(log_line: str):
             await task_manager.update_task(task_id, log_line=log_line)
         
-        # Prepare cluster data for script
+        # Prepare cluster data
         cluster_data = {
             "name": cluster.name,
             "provider": cluster.provider,
@@ -119,22 +123,30 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
             "register_argocd": cluster.register_argocd,
         }
         
-        # Wrapper to handle cleanup on failure
+        # Wrapper function with cleanup on failure
         async def create_with_cleanup():
-            success = await cluster_service.create_cluster(
-                cluster_data=cluster_data,
-                progress_callback=progress_callback
-            )
-            
-            if not success:
-                # Cleanup failed creation
+            try:
+                success = await cluster_service.create_cluster(
+                    cluster_data=cluster_data,
+                    progress_callback=progress_callback
+                )
+                if success:
+                    # Update status to running on success
+                    await db_service.update_cluster(cluster.name, {"status": "running"})
+                    logger.info(f"Cluster {cluster.name} created successfully")
+                else:
+                    # Creation failed, remove database record
+                    await db_service.delete_cluster(cluster.name)
+                    logger.warning(f"Cleaned up failed cluster record: {cluster.name}")
+                return success
+            except Exception as e:
+                # Exception occurred, also remove database record
                 try:
                     await db_service.delete_cluster(cluster.name)
-                    logger.info(f"Cleaned up failed cluster record: {cluster.name}")
-                except Exception as e:
-                    logger.error(f"Failed to cleanup cluster record: {e}")
-            
-            return success
+                    logger.error(f"Cleaned up failed cluster record after exception: {cluster.name}")
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup cluster record: {cleanup_error}")
+                raise
         
         # Run creation in background
         background_tasks.add_task(

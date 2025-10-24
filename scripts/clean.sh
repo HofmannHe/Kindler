@@ -49,10 +49,30 @@ fi
 echo "[CLEAN] Killing port-forwards..."
 pgrep -af "kubectl.*port-forward" | awk '{print $1}' | xargs -r kill -9 || true
 
-echo "[CLEAN] Trying to delete Portainer endpoints (idempotent)..."
-# 在停止 Portainer 前，尽力通过 API 删除可能残留的 Edge 端点，避免后续重名
+echo "[CLEAN] Ensuring Portainer is running for endpoint cleanup..."
+# 确保Portainer在endpoint清理时是运行的
+if ! docker ps --format '{{.Names}}' | grep -q '^portainer-ce$'; then
+  echo "[CLEAN] Starting Portainer temporarily for cleanup..."
+  docker start portainer-ce 2>/dev/null || true
+  sleep 5  # 等待Portainer启动
+fi
+
+echo "[CLEAN] Deleting Portainer endpoints..."
+# 在停止 Portainer 前，通过 API 删除所有 Edge 端点，避免后续重名
 if docker ps --format '{{.Names}}' | grep -q '^portainer-ce$'; then
-  if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+  # 从数据库读取集群列表（优先）
+  if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+       psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+    kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+      psql -U kindler -d kindler -t -c "SELECT name FROM clusters" 2>/dev/null | \
+      while read -r env; do
+        env=$(echo "$env" | xargs)  # trim whitespace
+        [ -n "$env" ] || continue
+        ep=$(echo "$env" | tr -d '-')
+        "$ROOT_DIR/scripts/portainer.sh" del-endpoint "$ep" >/dev/null 2>&1 || true
+      done
+  elif [ -f "$ROOT_DIR/config/environments.csv" ]; then
+    # Fallback to CSV
     awk -F, '$0 !~ /^\s*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" | while read -r env; do
       [ -n "$env" ] || continue
       ep=$(echo "$env" | tr -d '-')
@@ -114,28 +134,85 @@ if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env
 
 delete_one() {
   local n="$1" p="$2"
-  case "$p" in
-    k3d) k3d cluster delete "$n" >/dev/null 2>&1 || true ;;
-    *)   kind delete cluster --name "$n" >/dev/null 2>&1 || true ;;
-  esac
+  local max_retry=3
+  local i=0
+  local success=0
+  
+  while [ $i -lt $max_retry ]; do
+    case "$p" in
+      k3d) 
+        if k3d cluster delete "$n" 2>&1; then
+          echo "[CLEAN] ✓ Deleted k3d cluster: $n"
+          success=1
+          break
+        fi
+        ;;
+      *)   
+        if kind delete cluster --name "$n" 2>&1; then
+          echo "[CLEAN] ✓ Deleted kind cluster: $n"
+          success=1
+          break
+        fi
+        ;;
+    esac
+    i=$((i+1))
+    [ $i -lt $max_retry ] && sleep 2
+  done
+  
+  if [ $success -eq 0 ]; then
+    echo "[CLEAN] ✗ Failed to delete cluster after $max_retry retries: $n (ignoring)"
+  fi
+  
+  return 0  # 总是返回成功，避免整个清理流程中断
 }
 
-# from CSV if present
-if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+# from PostgreSQL database (primary source)
+if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+     psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+  echo "[CLEAN] Reading clusters from PostgreSQL database..."
+  
   if [ "$CLEAN_DEVOPS" = "0" ]; then
     # 过滤掉 devops 集群
-    awk -F, '$0 !~ /^\s*#/ && NF>0 && $1!="devops" {print $1","$2}' "$ROOT_DIR/config/environments.csv" | while IFS=, read -r n p; do
-      [ -n "$n" ] || continue
-      [ -n "$p" ] || p=kind
-      delete_one "$n" "$p"
-    done
+    kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters WHERE name != 'devops' ORDER BY name" 2>/dev/null | \
+      while IFS='|' read -r n p; do
+        n=$(echo "$n" | xargs)  # trim whitespace
+        p=$(echo "$p" | xargs)
+        [ -n "$n" ] || continue
+        [ -n "$p" ] || p=kind
+        delete_one "$n" "$p"
+      done
   else
-    # 删除所有集群
-    awk -F, '$0 !~ /^\s*#/ && NF>0 {print $1","$2}' "$ROOT_DIR/config/environments.csv" | while IFS=, read -r n p; do
-      [ -n "$n" ] || continue
-      [ -n "$p" ] || p=kind
-      delete_one "$n" "$p"
-    done
+    # 删除所有集群（包括 devops）
+    kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters ORDER BY name" 2>/dev/null | \
+      while IFS='|' read -r n p; do
+        n=$(echo "$n" | xargs)
+        p=$(echo "$p" | xargs)
+        [ -n "$n" ] || continue
+        [ -n "$p" ] || p=kind
+        delete_one "$n" "$p"
+      done
+  fi
+else
+  echo "[CLEAN] PostgreSQL not available, falling back to CSV..."
+  # Fallback to CSV if database is not available
+  if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+    if [ "$CLEAN_DEVOPS" = "0" ]; then
+      awk -F, '$0 !~ /^\s*#/ && NF>0 && $1!="devops" {print $1","$2}' "$ROOT_DIR/config/environments.csv" | while IFS=, read -r n p; do
+        [ -n "$n" ] || continue
+        [ -n "$p" ] || p=kind
+        delete_one "$n" "$p"
+      done
+    else
+      awk -F, '$0 !~ /^\s*#/ && NF>0 {print $1","$2}' "$ROOT_DIR/config/environments.csv" | while IFS=, read -r n p; do
+        [ -n "$n" ] || continue
+        [ -n "$p" ] || p=kind
+        delete_one "$n" "$p"
+      done
+    fi
+  else
+    echo "[CLEAN] No CSV file found either, skipping CSV-based cleanup"
   fi
 fi
 
@@ -323,6 +400,30 @@ if [ "$VERIFY" = "1" ]; then
         errors=$((errors+1))
       else
         echo "[VERIFY] ✓ No business cluster contexts (devops preserved)"
+      fi
+    fi
+  fi
+  
+  # 检查数据库记录
+  if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+       psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+    if [ "$CLEAN_DEVOPS" = "0" ]; then
+      db_count=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters WHERE name != 'devops'" 2>/dev/null | xargs || echo "0")
+      if [ "$db_count" -gt 0 ]; then
+        echo "[VERIFY] ✗ Database still has $db_count business cluster record(s)" >&2
+        kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+          psql -U kindler -d kindler -t -c "SELECT name FROM clusters WHERE name != 'devops'" 2>/dev/null | \
+          sed 's/^/  - /' >&2
+        errors=$((errors+1))
+      else
+        echo "[VERIFY] ✓ No business cluster records in database (devops preserved)"
+      fi
+    else
+      db_count=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters" 2>/dev/null | xargs || echo "0")
+      if [ "$db_count" -gt 0 ]; then
+        echo "[VERIFY] ⚠ Database still has $db_count cluster record(s) (devops cluster still running)"
       fi
     fi
   fi

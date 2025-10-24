@@ -29,6 +29,12 @@ for cluster in $clusters; do
   echo ""
   echo "[Cluster: $cluster ($provider)]"
   
+  # devops 集群是管理集群，不需要Traefik Ingress Controller（使用NodePort直接暴露）
+  if [ "$cluster" = "devops" ]; then
+    echo "  ⚠ Skipping whoami test for devops cluster (management cluster, no Ingress Controller needed)"
+    continue
+  fi
+  
   # 检查集群是否可访问
   if ! kubectl --context "$ctx" get nodes >/dev/null 2>&1; then
     echo "  ✗ Cluster not accessible"

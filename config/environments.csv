@@ -10,3 +10,8 @@ devops,k3d,30800,19000,false,false,23800,23843,
 dev,k3d,30080,19001,true,true,18090,18443,10.101.0.0/16
 uat,k3d,30080,19002,true,true,18091,18444,10.102.0.0/16
 prod,k3d,30080,19003,true,true,18092,18445,10.103.0.0/16
+
+# kind 业务集群（无需子网配置）
+dev-kind,kind,30080,19010,true,true,18093,18446,
+uat-kind,kind,30080,19011,true,true,18094,18447,
+prod-kind,kind,30080,19012,true,true,18095,18448,

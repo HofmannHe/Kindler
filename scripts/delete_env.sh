@@ -67,18 +67,18 @@ else
   echo "[INFO] Database not available, skipping database cleanup"
 fi
 
-# 从 CSV 配置文件中移除环境配置（fallback）
-CSV_FILE="$ROOT_DIR/config/environments.csv"
-if [ -f "$CSV_FILE" ]; then
-  echo "[DELETE] Removing $name from environments.csv..."
-  # 创建临时文件，排除要删除的环境行
-  tmp_file=$(mktemp)
-  awk -F, -v env="$name" '$1 != env' "$CSV_FILE" > "$tmp_file"
-  mv "$tmp_file" "$CSV_FILE"
-  echo "[SUCCESS] Environment $name removed from CSV"
-else
-  echo "[WARNING] environments.csv not found, skipping CSV cleanup"
-fi
+# 从 CSV 配置文件中移除环境配置（已废弃 - 使用数据库作为唯一数据源）
+# CSV_FILE="$ROOT_DIR/config/environments.csv"
+# if [ -f "$CSV_FILE" ]; then
+#   echo "[DELETE] Removing $name from environments.csv..."
+#   tmp_file=$(mktemp)
+#   awk -F, -v env="$name" '$1 != env' "$CSV_FILE" > "$tmp_file"
+#   mv "$tmp_file" "$CSV_FILE"
+#   echo "[SUCCESS] Environment $name removed from CSV"
+# else
+#   echo "[WARNING] environments.csv not found, skipping CSV cleanup"
+# fi
+echo "[INFO] CSV cleanup skipped (using database as single source of truth)"
 
 # 同步 ApplicationSet（自动移除已删除环境的 whoami 应用）
 echo "[DELETE] Syncing ApplicationSet for whoami..."

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import clusters, tasks, websocket
+from .api import clusters, tasks, websocket, services
 
 # Configure logging
 logging.basicConfig(
@@ -54,6 +54,7 @@ app.add_middleware(
 app.include_router(clusters.router)
 app.include_router(tasks.router)
 app.include_router(websocket.router)
+app.include_router(services.router)
 
 
 @app.get("/api/health")

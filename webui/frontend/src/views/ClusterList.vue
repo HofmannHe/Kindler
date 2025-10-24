@@ -20,6 +20,81 @@
         </n-space>
       </n-space>
       
+      <!-- Global Services Status -->
+      <n-card title="全局服务状态" style="margin-bottom: 16px;">
+        <n-space :size="16">
+          <n-statistic 
+            v-if="services.portainer"
+            label="Portainer" 
+            :value="services.portainer.status"
+          >
+            <template #prefix>
+              <n-icon :component="getServiceIcon(services.portainer.status)" :color="getServiceIconColor(services.portainer.status)" />
+            </template>
+          </n-statistic>
+          
+          <n-statistic 
+            v-if="services.argocd"
+            label="ArgoCD" 
+            :value="services.argocd.status"
+          >
+            <template #prefix>
+              <n-icon :component="getServiceIcon(services.argocd.status)" :color="getServiceIconColor(services.argocd.status)" />
+            </template>
+          </n-statistic>
+          
+          <n-statistic 
+            v-if="services.haproxy"
+            label="HAProxy" 
+            :value="services.haproxy.status"
+          >
+            <template #prefix>
+              <n-icon :component="getServiceIcon(services.haproxy.status)" :color="getServiceIconColor(services.haproxy.status)" />
+            </template>
+          </n-statistic>
+          
+          <n-statistic 
+            v-if="services.git"
+            label="Git" 
+            :value="services.git.status"
+          >
+            <template #prefix>
+              <n-icon :component="getServiceIcon(services.git.status)" :color="getServiceIconColor(services.git.status)" />
+            </template>
+          </n-statistic>
+        </n-space>
+        
+        <template #action>
+          <n-space>
+            <n-button 
+              v-if="services.portainer"
+              tag="a" 
+              :href="services.portainer.url" 
+              target="_blank"
+            >
+              访问 Portainer
+            </n-button>
+            <n-button 
+              v-if="services.argocd"
+              tag="a" 
+              :href="services.argocd.url" 
+              target="_blank"
+            >
+              访问 ArgoCD
+            </n-button>
+            <n-button 
+              @click="loadServicesStatus" 
+              :loading="loadingServices"
+            >
+              <template #icon>
+                <span>🔄</span>
+              </template>
+              刷新状态
+            </n-button>
+          </n-space>
+        </template>
+      </n-card>
+      
       <!-- Active Tasks -->
       <div v-if="activeTasks.length > 0">
         <h3>正在进行的任务</h3>
@@ -52,8 +127,9 @@
 <script setup>
 import { ref, h, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpace, NButton, NDataTable, NTag, NPopconfirm, useMessage } from 'naive-ui'
-import { clusterAPI, configAPI, taskWebSocket } from '../api/client'
+import { NSpace, NButton, NDataTable, NTag, NPopconfirm, NCard, NStatistic, NIcon, useMessage } from 'naive-ui'
+import { CheckmarkCircle, CloseCircle, AlertCircle, HelpCircle } from '@vicons/ionicons5'
+import { clusterAPI, configAPI, servicesAPI, taskWebSocket } from '../api/client'
 import CreateClusterModal from '../components/CreateClusterModal.vue'
 import TaskProgress from '../components/TaskProgress.vue'
 
@@ -65,6 +141,8 @@ const config = ref(null)
 const loading = ref(false)
 const showCreateModal = ref(false)
 const activeTasks = ref([])
+const services = ref({})
+const loadingServices = ref(false)
 
 // Table columns
 const columns = [
@@ -184,6 +262,52 @@ const loadConfig = async () => {
   } catch (error) {
     message.error('加载配置失败: ' + error.message)
   }
+}
+
+// Load services status
+const loadServicesStatus = async () => {
+  loadingServices.value = true
+  try {
+    const response = await servicesAPI.getGlobalStatus()
+    services.value = response.data
+  } catch (error) {
+    message.error('加载服务状态失败: ' + error.message)
+  } finally {
+    loadingServices.value = false
+  }
+}
+
+// Get service status icon
+const getServiceIcon = (status) => {
+  const iconMap = {
+    healthy: CheckmarkCircle,
+    degraded: AlertCircle,
+    offline: CloseCircle,
+    unknown: HelpCircle
+  }
+  return iconMap[status] || HelpCircle
+}
+
+// Get service status type (for color)
+const getServiceType = (status) => {
+  const typeMap = {
+    healthy: 'success',
+    degraded: 'warning',
+    offline: 'error',
+    unknown: 'default'
+  }
+  return typeMap[status] || 'default'
+}
+
+// Get service icon color
+const getServiceIconColor = (status) => {
+  const colorMap = {
+    healthy: '#18a058',
+    degraded: '#f0a020',
+    offline: '#d03050',
+    unknown: '#808080'
+  }
+  return colorMap[status] || '#808080'
 }
 
 // Handle create cluster
@@ -346,6 +470,7 @@ const handleDeleteCluster = async (name) => {
 onMounted(() => {
   loadClusters()
   loadConfig()
+  loadServicesStatus()
   taskWebSocket.connect()
 })
 

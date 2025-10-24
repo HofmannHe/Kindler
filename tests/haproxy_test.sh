@@ -9,7 +9,13 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
 . "$ROOT_DIR/scripts/lib.sh"
 
-CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+# 从容器中读取当前配置
+CFG="/tmp/haproxy-test-cfg-$$.txt"
+if ! docker exec haproxy-gw cat /usr/local/etc/haproxy/haproxy.cfg > "$CFG" 2>/dev/null; then
+  echo "ERROR: Cannot read HAProxy configuration from container"
+  exit 1
+fi
+trap "rm -f '$CFG'" EXIT
 
 echo "=========================================="
 echo "HAProxy Configuration Tests"
@@ -70,9 +76,9 @@ else
   done
 fi
 
-# 3. Backend 端口配置测试（验证使用 NodePort）
-# 注意：HAProxy 通过容器/集群网络访问，使用 NodePort 30080
-# http_port 是 host 端口映射，仅供直接调试访问
+# 3. Backend 端口配置测试（验证使用 http_port）
+# 注意：业务集群通过Ingress暴露，HAProxy访问集群的http_port（host端口映射）
+# 例如：dev集群 127.0.0.1:18090 -> k3d-dev-serverlb:80 -> Traefik Ingress -> whoami Service
 echo ""
 echo "[3/5] Backend Port Configuration"
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
@@ -81,11 +87,20 @@ if [ -z "$clusters" ]; then
   echo "  ⚠ No business clusters found in environments.csv"
 else
   for cluster in $clusters; do
-    # 从 CSV 读取 node_port（应该是 30080）
-    expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $3; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+    # 从 CSV 读取 provider（第2列）来判断集群类型
+    provider=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $2; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | tr -d ' \r\n')
+    
+    # k3d集群：业务集群通过Ingress暴露，HAProxy访问serverlb的80端口
+    # kind集群：使用NodePort，HAProxy访问容器IP的node_port
+    if [ "$provider" = "k3d" ]; then
+      expected_port="80"  # serverlb的80端口
+    else
+      # kind集群使用node_port
+      expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $3; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "30080")
+    fi
     
     if [ -z "$expected_port" ]; then
-      echo "  ⚠ Could not find node_port for $cluster in CSV"
+      echo "  ⚠ Could not determine expected port for $cluster"
       continue
     fi
     

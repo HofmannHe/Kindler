@@ -140,7 +140,12 @@ else
     echo "  [2.x] whoami.$cluster ($cluster)"
     
     # 1. 先验证 ingress 实际配置
-    ctx_prefix=$(echo "$cluster" | grep -q "k3d" && echo "k3d" || echo "kind")
+    # 根据集群名后缀判断provider: 包含"-kind"后缀的是kind集群，否则是k3d集群
+    if echo "$cluster" | grep -q "\-kind$"; then
+      ctx_prefix="kind"
+    else
+      ctx_prefix="k3d"
+    fi
     actual_host=$(kubectl --context ${ctx_prefix}-${cluster} get ingress -n whoami \
       -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "NOT_FOUND")
     

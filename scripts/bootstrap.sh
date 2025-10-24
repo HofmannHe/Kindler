@@ -144,6 +144,12 @@ main() {
 	echo "[BOOTSTRAP] Deploy PostgreSQL via ArgoCD"
 	"$ROOT_DIR/scripts/deploy_postgresql_gitops.sh"
 	
+	echo "[BOOTSTRAP] Setup PostgreSQL NodePort Service"
+	"$ROOT_DIR/scripts/setup_postgresql_nodeport.sh"
+	
+	echo "[BOOTSTRAP] Setup HAProxy PostgreSQL TCP proxy"
+	"$ROOT_DIR/scripts/setup_haproxy_postgres.sh"
+	
 	echo "[BOOTSTRAP] Initialize database tables"
 	"$ROOT_DIR/scripts/init_database.sh"
 	

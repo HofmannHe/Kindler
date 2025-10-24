@@ -25,20 +25,20 @@ spec:
         branch: prod
         clusterName: prod
         ingressClass: traefik
-      - env: dev-k3d
-        hostEnv: dev-k3d
-        branch: dev-k3d
-        clusterName: dev-k3d
+      - env: dev-kind
+        hostEnv: dev-kind
+        branch: dev-kind
+        clusterName: dev-kind
         ingressClass: traefik
-      - env: uat-k3d
-        hostEnv: uat-k3d
-        branch: uat-k3d
-        clusterName: uat-k3d
+      - env: uat-kind
+        hostEnv: uat-kind
+        branch: uat-kind
+        clusterName: uat-kind
         ingressClass: traefik
-      - env: prod-k3d
-        hostEnv: prod-k3d
-        branch: prod-k3d
-        clusterName: prod-k3d
+      - env: prod-kind
+        hostEnv: prod-kind
+        branch: prod-kind
+        clusterName: prod-kind
         ingressClass: traefik
   template:
     metadata:

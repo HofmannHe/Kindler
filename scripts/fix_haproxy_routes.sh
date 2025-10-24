@@ -27,6 +27,26 @@ while IFS=',' read -r cluster_name provider; do
   total=$((total + 1))
   echo "[$total] Adding route for $cluster_name ($provider)..."
   
+  # 检查集群是否实际存在
+  cluster_exists=0
+  case "$provider" in
+    k3d)
+      if k3d cluster list 2>/dev/null | grep -q "^$cluster_name "; then
+        cluster_exists=1
+      fi
+      ;;
+    kind)
+      if kind get clusters 2>/dev/null | grep -q "^$cluster_name$"; then
+        cluster_exists=1
+      fi
+      ;;
+  esac
+  
+  if [ $cluster_exists -eq 0 ]; then
+    echo "  ⊘ Cluster not exist, skip"
+    continue
+  fi
+  
   if "$ROOT_DIR/scripts/haproxy_route.sh" add "$cluster_name" --node-port 30080 2>&1 | grep -q "added\|already"; then
     echo "  ✓ Route added/exists"
     success=$((success + 1))
