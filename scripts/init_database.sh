@@ -23,7 +23,7 @@ kubectl --context "$CTX" wait --for=condition=ready pod "$POD" -n "$NAMESPACE" -
 echo ""
 echo "[DB] 创建 clusters 表..."
 kubectl --context "$CTX" exec -i "$POD" -n "$NAMESPACE" -- psql -U kindler -d kindler <<'EOF'
--- 创建 clusters 表（极简版）
+-- 创建 clusters 表（包含 server_ip 列）
 CREATE TABLE IF NOT EXISTS clusters (
   name VARCHAR(63) PRIMARY KEY,
   provider VARCHAR(10) NOT NULL CHECK (provider IN ('k3d', 'kind')),
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS clusters (
   pf_port INT NOT NULL,
   http_port INT NOT NULL,
   https_port INT NOT NULL,
+  server_ip VARCHAR(45),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -41,6 +42,16 @@ CREATE INDEX IF NOT EXISTS idx_clusters_provider ON clusters(provider);
 CREATE INDEX IF NOT EXISTS idx_clusters_created_at ON clusters(created_at);
 
 EOF
+
+echo ""
+echo "[DB] 验证 server_ip 列存在..."
+if ! kubectl --context "$CTX" exec -i "$POD" -n "$NAMESPACE" -- \
+  psql -U kindler -d kindler -c "\d clusters" | grep -q "server_ip"; then
+  echo "[ERROR] server_ip column not found in clusters table!"
+  echo "[FIX] Check CREATE TABLE statement in this script"
+  exit 1
+fi
+echo "✓ server_ip column exists"
 
 echo ""
 echo "[DB] 验证表结构..."

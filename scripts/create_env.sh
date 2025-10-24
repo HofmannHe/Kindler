@@ -347,14 +347,54 @@ if db_is_available 2>/dev/null; then
     echo "[INFO] Cluster API server IP: $server_ip"
   fi
   
-  if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2>/tmp/db_insert_error.log; then
-    echo "[INFO] ✓ Cluster configuration saved to database"
-  else
-    echo "[WARN] Failed to save cluster configuration to database (non-critical)"
-    echo "[WARN] Error details: $(cat /tmp/db_insert_error.log 2>/dev/null || echo 'no error log')"
-  fi
+  # 重试逻辑（最多 3 次，间隔 5 秒）
+  max_retries=3
+  retry_delay=5
+  db_insert_success=false
+  
+  for attempt in $(seq 1 $max_retries); do
+    if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2>/tmp/db_insert_error.log; then
+      echo "[INFO] ✓ Cluster configuration saved to database"
+      db_insert_success=true
+      break
+    else
+      if [ $attempt -eq $max_retries ]; then
+        # 最终失败，输出详细诊断
+        cat <<EOF
+[ERROR] Failed to save cluster configuration to database after $max_retries attempts
+  Cluster: $name
+  Provider: $provider
+  Node Port: $node_port
+  Server IP: $server_ip
+  Error: $(cat /tmp/db_insert_error.log 2>/dev/null || echo 'no error log')
+  
+  Fix Suggestions:
+    1. Check if server_ip column exists in clusters table:
+       kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'
+    
+    2. Verify database connectivity:
+       kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c 'SELECT 1;'
+    
+    3. Check PostgreSQL pod status:
+       kubectl --context k3d-devops get pods -n paas
+  
+  Note: Cluster is created successfully, but not recorded in database.
+        WebUI will not show this cluster until database record is added.
+EOF
+        # 决策：当前是 non-critical，不终止脚本
+        # 如果未来需要强制记录，取消下面这行的注释
+        # exit 1
+      else
+        echo "[WARN] Database insert failed (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
+        sleep $retry_delay
+      fi
+    fi
+  done
 else
-  echo "[WARN] Database not available, skipping database save"
+  echo "[WARN] Database not available, cluster not recorded"
+  echo "  This cluster will not appear in WebUI until database record is added manually."
+  echo "  Fix: Ensure devops cluster and PostgreSQL are running, then run:"
+  echo "    scripts/sync_clusters_to_db.sh  # (if this script exists)"
 fi
 
 echo "[SUCCESS] Cluster $name created successfully"

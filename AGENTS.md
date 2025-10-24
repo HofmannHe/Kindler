@@ -469,6 +469,101 @@ done
 4. **依赖明确**: 清楚声明测试的前置条件
 5. **隔离性**: 测试之间不互相影响
 
+## 测试固化原则（2025-10 新增）
+
+### 核心要求
+
+**所有测试过程中发现的问题必须通过自动化测试固化，防止回归。**
+
+### 实施标准
+
+1. **问题必现性（TDD 红-绿-重构）**
+   - 每个 bug 修复前，先编写能复现该 bug 的测试用例
+   - 测试用例应失败（红灯）- 证明问题存在
+   - 修复代码使测试通过（绿灯）
+   - 重构优化（保持绿灯）
+
+2. **详细诊断输出**
+   
+   测试失败时必须输出：
+   - **Expected（期望值）**: 应该是什么
+   - **Actual（实际值）**: 实际是什么
+   - **Context（上下文）**: 集群名称、配置参数、环境变量等
+   - **Fix Suggestion（修复建议）**: 如何解决该问题
+   
+   示例：
+   ```bash
+   echo "✗ Test Failed: Database insert cluster"
+   echo "  Expected: Cluster 'dev' record in database"
+   echo "  Actual: No records found in clusters table"
+   echo "  Context: provider=k3d, node_port=30080"
+   echo "  Fix: Check if server_ip column exists in clusters table"
+   echo "  Command: kubectl exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'"
+   ```
+
+3. **测试命名规范**
+   - 格式：`test_<功能模块>_<具体场景>`
+   - 好的示例：
+     * `test_db_insert_cluster_with_server_ip`
+     * `test_webui_api_delete_devops_returns_403`
+     * `test_cluster_create_records_to_database`
+   - 坏的示例：
+     * `test1` - 无意义
+     * `test_db` - 太宽泛
+     * `test_bug_fix` - 不明确
+
+4. **测试覆盖要求**
+   - 每个脚本的关键路径必须有测试覆盖
+   - WebUI 的每个 API endpoint 必须有测试
+   - 数据库操作必须有测试（CRUD 全覆盖）
+   - 边界条件必须测试（空值、特殊字符、并发）
+
+5. **测试独立性与清理**
+   - 每个测试应独立运行，不依赖其他测试
+   - 测试前设置环境（setup），测试后清理副作用（teardown）
+   - 使用唯一标识避免冲突（如测试集群名加时间戳）
+
+6. **禁止的测试反模式**（扩展版）
+   - ❌ 问题修复后不添加测试（导致回归）
+   - ❌ 测试失败但静默忽略（`|| true`、`2>/dev/null || :`）
+   - ❌ 测试只检查退出码，不检查实际效果
+   - ❌ 测试没有清理副作用（影响后续测试）
+   - ❌ 测试有副作用但不声明（如修改全局配置）
+   - ❌ 硬编码期望值而不从配置读取
+
+7. **测试执行与集成**
+   - 所有测试必须集成到 `tests/run_tests.sh`
+   - 测试应支持单独运行和批量运行
+   - 测试失败时返回非零退出码
+   - 测试输出应易于解析（支持 TAP 或 JSON 格式）
+
+### 历史教训
+
+#### 案例 5：数据库表结构不一致导致集群未记录（2025-10-24）
+
+**问题**：
+- 集群创建成功，Kubernetes 运行正常
+- 数据库中无集群记录，WebUI 看不到集群
+- 测试显示通过，但实际功能失效
+
+**根因**：
+- `init_database.sh` 创建表时缺少 `server_ip` 列
+- `lib_db.sh` 插入时使用了 `server_ip` 列
+- SQL 执行失败，但错误被不当处理
+- 无测试覆盖数据库插入操作
+
+**修复**：
+1. 添加 `tests/db_operations_test.sh` 测试数据库 CRUD
+2. 在 `init_database.sh` 中添加 `server_ip` 列
+3. 改进 `create_env.sh` 的错误处理，记录详细错误
+4. 添加集群创建后的数据库验证测试
+
+**举一反三**：
+- 所有数据库表结构变更必须有对应的测试验证
+- 数据库操作失败不得静默忽略，必须记录详细错误
+- 测试必须验证最终效果（如数据库有记录），而非仅检查脚本退出码
+- 所有关键路径的失败都应有明确的诊断输出
+
 ## 超时机制与防卡死准则
 
 ### 核心原则
