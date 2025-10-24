@@ -195,8 +195,8 @@ class PostgreSQLBackend(DatabaseBackend):
         """Insert new cluster - returns 1 for success, clusters table has no id column"""
         async with self.pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
             """, 
                 cluster['name'],
                 cluster['provider'],
@@ -204,8 +204,7 @@ class PostgreSQLBackend(DatabaseBackend):
                 cluster.get('node_port'),
                 cluster.get('pf_port'),
                 cluster.get('http_port'),
-                cluster.get('https_port'),
-                cluster.get('status', 'creating')
+                cluster.get('https_port')
             )
             return 1  # Success indicator
     
@@ -386,8 +385,8 @@ class SQLiteBackend(DatabaseBackend):
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 cluster['name'],
                 cluster['provider'],
@@ -395,8 +394,7 @@ class SQLiteBackend(DatabaseBackend):
                 cluster.get('node_port'),
                 cluster.get('pf_port'),
                 cluster.get('http_port'),
-                cluster.get('https_port'),
-                cluster.get('status', 'creating')
+                cluster.get('https_port')
             ))
             conn.commit()
             return cursor.lastrowid

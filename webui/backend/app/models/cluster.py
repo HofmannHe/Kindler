@@ -9,9 +9,9 @@ class ClusterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern="^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
     provider: str = Field(..., pattern="^(kind|k3d)$")
     node_port: int = Field(default=30080, ge=1024, le=65535)
-    pf_port: int = Field(..., ge=1024, le=65535)
-    http_port: int = Field(..., ge=1024, le=65535)
-    https_port: int = Field(..., ge=1024, le=65535)
+    pf_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    http_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    https_port: Optional[int] = Field(default=None, ge=1024, le=65535)
     cluster_subnet: Optional[str] = Field(default=None)
     register_portainer: bool = True
     haproxy_route: bool = True

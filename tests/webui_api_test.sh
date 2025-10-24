@@ -8,7 +8,7 @@ IFS=$'\n\t'
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # WebUI URL (从配置读取或使用默认值)
-WEBUI_URL="${WEBUI_URL:-http://kindler-webui.192.168.51.30.sslip.io}"
+WEBUI_URL="${WEBUI_URL:-http://webui.devops.192.168.51.30.sslip.io}"
 
 # 测试计数器
 PASSED_TESTS=0

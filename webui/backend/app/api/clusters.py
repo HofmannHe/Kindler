@@ -69,7 +69,25 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
                 detail=f"Cluster {cluster.name} already exists"
             )
         
-        # Pre-insert cluster record with status='creating' to satisfy foreign key constraint
+        # Auto-assign ports if not provided
+        if cluster.pf_port is None or cluster.http_port is None or cluster.https_port is None:
+            all_clusters = await db_service.list_clusters()
+            # Find max ports
+            max_pf_port = max([c.get('pf_port', 19000) for c in all_clusters] + [19000])
+            max_http_port = max([c.get('http_port', 18090) for c in all_clusters] + [18090])
+            max_https_port = max([c.get('https_port', 18443) for c in all_clusters] + [18443])
+            
+            # Assign next available ports
+            if cluster.pf_port is None:
+                cluster.pf_port = max_pf_port + 1
+            if cluster.http_port is None:
+                cluster.http_port = max_http_port + 1
+            if cluster.https_port is None:
+                cluster.https_port = max_https_port + 1
+            
+            logger.info(f"Auto-assigned ports for {cluster.name}: pf={cluster.pf_port}, http={cluster.http_port}, https={cluster.https_port}")
+        
+        # Pre-insert cluster record to satisfy foreign key constraint
         # This allows operations logging to work before create_env.sh completes
         cluster_record = {
             "name": cluster.name,
@@ -78,8 +96,7 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
             "pf_port": cluster.pf_port,
             "http_port": cluster.http_port,
             "https_port": cluster.https_port,
-            "subnet": cluster.cluster_subnet,
-            "status": "creating"
+            "subnet": cluster.cluster_subnet
         }
         
         created = await db_service.create_cluster(cluster_record)
