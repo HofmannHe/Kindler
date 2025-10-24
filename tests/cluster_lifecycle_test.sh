@@ -206,6 +206,185 @@ print_summary
 # 清理日志
 rm -f /tmp/create_test.log /tmp/delete_test.log
 
+echo ""
+echo "========================================"
+echo "Extended Database Validation Tests"
+echo "=========================================="
+echo ""
+
+##############################################
+# 扩展测试 1: 验证 devops 集群在数据库中
+##############################################
+test_devops_cluster_in_db() {
+  local test_name="test_devops_cluster_in_db"
+  echo "[EXTENDED-1] $test_name"
+  
+  if ! db_is_available 2>/dev/null; then
+    echo "  ⚠ Database not available, skipping"
+    return 2
+  fi
+  
+  # Assert: devops 集群存在
+  local devops_record=$(db_query "SELECT name, provider, server_ip FROM clusters WHERE name='devops';")
+  if echo "$devops_record" | grep -q "devops"; then
+    echo "  ✓ devops cluster found in database"
+    
+    # Assert: 字段完整
+    local provider=$(db_query "SELECT provider FROM clusters WHERE name='devops';")
+    local http_port=$(db_query "SELECT http_port FROM clusters WHERE name='devops';")
+    local https_port=$(db_query "SELECT https_port FROM clusters WHERE name='devops';")
+    
+    if [ "$provider" = "k3d" ] && [ "$http_port" = "10800" ] && [ "$https_port" = "10843" ]; then
+      echo "  ✓ devops cluster configuration correct"
+      return 0
+    else
+      echo "  ✗ devops cluster configuration mismatch"
+      echo "    Expected: provider=k3d, http_port=10800, https_port=10843"
+      echo "    Actual: provider=$provider, http_port=$http_port, https_port=$https_port"
+      return 1
+    fi
+  else
+    cat <<EOF
+  ✗ Test Failed: $test_name
+    Expected: devops cluster record in database
+    Actual: No record found
+    Context: bootstrap.sh should record devops cluster after init_database.sh
+    Fix: Check scripts/bootstrap.sh for database insert logic
+    Command: kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c "SELECT * FROM clusters WHERE name='devops';"
+EOF
+    return 1
+  fi
+}
+
+##############################################
+# 扩展测试 2: 验证数据库记录与集群配置一致
+##############################################
+test_db_record_matches_config() {
+  local test_name="test_db_record_matches_config"
+  local cluster_name="$1"
+  local provider="$2"
+  
+  echo "[EXTENDED-2] $test_name (cluster=$cluster_name)"
+  
+  if ! db_is_available 2>/dev/null; then
+    echo "  ⚠ Database not available, skipping"
+    return 2
+  fi
+  
+  if ! db_cluster_exists "$cluster_name" 2>/dev/null; then
+    echo "  ⚠ Cluster '$cluster_name' not in database, skipping"
+    return 2
+  fi
+  
+  # 获取数据库记录
+  local db_provider=$(db_query "SELECT provider FROM clusters WHERE name='$cluster_name';")
+  local db_node_port=$(db_query "SELECT node_port FROM clusters WHERE name='$cluster_name';")
+  local db_server_ip=$(db_query "SELECT server_ip FROM clusters WHERE name='$cluster_name';")
+  
+  # Assert 1: provider 匹配
+  if [ "$db_provider" != "$provider" ]; then
+    echo "  ✗ provider mismatch: db=$db_provider, expected=$provider"
+    return 1
+  fi
+  
+  # Assert 2: server_ip 存在且非空
+  if [ -z "$db_server_ip" ]; then
+    echo "  ✗ server_ip is empty in database"
+    echo "    This indicates create_env.sh failed to detect container IP"
+    return 1
+  fi
+  
+  # Assert 3: 验证 server_ip 格式正确（IP 地址格式）
+  if ! echo "$db_server_ip" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+    echo "  ✗ server_ip format invalid: $db_server_ip"
+    return 1
+  fi
+  
+  # Assert 4: 验证实际容器存在并且 IP 匹配
+  if [ "$provider" = "k3d" ]; then
+    container_name="k3d-${cluster_name}-server-0"
+  else
+    container_name="${cluster_name}-control-plane"
+  fi
+  
+  actual_ip=$(docker inspect "$container_name" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+  
+  if [ -z "$actual_ip" ]; then
+    echo "  ⚠ Container not found or no IP (cluster may be stopped)"
+    echo "  ✓ Database record exists (skipping IP validation)"
+    return 0
+  fi
+  
+  if [ "$db_server_ip" != "$actual_ip" ]; then
+    echo "  ✗ server_ip mismatch"
+    echo "    Database: $db_server_ip"
+    echo "    Actual: $actual_ip"
+    return 1
+  fi
+  
+  echo "  ✓ All fields match (provider=$db_provider, node_port=$db_node_port, server_ip=$db_server_ip)"
+  return 0
+}
+
+# 运行扩展测试
+extended_passed=0
+extended_failed=0
+extended_total=0
+
+# 测试 1: devops 集群在数据库中
+test_devops_cluster_in_db
+result=$?
+if [ $result -eq 0 ]; then
+  extended_passed=$((extended_passed + 1))
+elif [ $result -eq 1 ]; then
+  extended_failed=$((extended_failed + 1))
+fi
+extended_total=$((extended_total + 1))
+
+# 测试 2: 数据库记录匹配（如果有测试集群，可能已被删除）
+# 使用 devops 集群进行验证
+if kubectl config get-contexts "k3d-devops" >/dev/null 2>&1; then
+  test_db_record_matches_config "devops" "k3d"
+  result=$?
+  if [ $result -eq 0 ]; then
+    extended_passed=$((extended_passed + 1))
+  elif [ $result -eq 1 ]; then
+    extended_failed=$((extended_failed + 1))
+  fi
+  extended_total=$((extended_total + 1))
+else
+  echo "[EXTENDED-2] Skipping (devops cluster not found)"
+fi
+
+echo ""
+echo "=========================================="
+echo "Extended Tests Summary"
+echo "=========================================="
+echo "Total: $extended_total"
+echo "Passed: $extended_passed"
+echo "Failed: $extended_failed"
+echo ""
+
+# 合并扩展测试结果
+passed_tests=$((passed_tests + extended_passed))
+failed_tests=$((failed_tests + extended_failed))
+total_tests=$((total_tests + extended_total))
+
+# 最终摘要
+echo "=========================================="
+echo "Final Summary (Including Extended Tests)"
+echo "=========================================="
+echo "Total: $total_tests"
+echo "Passed: $passed_tests"
+echo "Failed: $failed_tests"
+echo ""
+
+if [ $failed_tests -eq 0 ]; then
+  echo "✓ All tests passed"
+else
+  echo "✗ Some tests failed"
+fi
+
 exit $failed_tests
 
 
