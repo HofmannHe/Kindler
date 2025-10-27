@@ -340,8 +340,30 @@ if db_is_available 2>/dev/null; then
   else
     server_container="${name}-control-plane"
   fi
-  # 获取容器的第一个IP地址（通常是集群网络的IP）
-  server_ip=$(docker inspect "$server_container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+  
+  # 等待容器就绪并获取IP（最多等待60秒）
+  echo "[INFO] Waiting for container IP assignment..."
+  max_wait=60
+  wait_interval=2
+  elapsed=0
+  
+  while [ $elapsed -lt $max_wait ]; do
+    server_ip=$(docker inspect "$server_container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+    
+    if [ -n "$server_ip" ] && [ "$server_ip" != " " ]; then
+      echo "[INFO] ✓ Container IP obtained: $server_ip (after ${elapsed}s)"
+      break
+    fi
+    
+    sleep $wait_interval
+    elapsed=$((elapsed + wait_interval))
+  done
+  
+  if [ -z "$server_ip" ] || [ "$server_ip" = " " ]; then
+    echo "[WARN] Failed to obtain container IP after ${max_wait}s - will save without server_ip"
+    echo "[WARN] The IP can be updated later when the container is fully ready"
+    server_ip=""
+  fi
   
   if [ -n "$server_ip" ]; then
     echo "[INFO] Cluster API server IP: $server_ip"

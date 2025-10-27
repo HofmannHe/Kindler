@@ -29,6 +29,7 @@ services:
       - SCRIPTS_DIR=/app/scripts
     networks:
       - k3d-shared
+      - infrastructure
     ports:
       - "8001:8000"
     healthcheck:
@@ -48,6 +49,7 @@ services:
       - kindler-webui-backend
     networks:
       - k3d-shared
+      - infrastructure
     ports:
       - "3001:80"
     healthcheck:
@@ -59,5 +61,7 @@ services:
 
 networks:
   k3d-shared:
+    external: true
+  infrastructure:
     external: true
 

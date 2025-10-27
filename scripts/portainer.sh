@@ -41,6 +41,15 @@ status() {
 api_base() {
   if [ -n "${PORTAINER_API_BASE:-}" ]; then echo "$PORTAINER_API_BASE"; return; fi
   if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+  if [ -z "${BASE_DOMAIN:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+  
+  # Prefer full domain name for Portainer (via HAProxy)
+  if [ -n "${BASE_DOMAIN:-}" ]; then
+    echo "https://portainer.devops.${BASE_DOMAIN}"
+    return
+  fi
+  
+  # Fallback to IP-based URL (legacy)
   local https_port="${HAPROXY_HTTPS_PORT:-443}"
   if [ -n "${HAPROXY_HOST:-}" ]; then
     if [ "$https_port" = "443" ]; then

@@ -65,7 +65,66 @@ total_tests=$((total_tests + 1))
 # 5. whoami 服务测试（所有业务集群）
 echo ""
 echo "[5/5] Whoami Services"
+
+# 等待 ArgoCD ApplicationSet 同步完成（最多 180 秒）
+echo "  Waiting for ArgoCD to sync whoami applications..."
+max_wait=180
+waited=0
+while [ $waited -lt $max_wait ]; do
+  # 检查 whoami-* applications 的状态
+  synced_count=$(kubectl --context k3d-devops get applications -n argocd -l app=whoami -o jsonpath='{range .items[*]}{.status.sync.status}{"\n"}{end}' 2>/dev/null | grep -c "Synced" || echo 0)
+  total_count=$(kubectl --context k3d-devops get applications -n argocd -l app=whoami --no-headers 2>/dev/null | wc -l || echo 0)
+  
+  if [ "$total_count" -gt 0 ] && [ "$synced_count" -eq "$total_count" ]; then
+    echo "  ✓ All $total_count whoami applications synced (waited ${waited}s)"
+    break
+  fi
+  
+  if [ $((waited % 30)) -eq 0 ]; then
+    echo "  ⏳ Waiting for ArgoCD sync... ($synced_count/$total_count synced, ${waited}s elapsed)"
+  fi
+  
+  sleep 5
+  waited=$((waited + 5))
+done
+
+if [ $waited -ge $max_wait ]; then
+  echo "  ⚠ ArgoCD sync timeout after ${max_wait}s - some applications may not be ready"
+fi
+
+# 获取业务集群列表
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+
+# 等待所有 whoami pods 就绪（最多 120 秒）
+echo "  Waiting for all whoami pods to be ready..."
+max_pod_wait=120
+pod_waited=0
+while [ $pod_waited -lt $max_pod_wait ]; do
+  ready_count=0
+  for cluster in $clusters; do
+    ctx_prefix=$(echo "$cluster" | grep -q "kind" && echo "kind" || echo "k3d")
+    ctx="${ctx_prefix}-${cluster}"
+    pod_ready=$(kubectl --context "$ctx" get pods -n whoami -l app=whoami -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+    [ "$pod_ready" = "True" ] && ready_count=$((ready_count + 1))
+  done
+  
+  total_clusters=$(echo "$clusters" | wc -w)
+  if [ "$ready_count" -eq "$total_clusters" ]; then
+    echo "  ✓ All $total_clusters whoami pods are ready (waited ${pod_waited}s)"
+    break
+  fi
+  
+  if [ $((pod_waited % 30)) -eq 0 ]; then
+    echo "  ⏳ Waiting for pods... ($ready_count/$total_clusters ready, ${pod_waited}s elapsed)"
+  fi
+  
+  sleep 5
+  pod_waited=$((pod_waited + 5))
+done
+
+if [ $pod_waited -ge $max_pod_wait ]; then
+  echo "  ⚠ Pod readiness timeout after ${max_pod_wait}s - some tests may fail"
+fi
 
 if [ -z "$clusters" ]; then
   echo "  ⚠ No business clusters found in environments.csv"

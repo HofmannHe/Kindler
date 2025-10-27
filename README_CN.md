@@ -514,8 +514,17 @@ HAPROXY_HOST=192.168.51.30           # HAProxy 主机 IP
 ```
 
 **域名格式**：`<service>.<env>.<BASE_DOMAIN>`
-- 管理服务：`portainer.devops.192.168.51.30.sslip.io`
-- 业务应用：`whoami.dev.192.168.51.30.sslip.io`
+
+- **管理服务**（devops 环境）：
+  - Portainer: `portainer.devops.$BASE_DOMAIN` (如 `portainer.devops.192.168.51.30.sslip.io`)
+  - ArgoCD: `argocd.devops.$BASE_DOMAIN`
+  - HAProxy 统计: `haproxy.devops.$BASE_DOMAIN/stat`
+  - Git 服务: `git.devops.$BASE_DOMAIN`
+  - **Web UI (Kindler)**: `kindler.devops.$BASE_DOMAIN` ⚠️ **重要：Web UI 使用 "kindler" 不是 "webui"**
+
+- **业务服务**（集群相关）：
+  - 示例 whoami 应用: `whoami.<集群名称>.$BASE_DOMAIN` (如 `whoami.dev.192.168.51.30.sslip.io`)
+  - 使用完整集群名（包括 provider 后缀如 `-k3d` 或 `-kind`）
 
 **纯内网环境配置**：
 ```bash

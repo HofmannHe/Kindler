@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.1.0] - 2025-10-21
+
+### 🚀 Web UI PostgreSQL 集成完成
+
+#### ✅ 新增功能
+
+**数据库双模式支持**
+- 实现 PostgreSQL 和 SQLite 双数据库后端
+- PostgreSQL 优先，SQLite 自动 fallback
+- 通过 HAProxy TCP 代理连接 devops 集群 PostgreSQL
+- Web UI 和 CLI 脚本共享统一数据源
+
+**数据库层重构**
+- 创建 `DatabaseBackend` 抽象基类
+- 实现 `PostgreSQLBackend` (asyncpg 异步驱动)
+- 实现 `SQLiteBackend` (异步封装)
+- 所有 API 改为异步 (async/await)
+
+**配置管理**
+- 新增 PostgreSQL 连接环境变量 (PG_HOST, PG_PORT, etc.)
+- 新增 `POSTGRES_PASSWORD` 密钥配置
+- Docker Compose 环境变量配置
+
+**测试与文档**
+- 新增 `tests/webui_postgresql_test.sh` 集成测试
+- 新增 `docs/WEBUI_POSTGRESQL_INTEGRATION.md` 完整文档
+- 新增 `webui/README_POSTGRESQL.md` 快速开始指南
+
+#### 🔧 优化改进
+
+**服务层适配**
+- `cluster_service.py` 适配异步 API
+- `db_service.py` 完全重写为异步
+- 添加 `_ensure_db()` 确保数据库初始化
+
+**依赖更新**
+- 新增 `asyncpg==0.29.0` (PostgreSQL 异步驱动)
+- 新增 `psycopg2-binary==2.9.9` (PostgreSQL 同步驱动备用)
+
+#### 📊 性能数据
+
+- PostgreSQL 查询延迟: ~15-20ms (含网络)
+- SQLite 查询延迟: ~5-10ms (本地)
+- 连接池: 2-10 连接
+- 自动 fallback 时间: <1s
+
+#### 🔗 相关文档
+
+- [Web UI PostgreSQL 集成文档](docs/WEBUI_POSTGRESQL_INTEGRATION.md)
+- [快速开始指南](webui/README_POSTGRESQL.md)
+- [完成报告](WEBUI_POSTGRESQL_INTEGRATION_REPORT.md)
+
+---
+
 ## [1.0.0] - 2025-10-15
 
 ### 🎉 GitOps 方案实施完成

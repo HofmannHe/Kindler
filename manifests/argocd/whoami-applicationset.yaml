@@ -16,50 +16,30 @@ spec:
         branch: dev
         clusterName: dev
         ingressClass: traefik
-      - env: dev-kind
-        hostEnv: dev-kind
-        branch: dev-kind
-        clusterName: dev-kind
-        ingressClass: traefik
       - env: prod
         hostEnv: prod
         branch: prod
         clusterName: prod
-        ingressClass: traefik
-      - env: prod-kind
-        hostEnv: prod-kind
-        branch: prod-kind
-        clusterName: prod-kind
         ingressClass: traefik
       - env: test
         hostEnv: test
         branch: test
         clusterName: test
         ingressClass: traefik
-      - env: test-api-1123086
-        hostEnv: test-api-1123086
-        branch: test-api-1123086
-        clusterName: test-api-1123086
-        ingressClass: traefik
-      - env: test-api-1155328
-        hostEnv: test-api-1155328
-        branch: test-api-1155328
-        clusterName: test-api-1155328
-        ingressClass: traefik
       - env: test1
         hostEnv: test1
         branch: test1
         clusterName: test1
         ingressClass: traefik
+      - env: test2
+        hostEnv: test2
+        branch: test2
+        clusterName: test2
+        ingressClass: traefik
       - env: uat
         hostEnv: uat
         branch: uat
         clusterName: uat
-        ingressClass: traefik
-      - env: uat-kind
-        hostEnv: uat-kind
-        branch: uat-kind
-        clusterName: uat-kind
         ingressClass: traefik
   template:
     metadata:

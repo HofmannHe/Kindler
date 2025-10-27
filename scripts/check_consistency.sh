@@ -22,7 +22,7 @@ inconsistencies=0
 # 1. 从 DB 读取集群列表
 echo "[1/5] 读取数据库记录..."
 if db_is_available 2>/dev/null; then
-  db_clusters=$(db_exec "SELECT name FROM clusters ORDER BY name;" | tail -n +3 | head -n -2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  db_clusters=$(db_exec "SELECT name FROM clusters ORDER BY name;" | grep -v '^$' || echo "")
   db_count=$(echo "$db_clusters" | grep -c '^' || echo "0")
   echo "  ✓ DB: $db_count clusters"
   echo "$db_clusters" | sed 's/^/    - /'

@@ -41,6 +41,22 @@ CREATE TABLE IF NOT EXISTS clusters (
 CREATE INDEX IF NOT EXISTS idx_clusters_provider ON clusters(provider);
 CREATE INDEX IF NOT EXISTS idx_clusters_created_at ON clusters(created_at);
 
+-- 创建任务表（用于任务持久化）
+CREATE TABLE IF NOT EXISTS tasks (
+  task_id VARCHAR(64) PRIMARY KEY,
+  status VARCHAR(20) NOT NULL,
+  progress INT DEFAULT 0,
+  message TEXT,
+  logs TEXT,
+  error TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建任务索引
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+
 EOF
 
 echo ""

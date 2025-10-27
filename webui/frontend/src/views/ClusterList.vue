@@ -129,7 +129,7 @@ import { ref, h, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSpace, NButton, NDataTable, NTag, NPopconfirm, NCard, NStatistic, NIcon, useMessage } from 'naive-ui'
 import { CheckmarkCircle, CloseCircle, AlertCircle, HelpCircle } from '@vicons/ionicons5'
-import { clusterAPI, configAPI, servicesAPI, taskWebSocket } from '../api/client'
+import { clusterAPI, configAPI, servicesAPI, taskAPI, taskWebSocket } from '../api/client'
 import CreateClusterModal from '../components/CreateClusterModal.vue'
 import TaskProgress from '../components/TaskProgress.vue'
 
@@ -171,8 +171,10 @@ const columns = [
     width: 100,
     render: (row) => {
       const statusMap = {
+        creating: { type: 'info', text: '创建中' },
         running: { type: 'success', text: '运行中' },
         stopped: { type: 'warning', text: '已停止' },
+        degraded: { type: 'warning', text: '降级' },
         error: { type: 'error', text: '错误' },
         unknown: { type: 'default', text: '未知' }
       }
@@ -477,12 +479,56 @@ const handleDeleteCluster = async (name) => {
   }
 }
 
+// Restore running tasks from backend (after page refresh)
+const restoreTasks = async () => {
+  try {
+    const response = await taskAPI.list('running')  // Only get running tasks
+    const runningTasks = response.data || []
+    
+    runningTasks.forEach(task => {
+      // Add to activeTasks
+      activeTasks.value.push(task)
+      
+      // Subscribe to WebSocket updates
+      const handleTaskUpdate = (updatedTask) => {
+        const index = activeTasks.value.findIndex(t => t.task_id === task.task_id)
+        if (index !== -1) {
+          activeTasks.value[index] = updatedTask
+          
+          // If completed/failed, reload clusters and remove after 5 seconds
+          if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
+            loadClusters()
+            setTimeout(() => {
+              const removeIndex = activeTasks.value.findIndex(t => t.task_id === task.task_id)
+              if (removeIndex !== -1) {
+                activeTasks.value.splice(removeIndex, 1)
+              }
+              taskWebSocket.unsubscribe(task.task_id, handleTaskUpdate)
+            }, 5000)
+          }
+        }
+      }
+      
+      taskWebSocket.subscribe(task.task_id, handleTaskUpdate)
+    })
+    
+    if (runningTasks.length > 0) {
+      message.info(`已恢复 ${runningTasks.length} 个运行中的任务`)
+    }
+  } catch (error) {
+    console.error('Failed to restore tasks:', error)
+  }
+}
+
 // Lifecycle hooks
 onMounted(() => {
   loadClusters()
   loadConfig()
   loadServicesStatus()
   taskWebSocket.connect()
+  
+  // Restore running tasks after WebSocket connects
+  setTimeout(restoreTasks, 1000)
 })
 
 onUnmounted(() => {

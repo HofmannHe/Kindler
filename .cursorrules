@@ -1,0 +1,101 @@
+# Kindler Project Rules for AI Assistants
+
+## Domain Naming Convention (CRITICAL)
+
+**⚠️ IMPORTANT: Web UI Domain Name**
+
+The Web UI (Kindler management interface) uses the domain name:
+- ✅ Correct: `kindler.devops.$BASE_DOMAIN` (e.g., `kindler.devops.192.168.51.30.sslip.io`)
+- ❌ Wrong: `webui.devops.$BASE_DOMAIN`
+
+**Service Domain Pattern: `<service>.<env>.$BASE_DOMAIN`**
+
+Management Services (devops environment):
+- Portainer: `portainer.devops.$BASE_DOMAIN`
+- ArgoCD: `argocd.devops.$BASE_DOMAIN`
+- HAProxy Stats: `haproxy.devops.$BASE_DOMAIN/stat`
+- Git Service: `git.devops.$BASE_DOMAIN`
+- **Web UI**: `kindler.devops.$BASE_DOMAIN` (NOT webui!)
+
+Business Services (cluster-specific):
+- Application example: `whoami.<cluster-name>.$BASE_DOMAIN`
+- Use full cluster name (including `-k3d` or `-kind` suffix)
+
+## HAProxy Configuration
+
+When modifying `compose/infrastructure/haproxy.cfg`:
+- Web UI ACL: `acl host_kindler hdr_reg(host) -i ^kindler\.devops\.[^:]+`
+- Web UI routing: `use_backend be_kindler if host_kindler`
+- Backend: `be_kindler` points to `kindler-webui-frontend:80`
+
+## Testing Requirements
+
+Every change must be verified:
+1. Run `curl -I http://kindler.devops.$BASE_DOMAIN` to verify Web UI access
+2. Run relevant tests from `tests/run_tests.sh`
+3. Check that all management services are accessible
+4. Verify no errors or warnings in logs
+
+## Testing Automation and Idempotency (Zero Manual Operations)
+
+### Core Requirements
+- **Any test process requiring manual intervention is considered FAILED**
+- Tests must start from any initial state and pass (idempotency)
+- Test failures stop immediately, preserving the scene for debugging
+- **NEVER claim "tests passed" if manual cleanup/preparation was needed**
+
+### Three-Layer Idempotency Guarantee
+
+1. **Test Suite Level**: `tests/run_tests.sh all`
+   - Preparation: `clean.sh --all` + `bootstrap.sh`
+   - Execution: All test suites
+   - Failure: Stop immediately, preserve environment
+   - Verification: Expected clusters exist, no orphaned resources
+
+2. **Individual Test Suite Level**: e.g., `webui_api_test.sh`
+   - Pre-check: Environment ready
+   - Execution: Create/delete cluster tests
+   - Preserve: test-api-* for inspection (1 k3d + 1 kind)
+   - Verify deletion: test-e2e-* cleaned (1 k3d + 1 kind)
+
+3. **Individual E2E Test Case Level**: e.g., `test_api_create_cluster_e2e()`
+   - Unique naming: Use $$ or timestamp
+   - Defensive cleanup: Check and delete existing clusters before starting
+   - Exception protection: trap mechanism ensures cleanup
+
+### Prohibited Actions
+- ❌ Manually running `cleanup_test_clusters.sh`
+- ❌ Manually deleting orphaned resources
+- ❌ Manually cleaning database
+- ❌ Claiming "tests passed" but requiring manual preparation first
+- ❌ Requiring manual verification or cleanup after tests
+
+### Acceptance Criteria
+**"Tests Passed" means ALL of the following**:
+1. Starting from zero state (clean.sh --all)
+2. Auto-initialization (bootstrap.sh)
+3. All tests execute (no manual intervention)
+4. Result verification passes (automatic checks)
+5. No orphaned resources (except expected preserved ones)
+
+## Documentation
+
+When updating domain configurations, synchronize changes across:
+- `README.md` (English)
+- `README_CN.md` (Chinese)
+- `AGENTS.md` (Agent guidelines)
+- `.cursorrules` (this file)
+
+## Code Style
+
+- Shell scripts: Use `set -Eeuo pipefail` and `IFS=$'\n\t'`
+- YAML: 2-space indentation
+- Domain names: Always use variables from `config/clusters.env`
+- Timeouts: Add timeout protection for all blocking operations
+
+## GitOps Compliance
+
+- All Kubernetes applications (except ArgoCD itself) must be deployed via ArgoCD
+- No direct `kubectl apply` for application resources
+- Configuration changes must go through Git commits
+

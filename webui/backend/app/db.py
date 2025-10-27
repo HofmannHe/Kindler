@@ -511,8 +511,8 @@ class Database:
         # Try PostgreSQL first
         pg_host = os.getenv("PG_HOST")
         pg_port = int(os.getenv("PG_PORT", "5432"))
-        pg_database = os.getenv("PG_DATABASE", "paas")
-        pg_user = os.getenv("PG_USER", "postgres")
+        pg_database = os.getenv("PG_DATABASE", "kindler")
+        pg_user = os.getenv("PG_USER", "kindler")
         pg_password = os.getenv("PG_PASSWORD", "")
         
         if pg_host and pg_password:

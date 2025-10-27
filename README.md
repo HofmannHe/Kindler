@@ -349,6 +349,21 @@ BASE_DOMAIN=local  # Clusters will be accessible as <env>.local
 HAPROXY_HOST=192.168.51.30  # Gateway entry point
 ```
 
+**Service Domain Naming Convention:**
+
+All services follow the pattern `<service>.<env>.$BASE_DOMAIN`:
+
+- **Management Services** (devops environment):
+  - Portainer: `portainer.devops.$BASE_DOMAIN` (e.g., `portainer.devops.192.168.51.30.sslip.io`)
+  - ArgoCD: `argocd.devops.$BASE_DOMAIN`
+  - HAProxy Stats: `haproxy.devops.$BASE_DOMAIN/stat`
+  - Git Service: `git.devops.$BASE_DOMAIN`
+  - **Web UI (Kindler)**: `kindler.devops.$BASE_DOMAIN` ⚠️ **Important: The Web UI uses "kindler" not "webui"**
+
+- **Business Services** (cluster-specific):
+  - Example whoami app: `whoami.<cluster-name>.$BASE_DOMAIN` (e.g., `whoami.dev.192.168.51.30.sslip.io`)
+  - Full cluster name used (including provider suffix like `-k3d` or `-kind` if present)
+
 ## Management Commands
 
 ### Cluster Lifecycle

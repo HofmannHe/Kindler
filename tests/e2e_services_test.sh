@@ -231,6 +231,173 @@ done
 echo ""
 
 ##############################################
+# Portainer 注册验证
+##############################################
+echo "[4/6] Portainer Endpoint Registration"
+echo ""
+
+# 获取 Portainer API token
+echo "  [4.1] Getting Portainer API token"
+PORTAINER_URL="https://portainer.devops.$BASE_DOMAIN"
+PORTAINER_USER="admin"
+PORTAINER_PASS=$(grep PORTAINER_ADMIN_PASSWORD "$ROOT_DIR/config/secrets.env" 2>/dev/null | cut -d'=' -f2 || echo "AdminAdmin87654321")
+
+token_response=$(curl -sk -m 10 -X POST "$PORTAINER_URL/api/auth" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$PORTAINER_USER\",\"password\":\"$PORTAINER_PASS\"}" 2>/dev/null)
+
+TOKEN=$(echo "$token_response" | jq -r '.jwt // empty' 2>/dev/null)
+
+if [ -n "$TOKEN" ]; then
+  echo "    ✓ Portainer API token acquired"
+  passed_tests=$((passed_tests + 1))
+  
+  # 查询所有 endpoints
+  echo "  [4.2] Checking business cluster endpoints"
+  endpoints_response=$(curl -sk -m 10 -X GET "$PORTAINER_URL/api/endpoints" \
+    -H "Authorization: Bearer $TOKEN" 2>/dev/null)
+  
+  for cluster in $clusters; do
+    # Portainer 中 kind 集群名称去掉了连字符（如 dev-kind -> devkind）
+    portainer_name="$cluster"
+    if echo "$cluster" | grep -q -- "-kind$"; then
+      portainer_name=$(echo "$cluster" | sed 's/-kind$/kind/')
+    fi
+    
+    # 查找对应的 endpoint
+    endpoint_status=$(echo "$endpoints_response" | jq -r ".[] | select(.Name == \"$portainer_name\") | .Status" 2>/dev/null)
+    
+    if [ "$endpoint_status" = "1" ]; then
+      echo "    ✓ $cluster: registered and online (as $portainer_name)"
+      passed_tests=$((passed_tests + 1))
+    elif [ -n "$endpoint_status" ]; then
+      echo "    ✗ $cluster: registered but not online (status: $endpoint_status)"
+      failed_tests=$((failed_tests + 1))
+    else
+      echo "    ✗ $cluster: not registered in Portainer (expected name: $portainer_name)"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
+else
+  echo "    ✗ Failed to get Portainer API token"
+  echo "    ⚠ Skipping Portainer endpoint checks"
+  failed_tests=$((failed_tests + 1))
+  
+  # 跳过所有 Portainer 检查
+  for cluster in $clusters; do
+    echo "    ⊘ $cluster: skipped (no API token)"
+    total_tests=$((total_tests + 1))
+  done
+fi
+total_tests=$((total_tests + 1))
+
+echo ""
+
+##############################################
+# ArgoCD Application 验证
+##############################################
+echo "[5/6] ArgoCD Application Health"
+echo ""
+
+echo "  [5.1] Getting ArgoCD auth token"
+ARGOCD_URL="http://argocd.devops.$BASE_DOMAIN"
+ARGOCD_USER="admin"
+ARGOCD_PASS=$(grep ARGOCD_ADMIN_PASSWORD "$ROOT_DIR/config/secrets.env" 2>/dev/null | cut -d'=' -f2 || echo "ArgocdAdmin12345")
+
+argocd_token_response=$(curl -s -m 10 -X POST "$ARGOCD_URL/api/v1/session" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$ARGOCD_USER\",\"password\":\"$ARGOCD_PASS\"}" 2>/dev/null)
+
+ARGOCD_TOKEN=$(echo "$argocd_token_response" | jq -r '.token // empty' 2>/dev/null)
+
+if [ -n "$ARGOCD_TOKEN" ]; then
+  echo "    ✓ ArgoCD API token acquired"
+  passed_tests=$((passed_tests + 1))
+  
+  # 查询所有 applications
+  echo "  [5.2] Checking whoami application health"
+  for cluster in $clusters; do
+    app_name="whoami-${cluster}"
+    
+    app_response=$(curl -s -m 10 -X GET "$ARGOCD_URL/api/v1/applications/$app_name" \
+      -H "Authorization: Bearer $ARGOCD_TOKEN" 2>/dev/null)
+    
+    sync_status=$(echo "$app_response" | jq -r '.status.sync.status // empty' 2>/dev/null)
+    health_status=$(echo "$app_response" | jq -r '.status.health.status // empty' 2>/dev/null)
+    
+    if [ "$sync_status" = "Synced" ] && [ "$health_status" = "Healthy" ]; then
+      echo "    ✓ $app_name: Synced + Healthy"
+      passed_tests=$((passed_tests + 1))
+    elif [ -n "$sync_status" ]; then
+      echo "    ⚠ $app_name: Sync=$sync_status, Health=$health_status"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "    ✗ $app_name: Application not found or inaccessible"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
+else
+  echo "    ✗ Failed to get ArgoCD API token"
+  echo "    ⚠ Skipping ArgoCD application checks"
+  failed_tests=$((failed_tests + 1))
+  
+  # 跳过所有 ArgoCD 检查
+  for cluster in $clusters; do
+    echo "    ⊘ whoami-$cluster: skipped (no API token)"
+    total_tests=$((total_tests + 1))
+  done
+fi
+total_tests=$((total_tests + 1))
+
+echo ""
+
+##############################################
+# WebUI API 验证
+##############################################
+echo "[6/6] WebUI Cluster Visibility"
+echo ""
+
+WEBUI_URL="http://kindler.devops.$BASE_DOMAIN"
+
+echo "  [6.1] Checking WebUI API accessibility"
+webui_clusters=$(curl -s -m 10 "$WEBUI_URL/api/clusters" 2>/dev/null)
+
+if echo "$webui_clusters" | jq -e '. | type == "array"' >/dev/null 2>&1; then
+  echo "    ✓ WebUI API accessible"
+  passed_tests=$((passed_tests + 1))
+  
+  # 验证所有集群是否在 WebUI 中可见
+  echo "  [6.2] Checking business cluster visibility"
+  for cluster in $clusters; do
+    cluster_exists=$(echo "$webui_clusters" | jq -r ".[] | select(.name == \"$cluster\") | .name" 2>/dev/null)
+    
+    if [ "$cluster_exists" = "$cluster" ]; then
+      cluster_status=$(echo "$webui_clusters" | jq -r ".[] | select(.name == \"$cluster\") | .status" 2>/dev/null)
+      echo "    ✓ $cluster: visible in WebUI (status: $cluster_status)"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "    ✗ $cluster: not visible in WebUI"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
+else
+  echo "    ✗ WebUI API not accessible or invalid response"
+  failed_tests=$((failed_tests + 1))
+  
+  # 跳过所有 WebUI 检查
+  for cluster in $clusters; do
+    echo "    ⊘ $cluster: skipped (WebUI API unavailable)"
+    total_tests=$((total_tests + 1))
+  done
+fi
+total_tests=$((total_tests + 1))
+
+echo ""
+
+##############################################
 # 测试摘要
 ##############################################
 print_summary

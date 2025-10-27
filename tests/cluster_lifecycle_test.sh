@@ -307,7 +307,14 @@ test_db_record_matches_config() {
     container_name="${cluster_name}-control-plane"
   fi
   
-  actual_ip=$(docker inspect "$container_name" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+  # 获取实际 IP：devops 使用 k3d-shared 网络，业务集群使用独立网络
+  if [ "$cluster_name" = "devops" ]; then
+    # devops 是管理集群，使用 k3d-shared 主网络
+    actual_ip=$(docker inspect "$container_name" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null || echo "")
+  else
+    # 业务集群：获取第一个网络 IP（独立网络）
+    actual_ip=$(docker inspect "$container_name" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
+  fi
   
   if [ -z "$actual_ip" ]; then
     echo "  ⚠ Container not found or no IP (cluster may be stopped)"

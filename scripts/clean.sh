@@ -84,6 +84,14 @@ if docker ps --format '{{.Names}}' | grep -q '^portainer-ce$'; then
 fi
 
 if [ "$CLEAN_DEVOPS" = "1" ]; then
+  echo "[CLEAN] Stopping WebUI services..."
+  if [ -f "$ROOT_DIR/webui/docker-compose.yml" ]; then
+    docker compose -f "$ROOT_DIR/webui/docker-compose.yml" down --timeout 0 || true
+  fi
+  # Force stop WebUI containers in case docker-compose fails
+  docker stop --timeout 0 kindler-webui-backend kindler-webui-frontend >/dev/null 2>&1 || true
+  docker rm -f kindler-webui-backend kindler-webui-frontend >/dev/null 2>&1 || true
+
   echo "[CLEAN] Stopping infrastructure (Portainer + HAProxy)..."
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" down -v --timeout 0 || true
 

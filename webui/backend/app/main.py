@@ -29,6 +29,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
     
+    # Restore running tasks from database
+    try:
+        from .services.task_manager import task_manager
+        restored = await task_manager.restore_from_db()
+        if restored > 0:
+            logger.info(f"Restored {restored} running tasks from database")
+    except Exception as e:
+        logger.error(f"Task restoration failed: {e}")
+    
     yield
     logger.info("Shutting down Kindler Web GUI Backend")
 
