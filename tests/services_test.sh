@@ -95,6 +95,12 @@ fi
 # 获取业务集群列表
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
 
+# Helper函数：从CSV获取集群的provider
+get_provider() {
+  local cluster_name="$1"
+  awk -F, -v name="$cluster_name" 'NR>1 && $1==name && $0 !~ /^[[:space:]]*#/ {print $2; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "k3d"
+}
+
 # 等待所有 whoami pods 就绪（最多 120 秒）
 echo "  Waiting for all whoami pods to be ready..."
 max_pod_wait=120
@@ -102,8 +108,8 @@ pod_waited=0
 while [ $pod_waited -lt $max_pod_wait ]; do
   ready_count=0
   for cluster in $clusters; do
-    ctx_prefix=$(echo "$cluster" | grep -q "kind" && echo "kind" || echo "k3d")
-    ctx="${ctx_prefix}-${cluster}"
+    provider=$(get_provider "$cluster")
+    ctx="${provider}-${cluster}"
     pod_ready=$(kubectl --context "$ctx" get pods -n whoami -l app=whoami -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
     [ "$pod_ready" = "True" ] && ready_count=$((ready_count + 1))
   done
@@ -136,8 +142,8 @@ else
     domain="whoami.$cluster.$BASE_DOMAIN"
     
     # 1. 先检查 ingress 配置
-    ctx_prefix=$(echo "$cluster" | grep -q "k3d" && echo "k3d" || echo "kind")
-    ctx="${ctx_prefix}-${cluster}"
+    provider=$(get_provider "$cluster")
+    ctx="${provider}-${cluster}"
     actual_host=$(kubectl --context "$ctx" get ingress -n whoami -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "NOT_FOUND")
     
     if [ "$actual_host" != "$domain" ] && [ "$actual_host" != "NOT_FOUND" ]; then
