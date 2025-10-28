@@ -76,9 +76,10 @@ else
   done
 fi
 
-# 3. Backend 端口配置测试（验证使用 http_port）
-# 注意：业务集群通过Ingress暴露，HAProxy访问集群的http_port（host端口映射）
-# 例如：dev集群 127.0.0.1:18090 -> k3d-dev-serverlb:80 -> Traefik Ingress -> whoami Service
+# 3. Backend 端口配置测试（验证使用 NodePort）
+# 注意：业务集群通过Ingress暴露，HAProxy直接访问集群的NodePort（Traefik）
+# 架构：HAProxy -> server-0:NodePort -> Traefik Ingress -> whoami Service
+# k3d和kind统一使用NodePort（移除hostPort避免多集群冲突）
 echo ""
 echo "[3/5] Backend Port Configuration"
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
@@ -90,14 +91,9 @@ else
     # 从 CSV 读取 provider（第2列）来判断集群类型
     provider=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $2; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | tr -d ' \r\n')
     
-    # k3d集群：业务集群通过Ingress暴露，HAProxy访问serverlb的80端口
-    # kind集群：使用NodePort，HAProxy访问容器IP的node_port
-    if [ "$provider" = "k3d" ]; then
-      expected_port="80"  # serverlb的80端口
-    else
-      # kind集群使用node_port
-      expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $3; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "30080")
-    fi
+    # k3d和kind集群：统一使用NodePort（移除hostPort避免多集群冲突）
+    # HAProxy直接访问server-0的NodePort（Traefik Ingress Controller）
+    expected_port=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $3; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "30080")
     
     if [ -z "$expected_port" ]; then
       echo "  ⚠ Could not determine expected port for $cluster"
