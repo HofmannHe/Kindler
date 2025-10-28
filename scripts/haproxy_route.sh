@@ -41,11 +41,15 @@ ensure_network() {
 		subnet="$(subnet_for "$name" 2>/dev/null || true)"
 		
 		if [ -n "$subnet" ]; then
-			# 有独立子网：连接到专用网络
+			# 有独立子网：连接到专用网络（检查幂等性）
 			local dedicated_network="k3d-${name}"
 			if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
-				echo "[haproxy] Connecting to k3d network: $dedicated_network"
-				docker network connect "$dedicated_network" haproxy-gw 2>/dev/null || true
+				if docker inspect haproxy-gw 2>/dev/null | jq -e ".[0].NetworkSettings.Networks.\"$dedicated_network\"" >/dev/null 2>&1; then
+					echo "[haproxy] Already connected to k3d network: $dedicated_network"
+				else
+					echo "[haproxy] Connecting to k3d network: $dedicated_network"
+					docker network connect "$dedicated_network" haproxy-gw
+				fi
 			else
 				echo "[haproxy] WARN: Network $dedicated_network not found"
 			fi
@@ -56,11 +60,16 @@ ensure_network() {
 		return 0
 	fi
 	
-	# 2. kind 集群：连接到 kind 网络（如果存在）
+	# 2. kind 集群：连接到 kind 网络（如果存在且未连接）
 	if [ "$provider" = "kind" ]; then
 		if docker network inspect "kind" >/dev/null 2>&1; then
-			echo "[haproxy] Connecting to kind network"
-			docker network connect "kind" haproxy-gw 2>/dev/null || true
+			# 检查 HAProxy 是否已连接到 kind 网络（幂等性）
+			if docker inspect haproxy-gw 2>/dev/null | jq -e '.[0].NetworkSettings.Networks.kind' >/dev/null 2>&1; then
+				echo "[haproxy] Already connected to kind network"
+			else
+				echo "[haproxy] Connecting to kind network"
+				docker network connect "kind" haproxy-gw
+			fi
 		fi
 		return 0
 	fi
