@@ -52,9 +52,16 @@ register_repo() {
 }
 
 deploy_applicationset() {
-  log "部署 whoami ApplicationSet..."
-  kubectl apply -f "$ROOT_DIR/manifests/argocd/whoami-applicationset.yaml" >/dev/null
-  log "✓ ApplicationSet 已部署"
+  log "部署 whoami ApplicationSet（动态生成）..."
+  # 使用动态生成而非静态文件，确保与数据库一致
+  if [ -f "$ROOT_DIR/scripts/sync_applicationset.sh" ]; then
+    "$ROOT_DIR/scripts/sync_applicationset.sh" 2>&1 | sed 's/^/  /'
+    log "✓ ApplicationSet 已部署（数据源：Database）"
+  else
+    log "⚠️  sync_applicationset.sh not found, using static file"
+    kubectl apply -f "$ROOT_DIR/manifests/argocd/whoami-applicationset.yaml" >/dev/null
+    log "✓ ApplicationSet 已部署（数据源：Static file）"
+  fi
 }
 
 main() {

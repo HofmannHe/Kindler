@@ -289,18 +289,8 @@ if [ "$reg_argocd" = 1 ]; then
     echo "[DRY-RUN][ARGOCD] 跳过集群注册"
   fi
 
-  # 同步 ApplicationSet（自动为新环境部署 whoami）
-  echo "[INFO] Syncing ApplicationSet for whoami..."
-  # 轻量化：同步 ApplicationSet 影响 devops，一次即可；这里若 devops 就绪则同步
-  if [ "${DRY_RUN:-}" != "1" ]; then
-    if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
-      "$ROOT_DIR"/scripts/sync_applicationset.sh || echo "[WARNING] Failed to sync ApplicationSet"
-    else
-      echo "[ARGOCD] devops not ready, skip appset sync"
-    fi
-  else
-    echo "[DRY-RUN][ARGOCD] 跳过 ApplicationSet 同步"
-  fi
+  # NOTE: ApplicationSet 同步已移到数据库更新之后（见文件末尾）
+  # 确保数据库中有最新的集群记录后再生成 ApplicationSet
 else
   echo "[INFO] Skipping ArgoCD registration (--no-register-argocd specified)"
 fi
@@ -378,6 +368,15 @@ if db_is_available 2>/dev/null; then
     if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2>/tmp/db_insert_error.log; then
       echo "[INFO] ✓ Cluster configuration saved to database"
       db_insert_success=true
+      
+      # [修复] 在数据库更新后同步 ApplicationSet（确保数据一致）
+      if [ "${DRY_RUN:-}" != "1" ] && [ "${REGISTER_ARGOCD:-1}" = "1" ]; then
+        if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
+          echo "[INFO] Syncing ApplicationSet (after DB update)..."
+          "$ROOT_DIR"/scripts/sync_applicationset.sh 2>&1 | sed 's/^/  /' || echo "  [WARNING] ApplicationSet sync failed"
+        fi
+      fi
+      
       break
     else
       if [ $attempt -eq $max_retries ]; then
