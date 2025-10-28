@@ -49,13 +49,12 @@ case "$cmd" in
     }
     
     # 根据集群类型选择配置
-    # k3d: hostPort 80 + NodePort (serverlb 转发到 server-0:80 -> hostPort)
+    # k3d: NodePort only (serverlb 转发到 NodePort，不用 hostPort 避免多集群冲突)
     # kind: NodePort only (HAProxy 直接访问容器 IP + NodePort)
+    host_port_config=""
     if [ "$provider" = "k3d" ]; then
-      host_port_config="hostPort: 80"
-      echo "[TRAEFIK] Using hostPort 80 + NodePort $nodeport for k3d cluster (serverlb compatible)"
+      echo "[TRAEFIK] Using NodePort $nodeport for k3d cluster (no hostPort to avoid conflicts)"
     else
-      host_port_config=""
       echo "[TRAEFIK] Using NodePort $nodeport for kind cluster"
     fi
     
