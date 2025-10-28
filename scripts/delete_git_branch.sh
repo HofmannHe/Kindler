@@ -32,7 +32,19 @@ if [ -z "$GIT_REPO_URL" ]; then
   exit 0
 fi
 
-echo "[GIT] Deleting branch: $CLUSTER_NAME"
+# 判断分支类型
+get_branch_type() {
+  local name="$1"
+  case "$name" in
+    devops|main|master) echo "protected" ;;
+    dev|uat|prod) echo "long-lived" ;;
+    test-*) echo "ephemeral" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+BRANCH_TYPE=$(get_branch_type "$CLUSTER_NAME")
+echo "[GIT] Branch type: $BRANCH_TYPE"
 
 # 检查分支是否存在
 if ! git ls-remote --heads "$GIT_REPO_URL" "$CLUSTER_NAME" 2>/dev/null | grep -q "$CLUSTER_NAME"; then
@@ -40,20 +52,87 @@ if ! git ls-remote --heads "$GIT_REPO_URL" "$CLUSTER_NAME" 2>/dev/null | grep -q
   exit 0
 fi
 
-# 删除分支
+# 配置认证
 if [ -n "$GIT_PASSWORD" ]; then
   GIT_REPO_URL_AUTH=$(echo "$GIT_REPO_URL" | sed "s|://|://$GIT_USERNAME:$GIT_PASSWORD@|")
 else
   GIT_REPO_URL_AUTH="$GIT_REPO_URL"
 fi
 
-if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
-  echo "  ✓ Branch '$CLUSTER_NAME' deleted"
-  exit 0
-else
-  echo "  ✗ Failed to delete branch '$CLUSTER_NAME'"
-  echo "  Manual cleanup: git push $GIT_REPO_URL --delete $CLUSTER_NAME"
-  exit 1
-fi
+# 根据分支类型处理
+case "$BRANCH_TYPE" in
+  protected)
+    echo "  ✗ Cannot delete protected branch: $CLUSTER_NAME"
+    exit 1
+    ;;
+
+  long-lived)
+    echo "  ⚠ Deleting long-lived branch: $CLUSTER_NAME"
+    echo "  Creating archive tag..."
+
+    # 创建临时目录
+    TMPDIR=$(mktemp -d)
+    trap "rm -rf '$TMPDIR'" EXIT
+    cd "$TMPDIR"
+
+    # Clone并创建tag
+    if git clone --quiet "$GIT_REPO_URL_AUTH" repo 2>&1 | grep -v "password"; then
+      cd repo
+      git fetch origin "$CLUSTER_NAME:$CLUSTER_NAME" 2>/dev/null || true
+      
+      local timestamp=$(date +%Y%m%d-%H%M%S)
+      local tag_name="archive/$CLUSTER_NAME/$timestamp"
+      
+      if git tag "$tag_name" "$CLUSTER_NAME" -m "Archive before deletion at $timestamp" 2>/dev/null; then
+        if git push "$GIT_REPO_URL_AUTH" "$tag_name" 2>&1 | grep -v "password"; then
+          echo "  ✓ Archive tag created: $tag_name"
+        else
+          echo "  ⚠ Failed to push archive tag"
+        fi
+      else
+        echo "  ⚠ Failed to create archive tag"
+      fi
+    else
+      echo "  ⚠ Failed to clone for archiving"
+    fi
+
+    # 删除分支
+    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+      echo "  ✓ Branch deleted (archive preserved)"
+      exit 0
+    else
+      echo "  ✗ Branch deletion failed"
+      exit 1
+    fi
+    ;;
+
+  ephemeral)
+    # test-api-* 保留供查看，test-e2e-* 直接删除
+    if [[ "$CLUSTER_NAME" =~ ^test-api- ]]; then
+      echo "  ℹ Preserving test-api branch for inspection: $CLUSTER_NAME"
+      exit 0
+    fi
+    
+    echo "  ✓ Deleting ephemeral branch: $CLUSTER_NAME"
+    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+      echo "  ✓ Branch deleted"
+      exit 0
+    else
+      echo "  ⚠ Branch deletion failed (continuing)"
+      exit 0  # 不阻塞集群删除
+    fi
+    ;;
+
+  unknown)
+    echo "  ⚠ Unknown branch type, deleting without archive: $CLUSTER_NAME"
+    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+      echo "  ✓ Branch deleted"
+      exit 0
+    else
+      echo "  ⚠ Branch deletion failed"
+      exit 0  # 不阻塞集群删除
+    fi
+    ;;
+esac
 
 

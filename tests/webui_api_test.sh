@@ -26,20 +26,21 @@ cluster_exists() {
 cleanup() {
   local exit_code=$?
   echo ""
-  echo "[CLEANUP] Cleaning up test-e2e-* resources..."
+  echo "[CLEANUP] Auto-cleaning all test-* clusters (zero manual operations)..."
   
-  # 只清理 test-e2e-* 集群（标记为 delete 的）
-  for cluster in $(k3d cluster list 2>/dev/null | grep "test-e2e-" | awk '{print $1}'); do
-    echo "  Deleting $cluster..."
-    "$ROOT_DIR/scripts/delete_env.sh" "$cluster" 2>/dev/null || true
+  # 清理所有 k3d test-* 集群（包括 test-api-* 和 test-e2e-*）
+  for cluster in $(k3d cluster list 2>/dev/null | grep "test-" | awk '{print $1}'); do
+    echo "  Deleting k3d cluster: $cluster..."
+    "$ROOT_DIR/scripts/delete_env.sh" "$cluster" 2>/dev/null || k3d cluster delete "$cluster" 2>/dev/null || true
   done
   
-  for cluster in $(kind get clusters 2>/dev/null | grep "test-e2e-"); do
-    echo "  Deleting $cluster..."
-    "$ROOT_DIR/scripts/delete_env.sh" "$cluster" 2>/dev/null || true
+  # 清理所有 kind test-* 集群
+  for cluster in $(kind get clusters 2>/dev/null | grep "test-"); do
+    echo "  Deleting kind cluster: $cluster..."
+    "$ROOT_DIR/scripts/delete_env.sh" "$cluster" 2>/dev/null || kind delete cluster --name "$cluster" 2>/dev/null || true
   done
   
-  echo "  ℹ Preserved: test-api-* clusters (for manual inspection)"
+  echo "  ✓ All test clusters auto-cleaned (no manual steps required)"
   exit $exit_code
 }
 
@@ -392,28 +393,30 @@ EOF
   test_api_nonexistent_cluster_404 && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
   
   # E2E 测试：完整创建和删除流程验证（含 Portainer）
-  # 创建 4 个集群：k3d+kind 各2个（1个保留，1个删除验证）
+  # 创建 4 个集群：k3d+kind 各2个（2个测创建，2个测创建+删除）
+  # 所有集群将在测试结束后自动清理（trap机制）
   echo ""
   echo "[INFO] Running E2E tests (k3d + kind, create + delete)..."
   echo "  This will create 4 clusters total:"
-  echo "    - test-api-k3d-$$  (k3d, preserved for inspection)"
-  echo "    - test-api-kind-$$ (kind, preserved for inspection)"
-  echo "    - test-e2e-k3d-$$  (k3d, will be deleted to verify cleanup)"
-  echo "    - test-e2e-kind-$$ (kind, will be deleted to verify cleanup)"
+  echo "    - test-api-k3d-$$  (k3d, creation E2E)"
+  echo "    - test-api-kind-$$ (kind, creation E2E)"
+  echo "    - test-e2e-k3d-$$  (k3d, creation + deletion E2E)"
+  echo "    - test-e2e-kind-$$ (kind, creation + deletion E2E)"
+  echo "  All will be auto-cleaned on exit (zero manual operations)"
   echo "  Estimated time: 10-15 minutes"
   echo ""
   
-  # k3d - 创建并保留（供查看）
+  # k3d - 测试创建流程
   test_api_create_cluster_e2e "k3d" "test-api-k3d-$$" "preserve"
   result=$?
   [ $result -eq 0 ] && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
   
-  # kind - 创建并保留（供查看）
+  # kind - 测试创建流程
   test_api_create_cluster_e2e "kind" "test-api-kind-$$" "preserve"
   result=$?
   [ $result -eq 0 ] && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
   
-  # k3d - 创建、验证、删除
+  # k3d - 测试创建 + 删除流程
   test_api_create_cluster_e2e "k3d" "test-e2e-k3d-$$" "delete"
   result=$?
   [ $result -eq 0 ] && PASSED_TESTS=$((PASSED_TESTS + 1)) || FAILED_TESTS=$((FAILED_TESTS + 1))
@@ -450,13 +453,7 @@ EOF
   echo "Failed:  $FAILED_TESTS"
   echo "Skipped: $SKIPPED_TESTS"
   echo ""
-  echo "Preserved clusters for inspection:"
-  echo "  - test-api-k3d-$$  (k3d)"
-  echo "  - test-api-kind-$$ (kind)"
-  echo ""
-  echo "To delete preserved clusters:"
-  echo "  scripts/delete_env.sh test-api-k3d-$$"
-  echo "  scripts/delete_env.sh test-api-kind-$$"
+  echo "Note: All test clusters will be auto-cleaned on exit (trap)"
   echo "========================================"
   
   if [ $FAILED_TESTS -eq 0 ]; then

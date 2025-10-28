@@ -16,15 +16,15 @@ spec:
         branch: dev
         clusterName: dev
         ingressClass: traefik
-      - env: uat
-        hostEnv: uat
-        branch: uat
-        clusterName: uat
-        ingressClass: traefik
       - env: prod
         hostEnv: prod
         branch: prod
         clusterName: prod
+        ingressClass: traefik
+      - env: uat
+        hostEnv: uat
+        branch: uat
+        clusterName: uat
         ingressClass: traefik
   template:
     metadata:

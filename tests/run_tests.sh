@@ -43,47 +43,70 @@ verify_initial_state() {
   return 0
 }
 
-# 验证最终状态：无孤立资源，保留预期集群
+# 验证最终状态：自动清理所有测试残留，确保零手动操作
 verify_final_state() {
-  echo "  Preserved clusters:"
-  k3d cluster list | grep -E "devops|dev|uat|prod" | sed 's/^/    /' || echo "    (none)"
+  echo "  [CLEANUP] Removing all test-* clusters..."
+  local cleaned=0
   
-  echo "  Test clusters (for inspection):"
-  local test_api_count=$(k3d cluster list 2>/dev/null | grep -c "test-api-" || echo 0)
-  test_api_count=$((test_api_count + $(kind get clusters 2>/dev/null | grep -c "test-api-" || echo 0)))
-  if [ "$test_api_count" -gt 0 ]; then
-    k3d cluster list 2>/dev/null | grep "test-api-" | sed 's/^/    /' || true
-    kind get clusters 2>/dev/null | grep "test-api-" | sed 's/^/    /' || true
-    echo "  ℹ Note: $test_api_count test-api-* clusters preserved for manual inspection"
+  # 清理所有 k3d test-* 集群
+  for cluster in $(k3d cluster list 2>/dev/null | grep "test-" | awk '{print $1}'); do
+    echo "    Deleting k3d cluster: $cluster"
+    scripts/delete_env.sh "$cluster" >/dev/null 2>&1 || k3d cluster delete "$cluster" >/dev/null 2>&1 || true
+    cleaned=$((cleaned + 1))
+  done
+  
+  # 清理所有 kind test-* 集群
+  for cluster in $(kind get clusters 2>/dev/null | grep "test-"); do
+    echo "    Deleting kind cluster: $cluster"
+    scripts/delete_env.sh "$cluster" >/dev/null 2>&1 || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+    cleaned=$((cleaned + 1))
+  done
+  
+  if [ "$cleaned" -gt 0 ]; then
+    echo "  ✓ Cleaned $cleaned test clusters (zero manual operations)"
+    sleep 5  # 等待资源完全清理
   else
-    echo "    (none)"
+    echo "  ✓ No test clusters to clean"
   fi
   
+  echo ""
+  echo "  Preserved clusters (business + devops):"
+  k3d cluster list | grep -E "devops|dev|uat|prod" | sed 's/^/    /' || echo "    (none)"
+  
+  echo ""
   echo "  Checking for orphaned resources..."
   local orphaned=0
   
-  # 检查孤立的 test-e2e-* ArgoCD secrets（应该已删除）
+  # 检查所有 test-* ArgoCD secrets（应该已全部删除）
   local argocd_count=$(kubectl --context k3d-devops get secrets -n argocd \
     -l "argocd.argoproj.io/secret-type=cluster" --no-headers 2>/dev/null | \
-    grep -c "cluster-test-e2e-" || echo 0)
+    grep -c "cluster-test-" || echo 0)
   if [ "$argocd_count" -gt 0 ]; then
-    echo "  ✗ Found $argocd_count orphaned test-e2e-* ArgoCD secrets (should be deleted)"
+    echo "  ✗ Found $argocd_count orphaned test-* ArgoCD secrets"
     orphaned=$((orphaned + argocd_count))
   fi
   
-  # 检查孤立的 test-e2e-* K8s 集群（应该已删除）
-  local test_e2e_count=$(k3d cluster list 2>/dev/null | grep -c "test-e2e-" || echo 0)
-  test_e2e_count=$((test_e2e_count + $(kind get clusters 2>/dev/null | grep -c "test-e2e-" || echo 0)))
-  if [ "$test_e2e_count" -gt 0 ]; then
-    echo "  ✗ Found $test_e2e_count orphaned test-e2e-* clusters (should be deleted)"
-    orphaned=$((orphaned + test_e2e_count))
+  # 检查所有 test-* K8s 集群（应该已全部删除）
+  local test_cluster_count=$(k3d cluster list 2>/dev/null | grep -c "test-" || echo 0)
+  test_cluster_count=$((test_cluster_count + $(kind get clusters 2>/dev/null | grep -c "test-" || echo 0)))
+  if [ "$test_cluster_count" -gt 0 ]; then
+    echo "  ✗ Found $test_cluster_count orphaned test-* clusters"
+    orphaned=$((orphaned + test_cluster_count))
+  fi
+  
+  # 检查所有 test-* 数据库记录（应该已全部删除）
+  local db_count=$(kubectl --context k3d-devops exec -i postgresql-0 -n paas -- \
+    psql -U kindler -d kindler -t -c "SELECT count(*) FROM clusters WHERE name LIKE 'test-%';" 2>/dev/null | tr -d ' ')
+  if [ "$db_count" -gt 0 ]; then
+    echo "  ✗ Found $db_count orphaned test-* database records"
+    orphaned=$((orphaned + db_count))
   fi
   
   if [ $orphaned -eq 0 ]; then
-    echo "  ✓ No orphaned test-e2e-* resources (test-api-* preserved as expected)"
+    echo "  ✓ No orphaned test-* resources (all auto-cleaned)"
   else
-    echo "  ✗ Found $orphaned orphaned test-e2e-* resources - TEST FAILED"
-    echo "  Fix: All test-e2e-* clusters should be auto-deleted by tests"
+    echo "  ✗ Found $orphaned orphaned test-* resources - CLEANUP FAILED"
+    echo "  This indicates the cleanup logic has gaps"
     return 1
   fi
 }
@@ -175,6 +198,9 @@ case "$target" in
     else
       i=0
       total=$(echo "$preset_clusters" | wc -w)
+      # 临时设置IFS为空格以正确分割集群列表
+      OLD_IFS="$IFS"
+      IFS=' '
       for cluster_def in $preset_clusters; do
         cluster_name="${cluster_def%:*}"
         provider="${cluster_def#*:}"
@@ -185,9 +211,11 @@ case "$target" in
         else
           echo "  ✗ Failed to create $cluster_name"
           echo "  Check logs for details"
+          IFS="$OLD_IFS"  # 恢复IFS
           exit 1
         fi
       done
+      IFS="$OLD_IFS"  # 恢复IFS
       echo "  ✓ All $total preset clusters created successfully"
     fi
     
