@@ -168,14 +168,14 @@ add_backend() {
 		detected_port="$node_port"
 		echo "[haproxy] kind cluster $name: using container IP $ip:$detected_port"
 	elif [ "$provider" = "k3d" ]; then
-		# k3d cluster: HAProxy通过serverlb的80端口访问集群
-		# serverlb内部的nginx会将流量转发给Traefik LoadBalancer Service
-		serverlb_name="k3d-${name}-serverlb"
-		if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$serverlb_name" 2>/dev/null | head -1) && [ -n "$ip" ]; then
-			detected_port="80"  # serverlb的80端口 -> Traefik LoadBalancer
-			echo "[haproxy] k3d cluster $name: using serverlb IP $ip:$detected_port"
+		# k3d cluster: HAProxy直接访问server-0的NodePort（Traefik Ingress Controller）
+		# 不使用serverlb，因为Traefik移除了hostPort配置（避免多集群冲突）
+		server_name="k3d-${name}-server-0"
+		if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$server_name" 2>/dev/null | head -1) && [ -n "$ip" ]; then
+			detected_port="$node_port"  # 直接访问Traefik的NodePort
+			echo "[haproxy] k3d cluster $name: using server-0 IP $ip:$detected_port (NodePort)"
 		else
-			echo "[ERROR] k3d cluster $name: cannot find serverlb container $serverlb_name" >&2
+			echo "[ERROR] k3d cluster $name: cannot find server container $server_name" >&2
 			return 1
 		fi
 	else
