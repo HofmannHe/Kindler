@@ -196,6 +196,27 @@ main() {
 		"$ROOT_DIR/scripts/fix_haproxy_routes.sh" 2>&1 | sed 's/^/  /'
 	fi
 
+	echo "[BOOTSTRAP] Start WebUI services"
+	if [ -d "$ROOT_DIR/webui" ]; then
+		cd "$ROOT_DIR/webui"
+		# 清理可能的僵尸容器
+		docker rm -f kindler-webui-backend kindler-webui-frontend 2>/dev/null || true
+		# 启动 WebUI
+		docker compose up -d 2>&1 | grep -E "Creating|Created|Starting|Started" | sed 's/^/  /'
+		# 等待服务就绪
+		echo "  Waiting for WebUI to be ready..."
+		for i in {1..30}; do
+			if curl -s http://localhost:8001/api/health >/dev/null 2>&1; then
+				echo "  ✓ WebUI backend is ready"
+				break
+			fi
+			[ $i -eq 30 ] && echo "  ⚠ WebUI backend timeout (non-fatal)" || sleep 1
+		done
+		cd "$ROOT_DIR"
+	else
+		echo "  ⚠ WebUI directory not found, skipping"
+	fi
+
 	echo "[READY]"
 	portainer_url="https://portainer.devops.${BASE_DOMAIN}"
 	if [ "${HAPROXY_HTTPS_PORT}" != "443" ]; then
