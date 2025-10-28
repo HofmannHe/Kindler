@@ -6,6 +6,68 @@
 
 ## 核心原则
 
+### 0. 长耗时任务与网络保活（强制执行）
+
+**问题背景**：当前系统网络环境要求保活连接，长时间无输出（>30秒）会导致网络连接中断，任务被迫终止。
+
+**强制要求**：所有预期耗时超过30秒的操作，必须使用定期进度输出模式。
+
+#### 标准模式
+
+```bash
+# 模式1：后台任务 + 定期检查
+command > /tmp/output.log 2>&1 &
+PID=$!
+sleep 60 && echo "进度: $(date)" && tail -50 /tmp/output.log | grep "关键字" | tail -20
+
+# 模式2：循环监控
+for i in {1..10}; do
+  sleep 30
+  echo "进度检查 $i/10: $(date)"
+  tail -20 /tmp/output.log | grep -E "Status|Progress|✓|✗"
+done
+
+# 模式3：回归测试专用
+tests/run_tests.sh all > /tmp/test_$(date +%s).log 2>&1 &
+sleep 120 && echo "进度: $(date)" && \
+  tail -120 /tmp/test_*.log | \
+  grep -E "^#|^Running|Test Summary|Status.*✓|Status.*✗" | tail -25
+```
+
+#### 核心要点
+
+1. **输出频率**：每 30-60 秒输出一次进度
+2. **时间戳**：每次输出必须包含 `$(date)`
+3. **有意义信息**：使用 `tail + grep` 过滤关键进度信息
+4. **适用场景**：
+   - 完整回归测试（~8分钟）
+   - 集群创建/删除（~30-60秒）
+   - ArgoCD 同步等待（>30秒）
+   - 大批量数据处理
+
+#### 错误示例 ❌
+
+```bash
+# 错误：直接执行，无进度输出
+tests/run_tests.sh all
+
+# 错误：sleep 太长，无中间输出
+sleep 300 && check_status
+```
+
+#### 正确示例 ✅
+
+   ```bash
+# 正确：定期输出进度
+tests/run_tests.sh all > /tmp/test.log 2>&1 &
+sleep 120 && echo "进度 [1/3]: $(date)" && tail -30 /tmp/test.log | grep -E "Test Summary|Status"
+sleep 120 && echo "进度 [2/3]: $(date)" && tail -30 /tmp/test.log | grep -E "Test Summary|Status"
+wait
+echo "完成: $(date)" && cat /tmp/test.log
+```
+
+---
+
 ### 1. 测试自动化与幂等性（零容忍手动操作）
 
 **最高优先级规则**：**任何需要手动干预的测试流程都视为失败，必须立即修正。**
@@ -36,7 +98,7 @@
 #### 正确的做法（强制执行）
 
 1. ✅ **测试包含完整的前置清理**
-   ```bash
+```bash
    # tests/run_tests.sh all
    scripts/clean.sh --all       # 彻底清理
    scripts/bootstrap.sh         # 重建环境

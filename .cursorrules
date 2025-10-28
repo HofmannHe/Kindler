@@ -36,6 +36,40 @@ Every change must be verified:
 3. Check that all management services are accessible
 4. Verify no errors or warnings in logs
 
+## Long-Running Tasks and Network Keep-Alive (CRITICAL)
+
+**Problem**: Network connections require keep-alive; long periods without output cause disconnection.
+
+**Solution**: For any task expected to take >30 seconds, use periodic progress checks:
+
+```bash
+# Pattern 1: Background task with periodic checks
+command > /tmp/output.log 2>&1 &
+PID=$!
+sleep 60 && echo "进度: $(date)" && tail -50 /tmp/output.log | grep "pattern" | tail -20
+
+# Pattern 2: Inline monitoring
+for i in {1..10}; do
+  sleep 30
+  echo "进度检查 $i/10: $(date)"
+  tail -20 /tmp/output.log | grep -E "Status|Progress|✓|✗"
+done
+```
+
+**Key Requirements**:
+- Output progress every 30-60 seconds
+- Show timestamp with `$(date)`
+- Display meaningful progress indicators
+- Use `tail` + `grep` to filter relevant information
+
+**Example** (regression test monitoring):
+```bash
+tests/run_tests.sh all > /tmp/test.log 2>&1 &
+sleep 120 && echo "进度: $(date)" && \
+  tail -120 /tmp/test.log | \
+  grep -E "^#|Test Summary|Status.*✓|Status.*✗" | tail -25
+```
+
 ## Testing Automation and Idempotency (Zero Manual Operations)
 
 ### Core Requirements
