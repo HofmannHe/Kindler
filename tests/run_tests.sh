@@ -121,8 +121,9 @@ Modules:
   ingress_config - Ingress configuration consistency tests
   network   - Network connectivity tests
   haproxy   - HAProxy configuration tests
+  deployment_health - Deployment health checks (NEW)
   clusters  - Cluster state tests
-  argocd    - ArgoCD integration tests
+  argocd    - ArgoCD integration tests (enhanced with warnings check)
   e2e_services - End-to-end service validation
   consistency - DB-Git-K8s consistency checks
   cluster_lifecycle - Cluster create/delete lifecycle tests
@@ -231,7 +232,7 @@ case "$target" in
     echo ""
     echo "[4/5] Test: Running all test suites (fail-fast)..."
     set -e  # 任何测试失败立即退出
-    for test in services ingress ingress_config network haproxy clusters argocd e2e_services consistency cluster_lifecycle webui; do
+    for test in services ingress ingress_config network haproxy deployment_health clusters argocd e2e_services consistency cluster_lifecycle webui; do
       if ! run_test "$TESTS_DIR/${test}_test.sh" "${test^} Tests"; then
         total_failed=$((total_failed + 1))
         set +e
@@ -258,7 +259,7 @@ case "$target" in
     fi
     ;;
     
-  services|ingress|ingress_config|network|haproxy|clusters|argocd|e2e_services|consistency|cluster_lifecycle|webui)
+  services|ingress|ingress_config|network|haproxy|deployment_health|clusters|argocd|e2e_services|consistency|cluster_lifecycle|webui)
     run_test "$TESTS_DIR/${target}_test.sh" "${target^} Tests"
     total_failed=$?
     ;;

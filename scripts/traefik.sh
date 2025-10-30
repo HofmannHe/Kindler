@@ -169,23 +169,32 @@ spec:
   controller: traefik.io/ingress-controller
 EOF
 
-    echo "[TRAEFIK] Waiting for Traefik deployment to be ready (max 300s)..."
-    kubectl --context "$ctx" wait --for=condition=available --timeout=300s deployment/traefik -n traefik || {
-      echo "[WARN] Traefik deployment not ready within 300s, checking status..."
-      kubectl --context "$ctx" get pods -n traefik
-      kubectl --context "$ctx" describe pods -n traefik | tail -30
-      
-      # 尝试重启失败的 pod
-      echo "[TRAEFIK] Attempting to restart pods..."
-      kubectl --context "$ctx" delete pods -n traefik -l app=traefik --force --grace-period=0 2>/dev/null || true
-      
-      # 再等待一次
-      echo "[TRAEFIK] Waiting again after restart..."
-      kubectl --context "$ctx" wait --for=condition=available --timeout=180s deployment/traefik -n traefik || {
-        echo "[ERROR] Traefik still not ready after retry"
-        return 1
-      }
-    }
+    echo "[TRAEFIK] Waiting for Traefik pods to be ready (max 120s)..."
+    # 优先检查 pods ready（更直接可靠）
+    if kubectl --context "$ctx" wait --for=condition=ready --timeout=120s pod -l app=traefik -n traefik 2>/dev/null; then
+      echo "[TRAEFIK] ✓ Traefik pods are ready"
+    else
+      echo "[WARN] Pods not ready within 120s, checking deployment condition..."
+      # Fallback: 检查 deployment available condition
+      if kubectl --context "$ctx" wait --for=condition=available --timeout=60s deployment/traefik -n traefik 2>/dev/null; then
+        echo "[TRAEFIK] ✓ Traefik deployment is available"
+      else
+        echo "[WARN] Traefik not ready, checking status..."
+        kubectl --context "$ctx" get pods -n traefik
+        kubectl --context "$ctx" describe pods -n traefik | tail -30
+        
+        # 尝试重启失败的 pod
+        echo "[TRAEFIK] Attempting to restart pods..."
+        kubectl --context "$ctx" delete pods -n traefik -l app=traefik --force --grace-period=0 2>/dev/null || true
+        
+        # 再等待一次
+        echo "[TRAEFIK] Waiting again after restart..."
+        if ! kubectl --context "$ctx" wait --for=condition=ready --timeout=90s pod -l app=traefik -n traefik 2>/dev/null; then
+          echo "[ERROR] Traefik still not ready after retry"
+          return 1
+        fi
+      fi
+    fi
     
     echo "[TRAEFIK] Installation complete"
     ;;

@@ -66,9 +66,9 @@ else
   total_tests=$((total_tests + 1))
 fi
 
-# 4. Application 同步状态
+# 4. Application 同步状态（严格检查）
 echo ""
-echo "[4/4] Application Sync Status"
+echo "[4/5] Application Sync Status (Strict)"
 if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
   apps=$(kubectl --context k3d-devops get applications -n argocd --no-headers 2>/dev/null | grep whoami || echo "")
   
@@ -79,22 +79,21 @@ if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
     synced_count=$(echo "$apps" | grep -c "Synced" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
     synced_count=$(echo "$synced_count" | sed 's/^00$/0/')
     synced_count=${synced_count:-0}
-    healthy_count=$(echo "$apps" | grep -c "Healthy" 2>/dev/null | tr -d ' \n' 2>/dev/null || echo "0")
-    healthy_count=$(echo "$healthy_count" | sed 's/^00$/0/')
-    healthy_count=${healthy_count:-0}
     
     echo "  Applications found: $total_apps"
     echo "  - Synced: $synced_count/$total_apps"
-    echo "  - Healthy: $healthy_count/$total_apps"
     
-    # 至少一半的应用应该是 Synced 状态
+    # 严格检查：所有应用必须 Synced（fail-fast）
     if [ "$total_apps" -gt 0 ] 2>/dev/null; then
-      synced_threshold=$((total_apps / 2))
-      if [ "$synced_count" -ge "$synced_threshold" ] 2>/dev/null; then
-        echo "  ✓ Majority of applications synced"
+      if [ "$synced_count" -eq "$total_apps" ] 2>/dev/null; then
+        echo "  ✓ All applications synced"
         passed_tests=$((passed_tests + 1))
       else
-        echo "  ✗ Too few applications synced ($synced_count/$total_apps)"
+        echo "  ✗ Not all applications synced ($synced_count/$total_apps)"
+        # 显示未同步的应用
+        echo "  OutOfSync applications:"
+        kubectl --context k3d-devops get applications -n argocd --no-headers 2>/dev/null | \
+          grep whoami | grep -v "Synced" | sed 's/^/    /' || true
         failed_tests=$((failed_tests + 1))
       fi
       total_tests=$((total_tests + 1))
@@ -102,6 +101,34 @@ if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
   else
     echo "  ⚠ No whoami applications found"
   fi
+else
+  echo "  ✗ ArgoCD namespace not found"
+  failed_tests=$((failed_tests + 1))
+  total_tests=$((total_tests + 1))
+fi
+
+# 5. Application Warnings 检查（新增）
+echo ""
+echo "[5/5] Application Warnings Check"
+if kubectl --context k3d-devops get namespace argocd >/dev/null 2>&1; then
+  # 检查 RepeatedResourceWarning
+  warning_count=$(kubectl --context k3d-devops get applications -n argocd -o yaml 2>/dev/null | \
+    grep -c "RepeatedResourceWarning" 2>/dev/null || echo "0")
+  # 清理并确保是单个数字
+  warning_count=$(echo "$warning_count" | tr -d '\n\r' | grep -o '[0-9]*' | head -1 || echo "0")
+  warning_count=${warning_count:-0}
+  
+  if [ "$warning_count" -eq 0 ]; then
+    echo "  ✓ No RepeatedResourceWarning found"
+    passed_tests=$((passed_tests + 1))
+  else
+    echo "  ✗ Found $warning_count RepeatedResourceWarning(s)"
+    # 显示具体的警告
+    kubectl --context k3d-devops get applications -n argocd -o json 2>/dev/null | \
+      jq -r '.items[] | select(.status.conditions != null) | select(.status.conditions[] | .type == "RepeatedResourceWarning") | "    " + .metadata.name + ": " + (.status.conditions[] | select(.type == "RepeatedResourceWarning") | .message)' 2>/dev/null || true
+    failed_tests=$((failed_tests + 1))
+  fi
+  total_tests=$((total_tests + 1))
 else
   echo "  ✗ ArgoCD namespace not found"
   failed_tests=$((failed_tests + 1))

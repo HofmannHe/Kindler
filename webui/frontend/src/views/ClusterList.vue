@@ -341,7 +341,7 @@ const handleCreateCluster = async (formData) => {
       if (index !== -1) {
         activeTasks.value[index] = task
         
-        // If task completed or failed, reload clusters and remove after 5 seconds
+        // If task completed or failed, reload clusters and remove after 30 seconds
         if (task.status === 'completed' || task.status === 'failed') {
           loadClusters()
           setTimeout(() => {
@@ -350,7 +350,7 @@ const handleCreateCluster = async (formData) => {
               activeTasks.value.splice(removeIndex, 1)
             }
             taskWebSocket.unsubscribe(taskId, handleTaskUpdate)
-          }, 5000)
+          }, 30000)  // 从5秒延长到30秒，给用户更多时间查看日志
         }
       }
     }
@@ -388,7 +388,7 @@ const handleStartCluster = async (name) => {
             const removeIndex = activeTasks.value.findIndex(t => t.task_id === taskId)
             if (removeIndex !== -1) activeTasks.value.splice(removeIndex, 1)
             taskWebSocket.unsubscribe(taskId, handleTaskUpdate)
-          }, 5000)
+          }, 30000)  // 从5秒延长到30秒，给用户更多时间查看日志
         }
       }
     }
@@ -425,7 +425,7 @@ const handleStopCluster = async (name) => {
             const removeIndex = activeTasks.value.findIndex(t => t.task_id === taskId)
             if (removeIndex !== -1) activeTasks.value.splice(removeIndex, 1)
             taskWebSocket.unsubscribe(taskId, handleTaskUpdate)
-          }, 5000)
+          }, 30000)  // 从5秒延长到30秒，给用户更多时间查看日志
         }
       }
     }
@@ -468,7 +468,7 @@ const handleDeleteCluster = async (name) => {
             const removeIndex = activeTasks.value.findIndex(t => t.task_id === taskId)
             if (removeIndex !== -1) activeTasks.value.splice(removeIndex, 1)
             taskWebSocket.unsubscribe(taskId, handleTaskUpdate)
-          }, 5000)
+          }, 30000)  // 从5秒延长到30秒，给用户更多时间查看日志
         }
       }
     }
@@ -479,41 +479,63 @@ const handleDeleteCluster = async (name) => {
   }
 }
 
-// Restore running tasks from backend (after page refresh)
+// Restore running/recent tasks from backend (after page refresh)
 const restoreTasks = async () => {
   try {
-    const response = await taskAPI.list('running')  // Only get running tasks
-    const runningTasks = response.data || []
+    // Get all recent tasks (running, completed, failed)
+    const response = await taskAPI.list()
+    const allTasks = response.data || []
     
-    runningTasks.forEach(task => {
+    // Filter: only show running tasks + recently completed/failed tasks (within last 10 minutes)
+    const now = new Date()
+    const recentTasks = allTasks.filter(task => {
+      if (task.status === 'running' || task.status === 'pending') {
+        return true
+      }
+      
+      // For completed/failed tasks, only show if updated within last 10 minutes
+      if (task.status === 'completed' || task.status === 'failed') {
+        const updatedAt = new Date(task.updated_at)
+        const ageMinutes = (now - updatedAt) / 1000 / 60
+        return ageMinutes < 10
+      }
+      
+      return false
+    })
+    
+    recentTasks.forEach(task => {
       // Add to activeTasks
       activeTasks.value.push(task)
       
-      // Subscribe to WebSocket updates
-      const handleTaskUpdate = (updatedTask) => {
-        const index = activeTasks.value.findIndex(t => t.task_id === task.task_id)
-        if (index !== -1) {
-          activeTasks.value[index] = updatedTask
-          
-          // If completed/failed, reload clusters and remove after 5 seconds
-          if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
-            loadClusters()
-            setTimeout(() => {
-              const removeIndex = activeTasks.value.findIndex(t => t.task_id === task.task_id)
-              if (removeIndex !== -1) {
-                activeTasks.value.splice(removeIndex, 1)
-              }
-              taskWebSocket.unsubscribe(task.task_id, handleTaskUpdate)
-            }, 5000)
+      // Subscribe to WebSocket updates (only for running/pending tasks)
+      if (task.status === 'running' || task.status === 'pending') {
+        const handleTaskUpdate = (updatedTask) => {
+          const index = activeTasks.value.findIndex(t => t.task_id === task.task_id)
+          if (index !== -1) {
+            activeTasks.value[index] = updatedTask
+            
+            // If completed/failed, reload clusters and remove after 30 seconds (给用户更多时间查看)
+            if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
+              loadClusters()
+              setTimeout(() => {
+                const removeIndex = activeTasks.value.findIndex(t => t.task_id === task.task_id)
+                if (removeIndex !== -1) {
+                  activeTasks.value.splice(removeIndex, 1)
+                }
+                taskWebSocket.unsubscribe(task.task_id, handleTaskUpdate)
+              }, 30000)  // 从5秒延长到30秒
+            }
           }
         }
+        
+        taskWebSocket.subscribe(task.task_id, handleTaskUpdate)
       }
-      
-      taskWebSocket.subscribe(task.task_id, handleTaskUpdate)
     })
     
-    if (runningTasks.length > 0) {
-      message.info(`已恢复 ${runningTasks.length} 个运行中的任务`)
+    if (recentTasks.length > 0) {
+      const runningCount = recentTasks.filter(t => t.status === 'running' || t.status === 'pending').length
+      const completedCount = recentTasks.filter(t => t.status === 'completed' || t.status === 'failed').length
+      message.info(`已加载 ${runningCount} 个运行中的任务和 ${completedCount} 个最近完成的任务`)
     }
   } catch (error) {
     console.error('Failed to restore tasks:', error)

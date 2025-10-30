@@ -173,5 +173,63 @@ for service in argocd portainer git haproxy_stats; do
   total_tests=$((total_tests + 1))
 done
 
+# 6. 网络连接验证（新增）
+echo ""
+echo "[6/6] Network Connectivity Verification"
+
+# 检查 HAProxy 连接的网络
+haproxy_networks=$(docker inspect haproxy-gw 2>/dev/null | jq -r '.[0].NetworkSettings.Networks | keys[]' || echo "")
+
+if [ -z "$haproxy_networks" ]; then
+  echo "  ✗ Cannot inspect HAProxy container"
+  failed_tests=$((failed_tests + 1))
+  total_tests=$((total_tests + 1))
+else
+  echo "  HAProxy connected networks:"
+  echo "$haproxy_networks" | sed 's/^/    - /'
+  
+  # 检查必要的网络连接
+  # 1. 检查是否连接到 kind 网络（如果有 kind 集群）
+  if kind get clusters 2>/dev/null | grep -q .; then
+    if echo "$haproxy_networks" | grep -q "^kind$"; then
+      echo "  ✓ HAProxy connected to kind network"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "  ✗ HAProxy NOT connected to kind network (but kind clusters exist)"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  fi
+  
+  # 2. 检查每个业务集群的网络连接
+  clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+  
+  for cluster in $clusters; do
+    provider=$(provider_for "$cluster")
+    
+    if [ "$provider" = "k3d" ]; then
+      # k3d 集群：检查是否有独立子网
+      subnet=$(subnet_for "$cluster" 2>/dev/null || echo "")
+      if [ -n "$subnet" ]; then
+        expected_network="k3d-${cluster}"
+      else
+        expected_network="k3d-shared"
+      fi
+    else
+      # kind 集群：应该连接到 kind 网络
+      expected_network="kind"
+    fi
+    
+    if echo "$haproxy_networks" | grep -q "^${expected_network}$"; then
+      echo "  ✓ $cluster: connected to $expected_network"
+      passed_tests=$((passed_tests + 1))
+    else
+      echo "  ✗ $cluster: NOT connected to $expected_network"
+      failed_tests=$((failed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
+fi
+
 print_summary
 

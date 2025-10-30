@@ -94,6 +94,10 @@ kubectl --context k3d-devops patch svc argocd-server -n argocd -p "{\"spec\":{\"
 # 2. 启用 insecure 模式（HTTP 访问）
 kubectl --context k3d-devops patch cm argocd-cmd-params-cm -n argocd --type merge -p '{"data":{"server.insecure":"true"}}'
 
+# 3. 应用自定义健康检查配置（修复 Ingress 永远 Progressing 的问题）
+echo "[DEVOP] Applying custom health check for Ingress resources..."
+kubectl --context k3d-devops apply -f "$ROOT_DIR/manifests/argocd/argocd-cm-custom-health.yaml"
+
 # 3. 设置自定义 admin 密码
 echo "[DEVOP] Setting custom admin password..."
 password_bcrypt=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$ARGOCD_ADMIN_PASSWORD'.encode('utf-8'), bcrypt.gensalt(rounds=10)).decode('utf-8'))")

@@ -65,11 +65,15 @@ provider_for() {
 	
 	# 1. 优先从数据库读取
 	if command -v db_get_cluster >/dev/null 2>&1 && db_is_available 2>/dev/null; then
-		local db_provider
-		db_provider=$(db_get_cluster "$env" 2>/dev/null | jq -r '.provider // empty' 2>/dev/null || echo "")
-		if [ -n "$db_provider" ]; then
-			echo "$db_provider"
-			return
+		local db_provider db_record
+		db_record=$(db_get_cluster "$env" 2>/dev/null || echo "")
+		if [ -n "$db_record" ]; then
+			# db_get_cluster 返回格式: name|provider|subnet|node_port|pf_port|http_port|https_port
+			db_provider=$(echo "$db_record" | cut -d'|' -f2)
+			if [ -n "$db_provider" ]; then
+				echo "$db_provider"
+				return
+			fi
 		fi
 	fi
 	
