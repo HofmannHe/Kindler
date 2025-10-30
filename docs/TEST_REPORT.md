@@ -3541,3 +3541,10 @@ gitlab                  gitlab/gitlab-ce:17.11.7-ce.0          Up 32 hours (heal
 
 - devk3dns: HTTP/1.1 200 OK
 - backend be_dev-k3d-ns: 29:  use_backend be_dev-k3d-ns if host_dev-k3d-ns 63:  server s1 10.100.0.2:30080 65:  server s1 10.100.0.16:30080 66:backend be_dev-k3d-ns 67:  server s1 10.100.0.8:30080 77:  server s1 10.100.0.8:30080 79:  server s1 10.100.0.7:30080 81:  server s1 10.100.0.6:30080 89:  server s1 10.100.0.2:30080 
+## Namespaced Full Validation (k3d+kind) @ 2025-10-11T09:35:54+08:00
+- whoami.devk3dns: HTTP/1.1 404 Not Found
+- whoami.uatk3dns: HTTP/1.1 404 Not Found
+- whoami.prodk3dns: HTTP/1.1 404 Not Found
+- whoami.devns: HTTP/1.1 404 Not Found
+- whoami.uatns: HTTP/1.1 404 Not Found
+- whoami.prodns: HTTP/1.1 404 Not Found

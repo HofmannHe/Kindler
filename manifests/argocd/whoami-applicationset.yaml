@@ -11,52 +11,45 @@ spec:
       elements:
       # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
       - env: dev
-        hostEnv: kind.dev
+        hostEnv: devns
         branch: dev
-        clusterName: dev
+        clusterName: dev-ns
       - env: uat
-        hostEnv: kind.uat
+        hostEnv: uatns
         branch: uat
-        clusterName: uat
+        clusterName: uat-ns
       - env: prod
-        hostEnv: kind.prod
+        hostEnv: prodns
         branch: prod
-        clusterName: prod
+        clusterName: prod-ns
       - env: dev-k3d
-        hostEnv: k3d.dev
+        hostEnv: devk3dns
         branch: dev-k3d
-        clusterName: dev-k3d
+        clusterName: dev-k3d-ns
       - env: uat-k3d
-        hostEnv: k3d.uat
+        hostEnv: uatk3dns
         branch: uat-k3d
-        clusterName: uat-k3d
+        clusterName: uat-k3d-ns
       - env: prod-k3d
-        hostEnv: k3d.prod
+        hostEnv: prodk3dns
         branch: prod-k3d
-        clusterName: prod-k3d
+        clusterName: prod-k3d-ns
       - env: debug-k3d
-        hostEnv: k3d.debug
+        hostEnv: debugk3dns
         branch: debug-k3d
-        clusterName: debug-k3d
+        clusterName: debug-k3d-ns
       - env: test-final
-        hostEnv: k3d.test-final
+        hostEnv: testfinalns
         branch: test-final
-        clusterName: test-final
+        clusterName: test-final-ns
       - env: test-k3d-fixed
-        hostEnv: k3d.test-k3d-fixed
+        hostEnv: testk3dfixedns
         branch: test-k3d-fixed
-        clusterName: test-k3d-fixed
-      - env: rttr-dev
-        hostEnv: k3d.rttr-dev
-        branch: rttr-dev
-        clusterName: rttr-dev
-      - env: rttr-uat
-        hostEnv: k3d.rttr-uat
-        branch: rttr-uat
-        clusterName: rttr-uat
+        clusterName: test-k3d-fixed-ns
   template:
     metadata:
-      name: 'whoami-{{.env}}'
+      # 使用 hostEnv 作为名称后缀（已包含命名空间后缀），避免依赖控制器环境变量
+      name: 'whoami-{{.hostEnv}}'
       labels:
         app: whoami
         env: '{{.env}}'
@@ -71,7 +64,7 @@ spec:
           parameters:
           # 动态设置 Ingress host
           - name: ingress.host
-            value: 'whoami.{{.hostEnv}}.192.168.51.30.sslip.io'
+            value: 'whoami.{{.hostEnv}}.192.168.51.35.sslip.io'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
           - name: image.tag
             value: 'v1.10.2'
