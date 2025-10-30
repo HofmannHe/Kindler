@@ -1,6 +1,7 @@
 """Cluster data models"""
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import re
 
 
 class ClusterBase(BaseModel):
@@ -11,10 +12,21 @@ class ClusterBase(BaseModel):
     pf_port: int = Field(..., ge=1024, le=65535)
     http_port: int = Field(..., ge=1024, le=65535)
     https_port: int = Field(..., ge=1024, le=65535)
-    cluster_subnet: Optional[str] = Field(default=None, pattern=r"^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$")
+    cluster_subnet: Optional[str] = Field(default=None)
     register_portainer: bool = True
     haproxy_route: bool = True
     register_argocd: bool = True
+
+    @field_validator('cluster_subnet')
+    @classmethod
+    def validate_subnet(cls, v):
+        """Validate cluster subnet format. Empty string or None is allowed."""
+        if not v or v.strip() == "":
+            return None
+        pattern = r"^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$"
+        if not re.match(pattern, v):
+            raise ValueError(f"Cluster subnet must match pattern: {pattern}")
+        return v
 
 
 class ClusterCreate(ClusterBase):

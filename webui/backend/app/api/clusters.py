@@ -85,21 +85,26 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
         async def progress_callback(log_line: str):
             await task_manager.update_task(task_id, log_line=log_line)
         
+        # Prepare cluster data
+        cluster_data = {
+            "name": cluster.name,
+            "provider": cluster.provider,
+            "node_port": cluster.node_port,
+            "pf_port": cluster.pf_port,
+            "http_port": cluster.http_port,
+            "https_port": cluster.https_port,
+            "subnet": cluster.cluster_subnet,
+            "register_portainer": cluster.register_portainer,
+            "haproxy_route": cluster.haproxy_route,
+            "register_argocd": cluster.register_argocd,
+        }
+        
         # Run creation in background
         background_tasks.add_task(
             task_manager.run_task,
             task_id,
             cluster_service.create_cluster,
-            name=cluster.name,
-            provider=cluster.provider,
-            node_port=cluster.node_port,
-            pf_port=cluster.pf_port,
-            http_port=cluster.http_port,
-            https_port=cluster.https_port,
-            cluster_subnet=cluster.cluster_subnet,
-            register_portainer=cluster.register_portainer,
-            haproxy_route=cluster.haproxy_route,
-            register_argocd=cluster.register_argocd,
+            cluster_data=cluster_data,
             progress_callback=progress_callback
         )
         

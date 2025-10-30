@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     logger.info("Starting Kindler Web GUI Backend")
+    
+    # Initialize database with sample data (development mode)
+    try:
+        from .init_data import init_sample_data
+        await init_sample_data()
+        logger.info("Database initialization complete")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+    
     yield
     logger.info("Shutting down Kindler Web GUI Backend")
 
@@ -81,4 +90,3 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
-

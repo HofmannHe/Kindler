@@ -43,6 +43,7 @@ services:
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
       - PYTHONUNBUFFERED=1
+      - DEMO_MODE=true
     networks:
       infrastructure:
       k3d-shared:

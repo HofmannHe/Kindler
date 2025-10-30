@@ -1,275 +1,409 @@
-"""Cluster management service - calls shell scripts"""
+"""Cluster management service - Real cluster operations via subprocess"""
 import asyncio
-import subprocess
 import logging
 import os
 from typing import Optional, Dict, Callable
 from pathlib import Path
+from .db_service import DBService
+from ..db import get_db
 
 logger = logging.getLogger(__name__)
 
 
 class ClusterService:
-    """Service to manage Kubernetes clusters via shell scripts"""
+    """Service for cluster operations using real scripts"""
     
-    def __init__(self, scripts_dir: str = "/app/scripts"):
-        self.scripts_dir = Path(scripts_dir)
-        if not self.scripts_dir.exists():
-            # Fallback for development
-            root_dir = Path(__file__).parent.parent.parent.parent.parent
-            self.scripts_dir = root_dir / "scripts"
+    def __init__(self):
+        self.base_domain = os.getenv("BASE_DOMAIN", "192.168.51.30.sslip.io")
+        self.scripts_dir = os.getenv("SCRIPTS_DIR", "/scripts")
+        self.timeout = int(os.getenv("OPERATION_TIMEOUT", "300"))  # 5 minutes default
+        self.db = get_db()
         
-        logger.info(f"ClusterService initialized with scripts_dir: {self.scripts_dir}")
+        # Verify scripts directory exists
+        if not os.path.isdir(self.scripts_dir):
+            logger.warning(f"Scripts directory not found: {self.scripts_dir}")
     
     async def _run_script(
         self,
         script_name: str,
         args: list,
-        progress_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[int, str, str]:
+        cluster_name: str,
+        operation: str,
+        progress_callback: Optional[Callable] = None
+    ) -> bool:
         """
-        Run a shell script and capture output
+        Run a shell script and stream output via callback
         
-        Returns: (exit_code, stdout, stderr)
+        Args:
+            script_name: Name of script (e.g., "create_env.sh")
+            args: List of arguments for the script
+            cluster_name: Name of cluster (for logging)
+            operation: Operation type (e.g., "create", "delete")
+            progress_callback: Async callback to send output lines
+        
+        Returns:
+            True if script succeeded (exit code 0), False otherwise
         """
-        script_path = self.scripts_dir / script_name
-        if not script_path.exists():
-            raise FileNotFoundError(f"Script not found: {script_path}")
+        script_path = os.path.join(self.scripts_dir, script_name)
         
-        cmd = [str(script_path)] + args
+        if not os.path.exists(script_path):
+            error_msg = f"Script not found: {script_path}"
+            logger.error(error_msg)
+            if progress_callback:
+                await progress_callback(f"[ERROR] {error_msg}\n")
+            return False
+        
+        # Log operation start
+        op_id = self.db.log_operation_start(cluster_name, operation)
+        
+        # Build command
+        cmd = [script_path] + args
         logger.info(f"Executing: {' '.join(cmd)}")
         
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(self.scripts_dir.parent)
-        )
+        if progress_callback:
+            await progress_callback(f"[INFO] Executing: {' '.join(cmd)}\n")
         
-        stdout_lines = []
-        stderr_lines = []
-        
-        async def read_stream(stream, lines_list, is_stderr=False):
-            """Read stream line by line and call progress callback"""
+        try:
+            # Create subprocess
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=self.scripts_dir
+            )
+            
+            # Stream output
+            full_output = []
             while True:
-                line = await stream.readline()
-                if not line:
-                    break
+                try:
+                    # Read with timeout
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(),
+                        timeout=self.timeout
+                    )
+                    
+                    if not line:
+                        break
+                    
+                    decoded_line = line.decode('utf-8', errors='replace')
+                    full_output.append(decoded_line)
+                    
+                    # Send to callback
+                    if progress_callback:
+                        await progress_callback(decoded_line)
                 
-                line_str = line.decode('utf-8').rstrip()
-                lines_list.append(line_str)
-                
+                except asyncio.TimeoutError:
+                    error_msg = f"Operation timeout after {self.timeout}s"
+                    logger.error(error_msg)
+                    if progress_callback:
+                        await progress_callback(f"[ERROR] {error_msg}\n")
+                    
+                    # Kill the process
+                    process.kill()
+                    await process.wait()
+                    
+                    # Log failure
+                    self.db.log_operation_complete(
+                        op_id,
+                        "timeout",
+                        ''.join(full_output),
+                        error_msg
+                    )
+                    return False
+            
+            # Wait for process to complete
+            returncode = await process.wait()
+            
+            # Log completion
+            log_output = ''.join(full_output)
+            status = "success" if returncode == 0 else "failed"
+            error_message = None if returncode == 0 else f"Exit code: {returncode}"
+            
+            self.db.log_operation_complete(op_id, status, log_output, error_message)
+            
+            if returncode == 0:
                 if progress_callback:
-                    prefix = "[STDERR] " if is_stderr else "[STDOUT] "
-                    progress_callback(prefix + line_str)
-                
-                logger.debug(f"{'STDERR' if is_stderr else 'STDOUT'}: {line_str}")
+                    await progress_callback(f"[SUCCESS] Operation completed successfully\n")
+                return True
+            else:
+                error_msg = f"Script failed with exit code {returncode}"
+                logger.error(error_msg)
+                if progress_callback:
+                    await progress_callback(f"[ERROR] {error_msg}\n")
+                return False
         
-        # Read stdout and stderr concurrently
-        await asyncio.gather(
-            read_stream(process.stdout, stdout_lines, is_stderr=False),
-            read_stream(process.stderr, stderr_lines, is_stderr=True)
-        )
-        
-        exit_code = await process.wait()
-        
-        stdout = '\n'.join(stdout_lines)
-        stderr = '\n'.join(stderr_lines)
-        
-        logger.info(f"Script exited with code {exit_code}")
-        
-        return exit_code, stdout, stderr
+        except Exception as e:
+            error_msg = f"Failed to execute script: {e}"
+            logger.exception(error_msg)
+            if progress_callback:
+                await progress_callback(f"[ERROR] {error_msg}\n")
+            
+            # Log failure
+            self.db.log_operation_complete(
+                op_id,
+                "error",
+                ''.join(full_output) if 'full_output' in locals() else "",
+                error_msg
+            )
+            return False
     
     async def create_cluster(
         self,
-        name: str,
-        provider: str,
-        node_port: Optional[int] = None,
-        pf_port: Optional[int] = None,
-        http_port: Optional[int] = None,
-        https_port: Optional[int] = None,
-        cluster_subnet: Optional[str] = None,
-        register_portainer: bool = True,
-        haproxy_route: bool = True,
-        register_argocd: bool = True,
-        progress_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[bool, str]:
+        cluster_data: Dict,
+        progress_callback: Optional[Callable] = None
+    ) -> bool:
         """
         Create a new cluster
         
-        Returns: (success, message)
+        Args:
+            cluster_data: Dict with keys: name, provider, and optional node_port, pf_port, etc.
+            progress_callback: Async callback for progress updates
+        
+        Returns:
+            True if creation succeeded
         """
-        args = ["-n", name, "-p", provider]
+        name = cluster_data["name"]
+        provider = cluster_data.get("provider", "k3d")
         
-        if node_port:
-            args.extend(["--node-port", str(node_port)])
-        if pf_port:
-            args.extend(["--pf-port", str(pf_port)])
-        if http_port:
-            args.extend(["--http-port", str(http_port)])
-        if https_port:
-            args.extend(["--https-port", str(https_port)])
-        if cluster_subnet:
-            args.extend(["--cluster-subnet", cluster_subnet])
+        logger.info(f"Creating cluster: {name} (provider: {provider})")
         
-        if not register_portainer:
-            args.append("--no-register-portainer")
-        if not haproxy_route:
-            args.append("--no-haproxy-route")
-        if not register_argocd:
-            args.append("--no-register-argocd")
+        # Build arguments for create_env.sh
+        args = [
+            "-n", name,
+            "-p", provider,
+            "--force"  # Allow dynamic creation outside of environments.csv
+        ]
         
-        try:
-            exit_code, stdout, stderr = await self._run_script(
-                "create_env.sh",
-                args,
-                progress_callback
-            )
-            
-            if exit_code == 0:
-                return True, f"Cluster {name} created successfully"
-            else:
-                error_msg = stderr or stdout or "Unknown error"
-                return False, f"Failed to create cluster {name}: {error_msg}"
+        # Add optional parameters
+        if "node_port" in cluster_data:
+            args.extend(["--node-port", str(cluster_data["node_port"])])
+        if "pf_port" in cluster_data:
+            args.extend(["--pf-port", str(cluster_data["pf_port"])])
         
-        except Exception as e:
-            logger.error(f"Error creating cluster {name}: {e}")
-            return False, f"Error creating cluster {name}: {str(e)}"
+        # Execute creation script
+        success = await self._run_script(
+            "create_env.sh",
+            args,
+            name,
+            "create",
+            progress_callback
+        )
+        
+        if success:
+            # Update database with cluster info
+            db_service = DBService()
+            await db_service.create_cluster({
+                **cluster_data,
+                "status": "running"
+            })
+        
+        return success
     
     async def delete_cluster(
         self,
         name: str,
-        progress_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[bool, str]:
+        progress_callback: Optional[Callable] = None
+    ) -> bool:
         """
         Delete a cluster
         
-        Returns: (success, message)
-        """
-        try:
-            exit_code, stdout, stderr = await self._run_script(
-                "delete_env.sh",
-                [name],
-                progress_callback
-            )
-            
-            if exit_code == 0:
-                return True, f"Cluster {name} deleted successfully"
-            else:
-                error_msg = stderr or stdout or "Unknown error"
-                return False, f"Failed to delete cluster {name}: {error_msg}"
+        Args:
+            name: Cluster name
+            progress_callback: Async callback for progress updates
         
-        except Exception as e:
-            logger.error(f"Error deleting cluster {name}: {e}")
-            return False, f"Error deleting cluster {name}: {str(e)}"
+        Returns:
+            True if deletion succeeded
+        """
+        logger.info(f"Deleting cluster: {name}")
+        
+        # Build arguments for delete_env.sh
+        args = ["-n", name]
+        
+        # Execute deletion script
+        success = await self._run_script(
+            "delete_env.sh",
+            args,
+            name,
+            "delete",
+            progress_callback
+        )
+        
+        if success:
+            # Remove from database
+            db_service = DBService()
+            await db_service.delete_cluster(name)
+        
+        return success
     
     async def start_cluster(
         self,
         name: str,
-        progress_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[bool, str]:
+        progress_callback: Optional[Callable] = None
+    ) -> bool:
         """
         Start a stopped cluster
         
-        Returns: (success, message)
-        """
-        try:
-            exit_code, stdout, stderr = await self._run_script(
-                "start_env.sh",
-                [name],
-                progress_callback
-            )
-            
-            if exit_code == 0:
-                return True, f"Cluster {name} started successfully"
-            else:
-                error_msg = stderr or stdout or "Unknown error"
-                return False, f"Failed to start cluster {name}: {error_msg}"
+        Args:
+            name: Cluster name
+            progress_callback: Async callback for progress updates
         
-        except Exception as e:
-            logger.error(f"Error starting cluster {name}: {e}")
-            return False, f"Error starting cluster {name}: {str(e)}"
+        Returns:
+            True if start succeeded
+        """
+        logger.info(f"Starting cluster: {name}")
+        
+        # Build arguments for start_env.sh
+        args = [name]
+        
+        # Execute start script
+        success = await self._run_script(
+            "start_env.sh",
+            args,
+            name,
+            "start",
+            progress_callback
+        )
+        
+        if success:
+            # Update status in database
+            db_service = DBService()
+            await db_service.update_cluster(name, {"status": "running"})
+        
+        return success
     
     async def stop_cluster(
         self,
         name: str,
-        progress_callback: Optional[Callable[[str], None]] = None
-    ) -> tuple[bool, str]:
+        progress_callback: Optional[Callable] = None
+    ) -> bool:
         """
         Stop a running cluster
         
-        Returns: (success, message)
-        """
-        try:
-            exit_code, stdout, stderr = await self._run_script(
-                "stop_env.sh",
-                [name],
-                progress_callback
-            )
-            
-            if exit_code == 0:
-                return True, f"Cluster {name} stopped successfully"
-            else:
-                error_msg = stderr or stdout or "Unknown error"
-                return False, f"Failed to stop cluster {name}: {error_msg}"
+        Args:
+            name: Cluster name
+            progress_callback: Async callback for progress updates
         
-        except Exception as e:
-            logger.error(f"Error stopping cluster {name}: {e}")
-            return False, f"Error stopping cluster {name}: {str(e)}"
+        Returns:
+            True if stop succeeded
+        """
+        logger.info(f"Stopping cluster: {name}")
+        
+        # Build arguments for stop_env.sh
+        args = [name]
+        
+        # Execute stop script
+        success = await self._run_script(
+            "stop_env.sh",
+            args,
+            name,
+            "stop",
+            progress_callback
+        )
+        
+        if success:
+            # Update status in database
+            db_service = DBService()
+            await db_service.update_cluster(name, {"status": "stopped"})
+        
+        return success
     
-    async def get_cluster_status(self, name: str, provider: str) -> Dict[str, any]:
+    async def get_cluster_status(self, name: str, provider: str = "k3d") -> Dict:
         """
-        Get cluster status via kubectl
+        Get cluster status using kubectl
         
-        Returns: dict with status information
+        Args:
+            name: Cluster name
+            provider: Cluster provider (k3d or kind)
+        
+        Returns:
+            Dict with cluster status information
         """
         context = f"{provider}-{name}"
         
         try:
-            # Check if context exists
-            result = subprocess.run(
-                ["kubectl", "config", "get-contexts", context],
-                capture_output=True,
-                text=True,
-                timeout=5
+            # Get nodes using kubectl
+            process = await asyncio.create_subprocess_exec(
+                "kubectl", "--context", context,
+                "get", "nodes",
+                "-o", "json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
             
-            if result.returncode != 0:
-                return {"status": "unknown", "error": "Context not found"}
-            
-            # Get nodes
-            result = subprocess.run(
-                ["kubectl", "--context", context, "get", "nodes", "-o", "json"],
-                capture_output=True,
-                text=True,
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
                 timeout=10
             )
             
-            if result.returncode != 0:
-                return {"status": "error", "error": "Cannot access cluster"}
-            
-            import json
-            nodes_data = json.loads(result.stdout)
-            nodes_total = len(nodes_data.get("items", []))
-            nodes_ready = sum(
-                1 for node in nodes_data.get("items", [])
-                if any(
-                    cond.get("type") == "Ready" and cond.get("status") == "True"
-                    for cond in node.get("status", {}).get("conditions", [])
-                )
-            )
-            
-            status = "running" if nodes_ready == nodes_total and nodes_total > 0 else "degraded"
-            
-            return {
-                "status": status,
-                "nodes_ready": nodes_ready,
-                "nodes_total": nodes_total
-            }
+            if process.returncode == 0:
+                import json
+                nodes_data = json.loads(stdout.decode())
+                
+                nodes = []
+                for item in nodes_data.get("items", []):
+                    node_name = item["metadata"]["name"]
+                    conditions = item["status"].get("conditions", [])
+                    ready_condition = next(
+                        (c for c in conditions if c["type"] == "Ready"),
+                        None
+                    )
+                    status = ready_condition["status"] if ready_condition else "Unknown"
+                    roles = item["metadata"].get("labels", {}).get("node-role.kubernetes.io/master", "")
+                    
+                    nodes.append({
+                        "name": node_name,
+                        "status": "Ready" if status == "True" else "NotReady",
+                        "roles": ["control-plane", "master"] if roles else ["worker"]
+                    })
+                
+                return {
+                    "name": name,
+                    "provider": provider,
+                    "status": "running" if nodes else "unknown",
+                    "nodes": nodes
+                }
+            else:
+                # Cluster not running or not accessible
+                return {
+                    "name": name,
+                    "provider": provider,
+                    "status": "stopped",
+                    "error": stderr.decode() if stderr else "Cluster not accessible"
+                }
         
-        except subprocess.TimeoutExpired:
-            return {"status": "error", "error": "Timeout accessing cluster"}
+        except asyncio.TimeoutError:
+            return {
+                "name": name,
+                "provider": provider,
+                "status": "timeout",
+                "error": "kubectl timeout"
+            }
         except Exception as e:
-            logger.error(f"Error getting cluster status: {e}")
-            return {"status": "error", "error": str(e)}
+            logger.error(f"Failed to get cluster status: {e}")
+            return {
+                "name": name,
+                "provider": provider,
+                "status": "error",
+                "error": str(e)
+            }
+    
+    def get_cluster_urls(self, name: str) -> Dict[str, str]:
+        """Get cluster access URLs"""
+        return {
+            "whoami": f"http://whoami.{name}.{self.base_domain}",
+            "portainer": f"https://portainer.devops.{self.base_domain}",
+            "argocd": f"http://argocd.devops.{self.base_domain}",
+            "haproxy_stats": f"http://haproxy.devops.{self.base_domain}/stat"
+        }
 
+
+# Singleton instance
+_cluster_service = None
+
+
+def get_cluster_service() -> ClusterService:
+    """Get cluster service singleton"""
+    global _cluster_service
+    if _cluster_service is None:
+        _cluster_service = ClusterService()
+    return _cluster_service
