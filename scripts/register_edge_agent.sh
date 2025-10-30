@@ -90,46 +90,20 @@ EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3
 
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
-# 获取 Portainer 在集群网络中的 IP
-if [ "$PROVIDER" = "k3d" ]; then
-	cluster_node="k3d-${CLUSTER_NAME}-server-0"
-else
-	cluster_node="${CLUSTER_NAME}-control-plane"
-fi
+# 使用 HAProxy 作为统一入口，Edge Agent 通过 HAProxy 访问 Portainer
+# 使用 host.docker.internal 让所有集群都能访问 HAProxy（通过宿主机）
+HAPROXY_HOST="${HAPROXY_HOST:-host.docker.internal}"
+HAPROXY_API_PORT="${HAPROXY_HTTP_PORT:-80}"
 
-NETWORK_NAME=$(docker inspect "$cluster_node" 2>/dev/null |
-	jq -r '.[0].NetworkSettings.Networks | keys[0]' 2>/dev/null || echo "")
+echo "[EDGE] Using HAProxy host: $HAPROXY_HOST:$HAPROXY_API_PORT (accessible from all clusters)"
+echo "[EDGE] Edge Agent will connect to Portainer via HAProxy (port $HAPROXY_API_PORT for API, port 8000 for WebSocket)"
 
-if [ -z "$NETWORK_NAME" ] || [ "$NETWORK_NAME" = "null" ]; then
-	if [ "$PROVIDER" = "k3d" ]; then
-		NETWORK_NAME="k3d-${CLUSTER_NAME}"
-	else
-		NETWORK_NAME="kind"
-	fi
-fi
-
-PORTAINER_IP=$(docker inspect portainer-ce | jq -r ".[0].NetworkSettings.Networks[\"$NETWORK_NAME\"].IPAddress" 2>/dev/null || true)
-
-# 如果 Portainer 还未连接到该网络，先连接
-if [ -z "$PORTAINER_IP" ] || [ "$PORTAINER_IP" = "null" ]; then
-	echo "[EDGE] Connecting Portainer to $NETWORK_NAME network..."
-	docker network connect "$NETWORK_NAME" portainer-ce 2>/dev/null || true
-	sleep 2
-	PORTAINER_IP=$(docker inspect portainer-ce | jq -r ".[0].NetworkSettings.Networks[\"$NETWORK_NAME\"].IPAddress" 2>/dev/null || true)
-fi
-
-if [ -z "$PORTAINER_IP" ] || [ "$PORTAINER_IP" = "null" ]; then
-	echo "[EDGE] ERROR: Failed to get Portainer IP in $NETWORK_NAME network" >&2
-	exit 1
-fi
-
-echo "[EDGE] Portainer IP in cluster network: $PORTAINER_IP"
-
-# 创建 Edge Environment（使用 HTTP 避免 TLS 证书问题）
+# 创建 Edge Environment（Edge Agent 通过 HAProxy 访问 Portainer）
+# HAProxy 80 端口处理 API 请求，8000 端口处理 WebSocket 连接
 EDGE_ENV_RESPONSE=$(curl -sk -X POST "$PORTAINER_URL/api/endpoints" \
 	-H "Authorization: Bearer $JWT" \
 	-H "Content-Type: application/x-www-form-urlencoded" \
-	-d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$PORTAINER_IP:${PORTAINER_HTTP_PORT}&GroupID=1")
+	-d "Name=$EP_NAME&EndpointCreationType=4&URL=http://$HAPROXY_HOST:$HAPROXY_API_PORT&GroupID=1")
 
 ENDPOINT_ID=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.Id')
 EDGE_KEY=$(echo "$EDGE_ENV_RESPONSE" | jq -r '.EdgeKey')
@@ -160,34 +134,140 @@ echo "[EDGE] Edge Environment created successfully"
 echo "[EDGE]   ID: $ENDPOINT_ID"
 echo "[EDGE]   Name: $EP_NAME"
 
-# 部署 Edge Agent
-echo "[EDGE] Deploying Edge Agent to cluster..."
+# GitOps 兼容方案：创建 Secret，Edge Agent 由 ArgoCD 部署
+echo "[EDGE] Creating Edge Agent credentials Secret (GitOps-compliant)..."
 
 CTX_PREFIX=$([ "$PROVIDER" = "k3d" ] && echo k3d || echo kind)
 CTX="$CTX_PREFIX-$CLUSTER_NAME"
 
-# 使用 sed 替换 YAML 中的占位符并应用
-sed -e "s/EDGE_ID_PLACEHOLDER/$ENDPOINT_ID/g" \
-	-e "s/EDGE_KEY_PLACEHOLDER/$EDGE_KEY/g" \
-	"$ROOT_DIR/manifests/portainer/edge-agent.yaml" |
-	kubectl --context "$CTX" apply -f -
+# Create namespace
+kubectl --context "$CTX" create namespace portainer-edge --dry-run=client -o yaml | kubectl --context "$CTX" apply -f - >/dev/null 2>&1
 
-echo "[EDGE] Waiting for Edge Agent to be Running..."
-# wait up to ~180s for Running
-for i in $(seq 1 90); do
-  POD_STATUS=$(kubectl --context "$CTX" get pods -n portainer-edge -l app=portainer-edge-agent \
-    -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-  if [ "$POD_STATUS" = "Running" ]; then
-    break
-  fi
-  sleep 2
-done
-echo "[EDGE] Edge Agent Pod status: ${POD_STATUS:-Unknown}"
-echo "[EDGE] Edge Agent deployed"
+# Create Secret with Edge credentials (这是运行时动态值，不能存储在 Git)
+kubectl --context "$CTX" create secret generic portainer-edge-creds \
+	--namespace=portainer-edge \
+	--from-literal=edge-id="$ENDPOINT_ID" \
+	--from-literal=edge-key="$EDGE_KEY" \
+	--dry-run=client -o yaml | kubectl --context "$CTX" apply -f -
 
+echo "[EDGE] Credentials Secret created"
+
+# 直接部署 Edge Agent（临时方案，最终应该由 ArgoCD 管理）
+# 为了快速验证，先直接部署，后续可以迁移到 GitOps
+echo "[EDGE] Deploying Edge Agent (direct deployment for immediate availability)..."
+
+# k3d和kind集群都运行在容器中，无法访问宿主机Docker socket
+# Edge Agent只使用Kubernetes API管理（这是Kubernetes集群的标准方式）
+if true; then
+  echo "[EDGE] Deploying Edge Agent (Kubernetes-only mode)"
+  cat <<EOF | kubectl --context "$CTX" apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer-edge-agent
+  namespace: portainer-edge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer-edge-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: portainer-edge-agent
+  namespace: portainer-edge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer-edge-agent
+  namespace: portainer-edge
+spec:
+  type: ClusterIP
+  selector:
+    app: portainer-edge-agent
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s-portainer-agent-headless
+  namespace: portainer-edge
+spec:
+  clusterIP: None
+  selector:
+    app: portainer-edge-agent
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer-edge-agent
+  namespace: portainer-edge
+  labels:
+    app: portainer-edge-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer-edge-agent
+  template:
+    metadata:
+      labels:
+        app: portainer-edge-agent
+    spec:
+      serviceAccountName: portainer-edge-agent
+      containers:
+      - name: portainer-edge-agent
+        image: portainer/agent:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: EDGE
+          value: "1"
+        - name: EDGE_ID
+          valueFrom:
+            secretKeyRef:
+              name: portainer-edge-creds
+              key: edge-id
+        - name: EDGE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: portainer-edge-creds
+              key: edge-key
+        - name: EDGE_INSECURE_POLL
+          value: "1"
+        - name: CAP_HOST_MANAGEMENT
+          value: "0"
+        - name: KUBERNETES_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 80
+          protocol: TCP
+EOF
+fi
+
+echo "[EDGE] Waiting for Edge Agent to be ready (max 300s = 5min)..."
 # Generalized retry: preload image to cluster and retry if not Running
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 180 || true
+ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 300 || {
+	echo "[ERROR] Edge Agent pod failed to start"
+	kubectl --context "$CTX" get pods -n portainer-edge
+	kubectl --context "$CTX" describe pods -n portainer-edge -l app=portainer-edge-agent | tail -30
+	exit 1
+}
 
 echo ""
 echo "[EDGE] Registration complete!"

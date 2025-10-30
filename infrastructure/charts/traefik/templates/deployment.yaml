@@ -1,0 +1,37 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: traefik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traefik
+  template:
+    metadata:
+      labels:
+        app: traefik
+    spec:
+      serviceAccountName: traefik-ingress-controller
+      containers:
+      - name: traefik
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+          - --api.insecure=true
+          - --providers.kubernetesingress=true
+          - --entrypoints.web.address=:8000
+          - --log.level=INFO
+        ports:
+          - name: web
+            containerPort: 8000
+          - name: admin
+            containerPort: 8080
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+{{- end }}
+

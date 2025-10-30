@@ -18,42 +18,72 @@ fi
 : "${ARGOCD_VERSION:=v3.1.8}"
 : "${ARGOCD_NODEPORT:=30800}"
 
-echo "[DEVOP] Creating devops k3d cluster..."
-"$ROOT_DIR"/scripts/create_env.sh -n devops --no-register-argocd
+# 验证 devops 集群已存在（应由 bootstrap.sh 创建）
+if ! kubectl --context k3d-devops get nodes >/dev/null 2>&1; then
+	echo "[ERROR] devops cluster not found or not accessible"
+	echo "[ERROR] Please run bootstrap.sh to create the devops cluster first"
+	exit 1
+fi
+echo "[DEVOP] devops cluster is accessible"
 
-# 等待集群就绪
-echo "[DEVOP] Waiting for cluster to be ready..."
-kubectl --context k3d-devops wait --for=condition=ready node --all --timeout=60s
-
-# 安装 ArgoCD (使用官方 manifest)
-echo "[DEVOP] Installing ArgoCD using official manifest..."
-kubectl --context k3d-devops create namespace argocd || true
-
-# 尝试使用本地缓存或下载官方 manifest
-ARGOCD_MANIFEST="$ROOT_DIR/manifests/argocd/install-${ARGOCD_VERSION}.yaml"
-ARGOCD_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
-
-if [ ! -f "$ARGOCD_MANIFEST" ]; then
-	echo "[DEVOP] Downloading ArgoCD ${ARGOCD_VERSION} manifest..."
-	if curl -sSL -m 30 "$ARGOCD_URL" -o "$ARGOCD_MANIFEST" 2>/dev/null; then
-		echo "[DEVOP] Downloaded successfully"
-	else
-		echo "[ERROR] Failed to download ArgoCD manifest from GitHub"
-		echo "[ERROR] Please manually download:"
-		echo "[ERROR]   curl -sSL $ARGOCD_URL -o $ARGOCD_MANIFEST"
-		echo "[ERROR] Or fix network connectivity to raw.githubusercontent.com"
-		exit 1
-	fi
+# 预热 ArgoCD 镜像到 k3d 集群（避免拉取超时）
+echo "[DEVOP] Preloading ArgoCD images to cluster..."
+. "$ROOT_DIR/scripts/lib.sh"
+argocd_image="quay.io/argoproj/argocd:${ARGOCD_VERSION}"
+if prefetch_image "$argocd_image"; then
+	echo "[DEVOP] Importing ArgoCD image to devops cluster..."
+	k3d image import "$argocd_image" -c devops 2>/dev/null || true
 else
-	echo "[DEVOP] Using cached ArgoCD manifest: $ARGOCD_MANIFEST"
+	echo "[WARN] Failed to prefetch ArgoCD image, deployment may be slow"
 fi
 
-kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
+# 检查 ArgoCD 是否已安装（幂等性）
+if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1 && \
+   kubectl --context k3d-devops get deploy -n argocd argocd-server >/dev/null 2>&1; then
+	echo "[DEVOP] ArgoCD already installed, skipping installation"
+	# 验证 ArgoCD server 是否运行
+	if kubectl --context k3d-devops get pods -n argocd -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q '^Running$'; then
+		echo "[DEVOP] ArgoCD server is running"
+	else
+		echo "[DEVOP] ArgoCD server not running, will reconfigure"
+	fi
+else
+	# 安装 ArgoCD (使用官方 manifest)
+	echo "[DEVOP] Installing ArgoCD using official manifest..."
+	kubectl --context k3d-devops create namespace argocd || true
 
-# 等待 ArgoCD server，就绪失败则预热镜像后重试
-echo "[DEVOP] Waiting for ArgoCD server to be ready (with preload retry)..."
+	# 尝试使用本地缓存或下载官方 manifest
+	ARGOCD_MANIFEST="$ROOT_DIR/manifests/argocd/install-${ARGOCD_VERSION}.yaml"
+	ARGOCD_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+
+	if [ ! -f "$ARGOCD_MANIFEST" ]; then
+		echo "[DEVOP] Downloading ArgoCD ${ARGOCD_VERSION} manifest..."
+		mkdir -p "$(dirname "$ARGOCD_MANIFEST")"
+		if curl -sSL -m 30 "$ARGOCD_URL" -o "$ARGOCD_MANIFEST" 2>/dev/null; then
+			echo "[DEVOP] Downloaded successfully"
+		else
+			echo "[ERROR] Failed to download ArgoCD manifest from GitHub"
+			echo "[ERROR] Please manually download:"
+			echo "[ERROR]   curl -sSL $ARGOCD_URL -o $ARGOCD_MANIFEST"
+			echo "[ERROR] Or fix network connectivity to raw.githubusercontent.com"
+			exit 1
+		fi
+	else
+		echo "[DEVOP] Using cached ArgoCD manifest: $ARGOCD_MANIFEST"
+	fi
+
+	kubectl --context k3d-devops apply -n argocd -f "$ARGOCD_MANIFEST"
+fi
+
+# 等待 ArgoCD server（增加超时时间到 10 分钟）
+echo "[DEVOP] Waiting for ArgoCD server to be ready (max 600s = 10min)..."
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || true
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || {
+	echo "[ERROR] ArgoCD server failed to start within timeout"
+	kubectl --context k3d-devops get pods -n argocd -l app.kubernetes.io/name=argocd-server
+	kubectl --context k3d-devops describe pods -n argocd -l app.kubernetes.io/name=argocd-server | tail -30
+	exit 1
+}
 
 # 配置 ArgoCD
 echo "[DEVOP] Configuring ArgoCD..."
@@ -70,33 +100,14 @@ password_bcrypt=$(python3 -c "import bcrypt; print(bcrypt.hashpw('$ARGOCD_ADMIN_
 kubectl --context k3d-devops -n argocd patch secret argocd-secret -p "{\"stringData\": {\"admin.password\": \"$password_bcrypt\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
 kubectl --context k3d-devops -n argocd delete secret argocd-initial-admin-secret --ignore-not-found=true
 
-# 4. 配置 ArgoCD Ingress 以匹配域名规则
-ARGOCD_HOST="argocd.devops.${BASE_DOMAIN}"
-kubectl --context k3d-devops apply -n argocd -f - <<INGRESS
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: argocd-http
-spec:
-  ingressClassName: traefik
-  rules:
-    - host: ${ARGOCD_HOST}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
-                port:
-                  number: 80
-INGRESS
-
-# 5. 重启 argocd-server 应用配置
+# 4. 重启 argocd-server 应用配置
+# Note: devops 集群禁用了 Traefik，直接通过 NodePort 暴露服务
 kubectl --context k3d-devops rollout restart deploy/argocd-server -n argocd
-# 使用通用预热重试再次等待 argocd-server 就绪
+# 等待 argocd-server 重启就绪（增加超时时间）
 . "$ROOT_DIR/scripts/lib.sh"
-ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 600 || true
+ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argocd-server' k3d devops "quay.io/argoproj/argocd:${ARGOCD_VERSION}" 300 || {
+	echo "[WARN] ArgoCD server restart may not be complete, but continuing..."
+}
 
 # 连接 HAProxy 到 devops 网络
 echo "[DEVOP] Connecting HAProxy to devops network..."

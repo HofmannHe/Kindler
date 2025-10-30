@@ -1,0 +1,7 @@
+apiVersion: v2
+name: edge-agent
+version: 1.0.0
+description: Portainer Edge Agent for Kubernetes clusters
+type: application
+appVersion: "latest"
+

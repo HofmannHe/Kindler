@@ -54,19 +54,40 @@ create_k3d() {
   local img_arg=""
   if [ -n "${K3D_IMAGE:-}" ]; then img_arg="--image ${K3D_IMAGE}"; fi
 
-  # 使用共享网络以支持 ArgoCD 跨集群连接
-  local network_arg="--network k3d-shared"
-
-  # 在命名空间工作树下避免端口冲突：不映射 host 端口（通过 HAProxy+NodePort 访问）
-  local port_args
-  if [ -n "${KINDLER_NS:-}" ]; then
-    port_args=""
+  # 读取集群子网配置（从 CSV）
+  local subnet network_name network_arg
+  subnet="$(subnet_for "$name")"
+  
+  if [ -n "$subnet" ]; then
+    # 使用独立子网：创建专用网络
+    network_name="k3d-${name}"
+    log INFO "Creating dedicated network for k3d cluster: $network_name (subnet: $subnet)"
+    
+    # 创建独立网络（幂等）
+    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+      # 从子网计算网关地址（使用 .0.1）
+      local gateway=$(echo "$subnet" | sed -E 's|([0-9]+\.[0-9]+)\.0\.0/[0-9]+|\1.0.1|')
+      run "docker network create \"$network_name\" --subnet \"$subnet\" --gateway \"$gateway\" --opt com.docker.network.bridge.name=\"br-k3d-${name}\""
+      log INFO "Network $network_name created with subnet $subnet (gateway: $gateway)"
+    else
+      log INFO "Network $network_name already exists"
+    fi
+    network_arg="--network $network_name"
   else
-    port_args="--port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
+    # 未指定子网：使用共享网络 k3d-shared（用于 devops 集群）
+    log INFO "No subnet specified for cluster $name, using shared network k3d-shared"
+    network_arg="--network k3d-shared"
+  fi
+
+  # devops 集群禁用 Traefik（管理集群不需要 Ingress Controller，避免端口冲突）
+  local k3s_args=""
+  if [ "$name" = "devops" ]; then
+    k3s_args='--k3s-arg "--disable=traefik@server:0"'
+    log INFO "Disabling Traefik for devops cluster (management cluster uses NodePort directly)"
   fi
 
   # k3d使用默认API端口配置，创建后修正kubeconfig中的0.0.0.0地址
-  run "k3d cluster create ${name} ${img_arg} ${network_arg} --servers 1 --agents 0 ${port_args}"
+  run "k3d cluster create ${name} ${img_arg} ${network_arg} ${k3s_args} --servers 1 --agents 0 --port ${http_port}:80@loadbalancer --port ${https_port}:443@loadbalancer"
   limit_node_resources k3d "$name"
 
   # 修正kubeconfig中的0.0.0.0地址为127.0.0.1
@@ -92,8 +113,7 @@ create_kind() {
   need_cmd kind || return 0
   local cfg
   cfg="$(mktemp)"
-  # When KINDLER_NS is set, avoid host port mappings to prevent conflicts with master/dev
-  if [ -z "${KINDLER_NS:-}" ] && [ -n "${http_port:-}" ] && [ -n "${https_port:-}" ]; then
+  if [ -n "${http_port:-}" ] && [ -n "${https_port:-}" ]; then
     cat >"$cfg" <<YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -141,9 +161,6 @@ main() {
   local provider name ports http_port https_port
   provider="$(provider_for "$env")"
   name="$(ctx_name "$env")"
-  # apply namespace suffix for actual cluster/container naming
-  . "$ROOT_DIR/scripts/lib.sh"
-  name="$(effective_name "$name")"
   # read ports with space separator regardless of global IFS
   local _ports
   _ports="$(ports_for "$env")"

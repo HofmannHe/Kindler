@@ -1,0 +1,9 @@
+dependencies:
+- name: edge-agent
+  repository: file://./charts/edge-agent
+  version: 1.0.0
+- name: traefik
+  repository: file://./charts/traefik
+  version: 1.0.0
+digest: sha256:16bf15e25806e790637f8448f021002c83f29d645802498d11f981203e6de516
+generated: "2025-10-15T19:06:52.939391562+08:00"

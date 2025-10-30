@@ -98,3 +98,4 @@ spec:
       targetPort: 80
       nodePort: {{ .Values.traefik.service.nodePort }}
 {{- end }}
+

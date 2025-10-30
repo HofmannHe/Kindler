@@ -1,16 +1,17 @@
-# env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port
+# env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port,cluster_subnet
 # 示例：按需增删环境行，env 不可重复；布尔值可用 true/false 或 1/0
-devops,k3d,30080,19000,true,true,23081,23444
-dev,kind,30080,19001,true,true,18090,18443
-uat,kind,30080,29001,true,true,28080,28443
-prod,kind,30080,39001,true,true,38080,38443
-# k3d 环境示例
-dev-k3d,k3d,30080,19002,true,true,18091,18444
-uat-k3d,k3d,30080,19003,true,true,28091,28444
-prod-k3d,k3d,30080,39002,true,true,38091,38444
-debug-k3d,k3d,30080,19004,false,false,48091,48444
-test-final,k3d,30080,19005,true,false,38092,38445
-test-k3d-fixed,k3d,30080,19006,true,false,38093,38446
-# rttr 专用测试环境
-rttr-dev,k3d,30080,19010,true,true,18100,18500
-rttr-uat,k3d,30080,19011,true,true,28100,28500
+# cluster_subnet: k3d集群的独立子网，留空则使用共享网络k3d-shared（推荐devops使用共享网络）
+# devops使用共享网络以便HAProxy通过固定IP访问，业务集群使用独立子网避免IP冲突
+
+# devops 管理集群（k3d，共享网络）
+devops,k3d,30800,19000,false,false,23800,23843,
+
+# kind 业务集群（共享 kind 网络）
+dev,kind,30080,19001,true,true,18090,18443,
+uat,kind,30080,19003,true,true,18092,18445,
+prod,kind,30080,19004,true,true,18093,18446,
+
+# k3d 业务集群（独立子网）
+dev-k3d,k3d,30080,19002,true,true,18091,18444,10.101.0.0/16
+uat-k3d,k3d,30080,19005,true,true,18094,18447,10.102.0.0/16
+prod-k3d,k3d,30080,19006,true,true,18095,18448,10.103.0.0/16

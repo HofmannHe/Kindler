@@ -7,9 +7,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
       - portainer_secrets:/run/secrets:ro
-    command: ["--admin-password-file", "/run/secrets/portainer_admin"]
+    command: ["--admin-password-file", "/run/secrets/portainer_admin", "--trusted-origins", "portainer.devops.192.168.51.30.sslip.io"]
     networks:
-      - infrastructure
+      infrastructure:
+      k3d-shared:
 
   haproxy:
     image: haproxy:${HAPROXY_VERSION:-3.2.6-alpine3.22}
@@ -18,17 +19,65 @@ services:
     ports:
       - "${HAPROXY_HTTP_PORT:-80}:80"
       - "${HAPROXY_HTTPS_PORT:-443}:443"
+      - "8000:8000"  # Edge Agent WebSocket
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-      - haproxy_certs:/usr/local/etc/haproxy/certs
+      - ./ssl:/usr/local/etc/haproxy/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - infrastructure
+      infrastructure:
+      k3d-shared:
+    # 注意：HAProxy 通过 docker network connect 动态连接到各集群网络
+
+  kindler-webui-backend:
+    build:
+      context: ../../webui/backend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-backend
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../scripts:/app/scripts:ro
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
+      - PYTHONUNBUFFERED=1
+      - DEMO_MODE=true
+    networks:
+      infrastructure:
+      k3d-shared:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  kindler-webui-frontend:
+    build:
+      context: ../../webui/frontend
+      dockerfile: Dockerfile
+    container_name: kindler-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      - kindler-webui-backend
+    networks:
+      infrastructure:
+      k3d-shared:
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
 networks:
   infrastructure:
     name: infrastructure
+  k3d-shared:
+    name: k3d-shared
+    external: true
 
 volumes:
   portainer_data:

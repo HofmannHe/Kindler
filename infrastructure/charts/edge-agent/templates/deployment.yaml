@@ -1,0 +1,51 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer-edge-agent
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: portainer-edge-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer-edge-agent
+  template:
+    metadata:
+      labels:
+        app: portainer-edge-agent
+    spec:
+      serviceAccountName: portainer-edge-agent
+      containers:
+      - name: portainer-edge-agent
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: EDGE
+          value: "1"
+        - name: EDGE_ID
+          valueFrom:
+            secretKeyRef:
+              name: portainer-edge-creds
+              key: edge-id
+        - name: EDGE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: portainer-edge-creds
+              key: edge-key
+        - name: EDGE_INSECURE_POLL
+          value: "1"
+        - name: CAP_HOST_MANAGEMENT
+          value: "0"
+        - name: KUBERNETES_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+{{- end }}
+
