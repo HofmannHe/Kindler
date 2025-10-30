@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import clusters, tasks, websocket, services
+from .api import clusters, tasks, websocket
 
 # Configure logging
 logging.basicConfig(
@@ -28,15 +28,6 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialization complete")
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
-    
-    # Restore running tasks from database
-    try:
-        from .services.task_manager import task_manager
-        restored = await task_manager.restore_from_db()
-        if restored > 0:
-            logger.info(f"Restored {restored} running tasks from database")
-    except Exception as e:
-        logger.error(f"Task restoration failed: {e}")
     
     yield
     logger.info("Shutting down Kindler Web GUI Backend")
@@ -63,7 +54,6 @@ app.add_middleware(
 app.include_router(clusters.router)
 app.include_router(tasks.router)
 app.include_router(websocket.router)
-app.include_router(services.router)
 
 
 @app.get("/api/health")

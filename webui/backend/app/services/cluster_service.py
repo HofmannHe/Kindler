@@ -17,75 +17,12 @@ class ClusterService:
         self.base_domain = os.getenv("BASE_DOMAIN", "192.168.51.30.sslip.io")
         self.scripts_dir = os.getenv("SCRIPTS_DIR", "/scripts")
         self.timeout = int(os.getenv("OPERATION_TIMEOUT", "300"))  # 5 minutes default
-        self.db = None  # Will be initialized async
+        self.db = get_db()
         
         # Verify scripts directory exists
         if not os.path.isdir(self.scripts_dir):
             logger.warning(f"Scripts directory not found: {self.scripts_dir}")
     
-    async def _ensure_db(self):
-        """Ensure database is initialized"""
-        if self.db is None:
-            self.db = await get_db()
-    
-    async def _get_cluster_server_url(self, name: str, provider: str) -> Optional[str]:
-        """
-        Get cluster API server URL (混合策略：DB优先，docker inspect fallback)
-        
-        Args:
-            name: Cluster name
-            provider: Cluster provider (k3d or kind)
-        
-        Returns:
-            API server URL like https://10.101.0.2:6443, or None if not found
-        """
-        try:
-            # 1. 优先从数据库读取（高性能）
-            await self._ensure_db()
-            cluster_data = await self.db.get_cluster(name)
-            if cluster_data and cluster_data.get('server_ip'):
-                server_ip = cluster_data['server_ip']
-                logger.info(f"Using cached server IP from DB for {name}: {server_ip}")
-                return f"https://{server_ip}:6443"
-            
-            # 2. Fallback: 动态查询容器IP
-            logger.info(f"Server IP not in DB, querying docker for {name}")
-            container_name = f"k3d-{name}-server-0" if provider == "k3d" else f"{name}-control-plane"
-            
-            process = await asyncio.create_subprocess_exec(
-                "docker", "inspect", container_name,
-                "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=5
-            )
-            
-            if process.returncode == 0:
-                ips = stdout.decode().strip().split()
-                if ips:
-                    container_ip = ips[0]
-                    logger.info(f"Got IP from docker for {name}: {container_ip}")
-                    
-                    # 3. 回写数据库（缓存以提升后续性能）
-                    try:
-                        await self.db.update_cluster(name, {"server_ip": container_ip})
-                        logger.info(f"Cached server IP to DB for {name}")
-                    except Exception as e:
-                        logger.warning(f"Failed to cache server IP to DB: {e}")
-                    
-                    return f"https://{container_ip}:6443"
-            
-            logger.warning(f"Failed to get container IP for {container_name}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting cluster server URL: {e}")
-            return None
-
     async def _run_script(
         self,
         script_name: str,
@@ -116,11 +53,8 @@ class ClusterService:
                 await progress_callback(f"[ERROR] {error_msg}\n")
             return False
         
-        # Ensure database is initialized
-        await self._ensure_db()
-        
         # Log operation start
-        op_id = await self.db.log_operation_start(cluster_name, operation)
+        op_id = self.db.log_operation_start(cluster_name, operation)
         
         # Build command
         cmd = [script_path] + args
@@ -169,7 +103,7 @@ class ClusterService:
                     await process.wait()
                     
                     # Log failure
-                    await self.db.log_operation_complete(
+                    self.db.log_operation_complete(
                         op_id,
                         "timeout",
                         ''.join(full_output),
@@ -185,7 +119,7 @@ class ClusterService:
             status = "success" if returncode == 0 else "failed"
             error_message = None if returncode == 0 else f"Exit code: {returncode}"
             
-            await self.db.log_operation_complete(op_id, status, log_output, error_message)
+            self.db.log_operation_complete(op_id, status, log_output, error_message)
             
             if returncode == 0:
                 if progress_callback:
@@ -205,7 +139,7 @@ class ClusterService:
                 await progress_callback(f"[ERROR] {error_msg}\n")
             
             # Log failure
-            await self.db.log_operation_complete(
+            self.db.log_operation_complete(
                 op_id,
                 "error",
                 ''.join(full_output) if 'full_output' in locals() else "",
@@ -219,7 +153,7 @@ class ClusterService:
         progress_callback: Optional[Callable] = None
     ) -> bool:
         """
-        Create a new cluster via Host API
+        Create a new cluster
         
         Args:
             cluster_data: Dict with keys: name, provider, and optional node_port, pf_port, etc.
@@ -228,81 +162,42 @@ class ClusterService:
         Returns:
             True if creation succeeded
         """
-        import httpx
-        
         name = cluster_data["name"]
         provider = cluster_data.get("provider", "k3d")
         
-        logger.info(f"Creating cluster: {name} (provider: {provider}) via Host API")
+        logger.info(f"Creating cluster: {name} (provider: {provider})")
         
-        # Ensure database is initialized
-        await self._ensure_db()
+        # Build arguments for create_env.sh
+        args = [
+            "-n", name,
+            "-p", provider,
+            "--force"  # Allow dynamic creation outside of environments.csv
+        ]
         
-        # Log operation start
-        op_id = await self.db.log_operation_start(name, "create")
+        # Add optional parameters
+        if "node_port" in cluster_data:
+            args.extend(["--node-port", str(cluster_data["node_port"])])
+        if "pf_port" in cluster_data:
+            args.extend(["--pf-port", str(cluster_data["pf_port"])])
         
-        # 构建请求体
-        request_body = {
-            "name": name,
-            "provider": provider,
-            "node_port": cluster_data.get("node_port", 30080),
-            "pf_port": cluster_data.get("pf_port", 19000),
-            "http_port": cluster_data.get("http_port"),
-            "https_port": cluster_data.get("https_port"),
-            "cluster_subnet": cluster_data.get("subnet"),
-            "register_portainer": cluster_data.get("register_portainer", True),
-            "haproxy_route": cluster_data.get("haproxy_route", True),
-            "register_argocd": cluster_data.get("register_argocd", True),
-        }
+        # Execute creation script
+        success = await self._run_script(
+            "create_env.sh",
+            args,
+            name,
+            "create",
+            progress_callback
+        )
         
-        try:
-            # 调用宿主机API（流式接收日志）
-            # 使用环境变量或默认网关IP (172.18.0.1 for k3d-shared network)
-            host_api_url = os.getenv("HOST_API_URL", "http://172.18.0.1:8888")
-            full_output = []
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                async with client.stream("POST", f"{host_api_url}/api/clusters/create", json=request_body) as response:
-                    if response.status_code != 200:
-                        error_msg = f"Host API returned {response.status_code}"
-                        logger.error(error_msg)
-                        if progress_callback:
-                            await progress_callback(f"[ERROR] {error_msg}\n")
-                        
-                        await self.db.log_operation_complete(op_id, "failed", "", error_msg)
-                        return False
-                    
-                    # 流式读取日志
-                    async for line in response.aiter_lines():
-                        full_output.append(line + "\n")
-                        
-                        # 发送到回调
-                        if progress_callback:
-                            await progress_callback(line + "\n")
-            
-            # 检查是否成功
-            log_output = ''.join(full_output)
-            success = "[SUCCESS] Operation completed successfully" in log_output
-            
-            status = "success" if success else "failed"
-            error_message = None if success else "Script execution failed"
-            
-            await self.db.log_operation_complete(op_id, status, log_output, error_message)
-            
-            if success:
-                logger.info(f"Cluster {name} created successfully")
-            else:
-                logger.error(f"Failed to create cluster {name}")
-            
-            return success
+        if success:
+            # Update database with cluster info
+            db_service = DBService()
+            await db_service.create_cluster({
+                **cluster_data,
+                "status": "running"
+            })
         
-        except Exception as e:
-            error_msg = f"Failed to call Host API: {e}"
-            logger.exception(error_msg)
-            if progress_callback:
-                await progress_callback(f"[ERROR] {error_msg}\n")
-            
-            await self.db.log_operation_complete(op_id, "failed", "", error_msg)
-            return False
+        return success
     
     async def delete_cluster(
         self,
@@ -310,7 +205,7 @@ class ClusterService:
         progress_callback: Optional[Callable] = None
     ) -> bool:
         """
-        Delete a cluster via Host API
+        Delete a cluster
         
         Args:
             name: Cluster name
@@ -319,63 +214,26 @@ class ClusterService:
         Returns:
             True if deletion succeeded
         """
-        import httpx
+        logger.info(f"Deleting cluster: {name}")
         
-        logger.info(f"Deleting cluster: {name} via Host API")
+        # Build arguments for delete_env.sh
+        args = ["-n", name]
         
-        # Ensure database is initialized
-        await self._ensure_db()
+        # Execute deletion script
+        success = await self._run_script(
+            "delete_env.sh",
+            args,
+            name,
+            "delete",
+            progress_callback
+        )
         
-        # Log operation start
-        op_id = await self.db.log_operation_start(name, "delete")
+        if success:
+            # Remove from database
+            db_service = DBService()
+            await db_service.delete_cluster(name)
         
-        try:
-            # 调用宿主机API（流式接收日志）
-            host_api_url = os.getenv("HOST_API_URL", "http://172.18.0.1:8888")
-            full_output = []
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                async with client.stream("POST", f"{host_api_url}/api/clusters/delete", json={"name": name}) as response:
-                    if response.status_code != 200:
-                        error_msg = f"Host API returned {response.status_code}"
-                        logger.error(error_msg)
-                        if progress_callback:
-                            await progress_callback(f"[ERROR] {error_msg}\n")
-                        
-                        await self.db.log_operation_complete(op_id, "failed", "", error_msg)
-                        return False
-                    
-                    # 流式读取日志
-                    async for line in response.aiter_lines():
-                        full_output.append(line + "\n")
-                        
-                        # 发送到回调
-                        if progress_callback:
-                            await progress_callback(line + "\n")
-            
-            # 检查是否成功
-            log_output = ''.join(full_output)
-            success = "[SUCCESS] Operation completed successfully" in log_output
-            
-            status = "success" if success else "failed"
-            error_message = None if success else "Script execution failed"
-            
-            await self.db.log_operation_complete(op_id, status, log_output, error_message)
-            
-            if success:
-                logger.info(f"Cluster {name} deleted successfully")
-            else:
-                logger.error(f"Failed to delete cluster {name}")
-            
-            return success
-        
-        except Exception as e:
-            error_msg = f"Failed to call Host API: {e}"
-            logger.exception(error_msg)
-            if progress_callback:
-                await progress_callback(f"[ERROR] {error_msg}\n")
-            
-            await self.db.log_operation_complete(op_id, "failed", "", error_msg)
-            return False
+        return success
     
     async def start_cluster(
         self,
@@ -451,53 +309,77 @@ class ClusterService:
     
     async def get_cluster_status(self, name: str, provider: str = "k3d") -> Dict:
         """
-        Get cluster status with layered health checks
-        
-        Status levels:
-        - creating: Cluster creation task is in progress
-        - running: Nodes Ready + Agent online + App healthy
-        - degraded: Nodes Ready but Agent offline or App unhealthy
-        - error: Nodes NotReady or other critical errors
-        - not_found: Cluster configuration not found
+        Get cluster status using kubectl
         
         Args:
             name: Cluster name
             provider: Cluster provider (k3d or kind)
         
         Returns:
-            Dict with cluster status and health details
+            Dict with cluster status information
         """
+        context = f"{provider}-{name}"
+        
         try:
-            # 从数据库查询集群配置
-            await self._ensure_db()
-            cluster_data = await self.db.get_cluster(name)
+            # Get nodes using kubectl
+            process = await asyncio.create_subprocess_exec(
+                "kubectl", "--context", context,
+                "get", "nodes",
+                "-o", "json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
             
-            if not cluster_data:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=10
+            )
+            
+            if process.returncode == 0:
+                import json
+                nodes_data = json.loads(stdout.decode())
+                
+                nodes = []
+                for item in nodes_data.get("items", []):
+                    node_name = item["metadata"]["name"]
+                    conditions = item["status"].get("conditions", [])
+                    ready_condition = next(
+                        (c for c in conditions if c["type"] == "Ready"),
+                        None
+                    )
+                    status = ready_condition["status"] if ready_condition else "Unknown"
+                    roles = item["metadata"].get("labels", {}).get("node-role.kubernetes.io/master", "")
+                    
+                    nodes.append({
+                        "name": node_name,
+                        "status": "Ready" if status == "True" else "NotReady",
+                        "roles": ["control-plane", "master"] if roles else ["worker"]
+                    })
+                
                 return {
                     "name": name,
                     "provider": provider,
-                    "status": "not_found",
-                    "error": "Cluster configuration not found in database"
+                    "status": "running" if nodes else "unknown",
+                    "nodes": nodes
                 }
-            
-            # 执行分层健康检查
-            health_checks = await self._check_cluster_health(name, provider)
-            
-            # 根据健康检查结果确定状态
-            status = self._determine_status(health_checks)
-            
+            else:
+                # Cluster not running or not accessible
+                return {
+                    "name": name,
+                    "provider": provider,
+                    "status": "stopped",
+                    "error": stderr.decode() if stderr else "Cluster not accessible"
+                }
+        
+        except asyncio.TimeoutError:
             return {
                 "name": name,
                 "provider": provider,
-                "status": status,
-                "server_ip": cluster_data.get('server_ip'),
-                "http_port": cluster_data.get('http_port'),
-                "https_port": cluster_data.get('https_port'),
-                "health": health_checks
+                "status": "timeout",
+                "error": "kubectl timeout"
             }
-        
         except Exception as e:
-            logger.error(f"Error getting cluster status for {name}: {e}")
+            logger.error(f"Failed to get cluster status: {e}")
             return {
                 "name": name,
                 "provider": provider,
@@ -505,37 +387,23 @@ class ClusterService:
                 "error": str(e)
             }
     
-    async def _check_cluster_health(self, name: str, provider: str) -> Dict:
-        """
-        Simplified health check (database existence check only)
-        
-        Note: Detailed health checks (nodes/agent/apps) should be done by 
-        external monitoring systems (e.g., tests/e2e_services_test.sh) and
-        displayed through a separate monitoring dashboard.
-        
-        Returns:
-            Dict with basic health check status
-        """
-        health = {
-            "nodes": {"status": "assumed_healthy", "note": "Use external monitoring for detailed status"},
-            "agent": {"status": "assumed_healthy", "note": "Check Portainer UI for Edge Agent status"},
-            "apps": {"status": "assumed_healthy", "note": "Check ArgoCD UI for Application health"}
+    def get_cluster_urls(self, name: str) -> Dict[str, str]:
+        """Get cluster access URLs"""
+        return {
+            "whoami": f"http://whoami.{name}.{self.base_domain}",
+            "portainer": f"https://portainer.devops.{self.base_domain}",
+            "argocd": f"http://argocd.devops.{self.base_domain}",
+            "haproxy_stats": f"http://haproxy.devops.{self.base_domain}/stat"
         }
-        
-        return health
-    
-    def _determine_status(self, health: Dict) -> str:
-        """
-        Determine overall cluster status (simplified)
-        
-        Logic:
-        - If cluster exists in database -> running
-        - Otherwise -> not_found or error
-        
-        Note: This is a simplified approach. Detailed status determination
-        should be handled by external monitoring systems.
-        """
-        # Since we're doing simplified health checks, all clusters in the
-        # database are assumed to be "running"
-        return "running"
 
+
+# Singleton instance
+_cluster_service = None
+
+
+def get_cluster_service() -> ClusterService:
+    """Get cluster service singleton"""
+    global _cluster_service
+    if _cluster_service is None:
+        _cluster_service = ClusterService()
+    return _cluster_service

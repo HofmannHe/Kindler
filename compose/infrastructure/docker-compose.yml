@@ -20,7 +20,6 @@ services:
       - "${HAPROXY_HTTP_PORT:-80}:80"
       - "${HAPROXY_HTTPS_PORT:-443}:443"
       - "8000:8000"  # Edge Agent WebSocket
-      - "5432:5432"  # PostgreSQL TCP代理
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ./ssl:/usr/local/etc/haproxy/certs:ro
@@ -32,29 +31,19 @@ services:
     # 注意：HAProxy 通过 docker network connect 动态连接到各集群网络
 
   kindler-webui-backend:
-    image: kindler-webui-backend:with-postgres
+    build:
+      context: ../../webui/backend
+      dockerfile: Dockerfile
     container_name: kindler-webui-backend
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ../../webui/backend:/app:ro
-      - ../../scripts:/scripts:ro
-      - ../../config:/config:ro
+      - ../../scripts:/app/scripts:ro
       - ${HOME}/.kube:/root/.kube:ro
-      - kindler-webui-data:/data
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
       - PYTHONUNBUFFERED=1
-      - SQLITE_PATH=/data/kindler.db
-      - CSV_PATH=/config/environments.csv
-      - SCRIPTS_DIR=/scripts
-      - OPERATION_TIMEOUT=300
-      # PostgreSQL connection (via HAProxy proxy, fallback to SQLite if not available)
-      - PG_HOST=haproxy-gw
-      - PG_PORT=5432
-      - PG_DATABASE=kindler
-      - PG_USER=kindler
-      - PG_PASSWORD=postgres123
+      - DEMO_MODE=true
     networks:
       infrastructure:
       k3d-shared:
@@ -95,4 +84,3 @@ volumes:
   portainer_secrets:
     external: true
   haproxy_certs:
-  kindler-webui-data:

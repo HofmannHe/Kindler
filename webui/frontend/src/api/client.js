@@ -49,12 +49,6 @@ export const clusterAPI = {
 
 // Task API
 export const taskAPI = {
-  // Get all tasks, optionally filtered by status
-  list(status = null) {
-    const params = status ? { status } : {}
-    return apiClient.get('/tasks', { params })
-  },
-  
   // Get task status
   get(taskId) {
     return apiClient.get(`/tasks/${taskId}`)
@@ -65,14 +59,6 @@ export const taskAPI = {
 export const configAPI = {
   get() {
     return apiClient.get('/config')
-  }
-}
-
-// Services API
-export const servicesAPI = {
-  // Get global services status
-  getGlobalStatus() {
-    return apiClient.get('/services')
   }
 }
 

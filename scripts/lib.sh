@@ -20,6 +20,23 @@ load_env() {
 	if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 }
 
+# Effective naming helpers for branch/worktree isolation
+effective_name() {
+  local n="$1"
+  if [ -n "${KINDLER_NS:-}" ]; then echo "${n}-${KINDLER_NS}"; else echo "$n"; fi
+}
+host_label() {
+  # base env label + optional namespace suffix (alnum only)
+  local n="$1" nslabel
+  n="$(env_label "$n")"
+  if [ -n "${KINDLER_NS:-}" ]; then
+    nslabel="$(env_label "$KINDLER_NS")"
+    echo "${n}${nslabel}"
+  else
+    echo "$n"
+  fi
+}
+
 env_label() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
 }

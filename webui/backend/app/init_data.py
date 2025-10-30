@@ -4,8 +4,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Demo mode flag (default: false for production)
-DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+# Demo mode flag
+DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
 
 # In-memory mock database for demo mode
 MOCK_CLUSTERS = [

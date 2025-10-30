@@ -69,52 +69,14 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
                 detail=f"Cluster {cluster.name} already exists"
             )
         
-        # Auto-assign ports if not provided
-        if cluster.pf_port is None or cluster.http_port is None or cluster.https_port is None:
-            all_clusters = await db_service.list_clusters()
-            # Find max ports
-            max_pf_port = max([c.get('pf_port', 19000) for c in all_clusters] + [19000])
-            max_http_port = max([c.get('http_port', 18090) for c in all_clusters] + [18090])
-            max_https_port = max([c.get('https_port', 18443) for c in all_clusters] + [18443])
-            
-            # Assign next available ports
-            if cluster.pf_port is None:
-                cluster.pf_port = max_pf_port + 1
-            if cluster.http_port is None:
-                cluster.http_port = max_http_port + 1
-            if cluster.https_port is None:
-                cluster.https_port = max_https_port + 1
-            
-            logger.info(f"Auto-assigned ports for {cluster.name}: pf={cluster.pf_port}, http={cluster.http_port}, https={cluster.https_port}")
-        
-        # Pre-insert cluster record with minimal information to satisfy foreign key constraint
-        # for operations logging. create_env.sh will update this record with server_ip later.
-        cluster_record = {
-            "name": cluster.name,
-            "provider": cluster.provider,
-            "node_port": cluster.node_port,
-            "pf_port": cluster.pf_port,
-            "http_port": cluster.http_port,
-            "https_port": cluster.https_port,
-            "subnet": cluster.cluster_subnet
-            # NOTE: server_ip is intentionally omitted - will be filled by create_env.sh
-        }
-        
-        created = await db_service.create_cluster(cluster_record)
-        if not created:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to create cluster record in database"
-            )
-        
         # Create task
-        task_id = await task_manager.create_task(f"Creating cluster {cluster.name}")
+        task_id = task_manager.create_task(f"Creating cluster {cluster.name}")
         
         # Add WebSocket callback
         async def ws_callback(task_status):
             await ws_manager.broadcast_task_update(task_id, {
                 "type": "task_update",
-                "task": task_status.model_dump(mode='json')
+                "task": task_status.dict()
             })
         
         task_manager.add_callback(task_id, ws_callback)
@@ -123,7 +85,7 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
         async def progress_callback(log_line: str):
             await task_manager.update_task(task_id, log_line=log_line)
         
-        # Prepare cluster data for script
+        # Prepare cluster data
         cluster_data = {
             "name": cluster.name,
             "provider": cluster.provider,
@@ -137,28 +99,13 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
             "register_argocd": cluster.register_argocd,
         }
         
-        # Wrapper to handle cleanup on failure
-        async def create_with_cleanup():
-            success = await cluster_service.create_cluster(
-                cluster_data=cluster_data,
-                progress_callback=progress_callback
-            )
-            
-            if not success:
-                # Cleanup failed creation
-                try:
-                    await db_service.delete_cluster(cluster.name)
-                    logger.info(f"Cleaned up failed cluster record: {cluster.name}")
-                except Exception as e:
-                    logger.error(f"Failed to cleanup cluster record: {e}")
-            
-            return success
-        
         # Run creation in background
         background_tasks.add_task(
             task_manager.run_task,
             task_id,
-            create_with_cleanup
+            cluster_service.create_cluster,
+            cluster_data=cluster_data,
+            progress_callback=progress_callback
         )
         
         return TaskCreate(
@@ -214,26 +161,19 @@ async def get_cluster(name: str):
 async def delete_cluster(name: str, background_tasks: BackgroundTasks):
     """Delete a cluster (async operation)"""
     try:
-        # Protect devops cluster from deletion
-        if name == "devops":
-            raise HTTPException(
-                status_code=403,
-                detail="devops cluster cannot be deleted via WebUI (management cluster)"
-            )
-        
         # Check if cluster exists
         exists = await db_service.cluster_exists(name)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
         
         # Create task
-        task_id = await task_manager.create_task(f"Deleting cluster {name}")
+        task_id = task_manager.create_task(f"Deleting cluster {name}")
         
         # Add WebSocket callback
         async def ws_callback(task_status):
             await ws_manager.broadcast_task_update(task_id, {
                 "type": "task_update",
-                "task": task_status.model_dump(mode='json')
+                "task": task_status.dict()
             })
         
         task_manager.add_callback(task_id, ws_callback)
@@ -306,13 +246,13 @@ async def start_cluster(name: str, background_tasks: BackgroundTasks):
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
         
         # Create task
-        task_id = await task_manager.create_task(f"Starting cluster {name}")
+        task_id = task_manager.create_task(f"Starting cluster {name}")
         
         # Add WebSocket callback
         async def ws_callback(task_status):
             await ws_manager.broadcast_task_update(task_id, {
                 "type": "task_update",
-                "task": task_status.model_dump(mode='json')
+                "task": task_status.dict()
             })
         
         task_manager.add_callback(task_id, ws_callback)
@@ -353,13 +293,13 @@ async def stop_cluster(name: str, background_tasks: BackgroundTasks):
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
         
         # Create task
-        task_id = await task_manager.create_task(f"Stopping cluster {name}")
+        task_id = task_manager.create_task(f"Stopping cluster {name}")
         
         # Add WebSocket callback
         async def ws_callback(task_status):
             await ws_manager.broadcast_task_update(task_id, {
                 "type": "task_update",
-                "task": task_status.model_dump(mode='json')
+                "task": task_status.dict()
             })
         
         task_manager.add_callback(task_id, ws_callback)

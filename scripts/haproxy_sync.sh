@@ -3,7 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+# 在工作树中操作根目录 HAProxy 配置
+CFG="$ROOT_DIR/../../compose/infrastructure/haproxy.cfg"
 
 usage() {
 	cat >&2 <<USAGE
@@ -113,5 +114,5 @@ if [ $prune -eq 1 ]; then
 	done
 fi
 
-docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
-echo "[sync] done (reloaded once)"
+"$ROOT_DIR"/scripts/haproxy_render.sh >/dev/null 2>&1 || true
+echo "[sync] done (renderer applied)"
