@@ -198,19 +198,19 @@ main() {
 
 	echo "[BOOTSTRAP] Start WebUI services"
 	if [ -d "$ROOT_DIR/webui" ]; then
-		cd "$ROOT_DIR/webui"
 		# 清理可能的僵尸容器
 		docker rm -f kindler-webui-backend kindler-webui-frontend 2>/dev/null || true
-		# 启动 WebUI
-		docker compose up -d 2>&1 | grep -E "Creating|Created|Starting|Started" | sed 's/^/  /'
-		# 等待服务就绪
+		# 启动 WebUI（在 infrastructure compose 中定义）
+		cd "$ROOT_DIR/compose/infrastructure"
+		docker compose up -d kindler-webui-backend kindler-webui-frontend 2>&1 | grep -E "Creating|Created|Starting|Started" | sed 's/^/  /'
+		# 等待服务就绪（通过容器健康检查）
 		echo "  Waiting for WebUI to be ready..."
-		for i in {1..30}; do
-			if curl -s http://localhost:8001/api/health >/dev/null 2>&1; then
+		for i in {1..60}; do
+			if docker ps --filter "name=kindler-webui-backend" --filter "health=healthy" --format "{{.Names}}" | grep -q "kindler-webui-backend"; then
 				echo "  ✓ WebUI backend is ready"
 				break
 			fi
-			[ $i -eq 30 ] && echo "  ⚠ WebUI backend timeout (non-fatal)" || sleep 1
+			[ $i -eq 60 ] && echo "  ⚠ WebUI backend timeout (non-fatal)" || sleep 2
 		done
 		cd "$ROOT_DIR"
 	else
