@@ -211,24 +211,42 @@ class Database:
             return
         
         with open(csv_file, 'r') as f:
-            # Read all lines and filter out comments
+            # Read all lines
             all_lines = f.readlines()
-            # Find the header line (first non-comment line)
+            
+            # Find header: look for "# env,provider,..." pattern in comments
             header_line = None
-            data_start = 0
-            for i, line in enumerate(all_lines):
+            for line in all_lines:
                 stripped = line.strip()
-                if stripped and not stripped.startswith('#'):
-                    header_line = line
-                    data_start = i
+                if stripped.startswith('#') and 'env' in stripped and 'provider' in stripped:
+                    # Extract header from comment line
+                    header_line = stripped[1:].strip()  # Remove leading '#'
                     break
+            
+            # If no header in comments, use first non-comment line
+            if not header_line:
+                for line in all_lines:
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith('#'):
+                        header_line = stripped
+                        break
             
             if not header_line:
                 return
             
-            # Create a file-like object from remaining lines
+            # Find data lines (non-comment, non-empty)
+            data_lines = []
+            for line in all_lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    data_lines.append(line)
+            
+            if not data_lines:
+                return
+            
+            # Create a file-like object with header + data
             import io
-            csv_content = ''.join([header_line] + all_lines[data_start + 1:])
+            csv_content = header_line + '\n' + ''.join(data_lines)
             reader = csv.DictReader(io.StringIO(csv_content))
             
             for row in reader:
