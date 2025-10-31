@@ -211,8 +211,29 @@ class Database:
             return
         
         with open(csv_file, 'r') as f:
-            reader = csv.DictReader(f)
+            # Read all lines and filter out comments
+            all_lines = f.readlines()
+            # Find the header line (first non-comment line)
+            header_line = None
+            data_start = 0
+            for i, line in enumerate(all_lines):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    header_line = line
+                    data_start = i
+                    break
+            
+            if not header_line:
+                return
+            
+            # Create a file-like object from remaining lines
+            import io
+            csv_content = ''.join([header_line] + all_lines[data_start + 1:])
+            reader = csv.DictReader(io.StringIO(csv_content))
+            
             for row in reader:
+                if 'env' not in row or not row['env']:
+                    continue
                 cluster_name = row['env']
                 
                 # Check if exists
