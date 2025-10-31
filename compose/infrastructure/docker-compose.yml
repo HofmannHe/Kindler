@@ -39,11 +39,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ../../scripts:/app/scripts:ro
+      - ../../config:/app/config:ro
       - ${HOME}/.kube:/root/.kube:ro
+      - webui_data:/data/kindler-webui
     environment:
       - BASE_DOMAIN=${BASE_DOMAIN:-192.168.51.30.sslip.io}
       - PYTHONUNBUFFERED=1
-      - DEMO_MODE=true
+      - DEMO_MODE=false
+      - CSV_PATH=/app/config/environments.csv
     networks:
       infrastructure:
       k3d-shared:
@@ -84,3 +87,4 @@ volumes:
   portainer_secrets:
     external: true
   haproxy_certs:
+  webui_data:
