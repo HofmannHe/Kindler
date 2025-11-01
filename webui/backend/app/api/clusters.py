@@ -25,13 +25,9 @@ async def list_clusters():
     try:
         db_clusters = await db_service.list_clusters()
 
-        # Enhance with runtime status and include reconcile fields
+        # 使用声明式状态作为权威来源，避免容器内 kubectl 对 0.0.0.0 的访问问题
         result = []
         for cluster in db_clusters:
-            status_info = await cluster_service.get_cluster_status(
-                cluster["name"], cluster["provider"]
-            )
-
             cluster_info = ClusterInfo(
                 name=cluster["name"],
                 provider=cluster["provider"],
@@ -43,7 +39,7 @@ async def list_clusters():
                 register_portainer=True,
                 haproxy_route=True,
                 register_argocd=True,
-                status=status_info.get("status", "unknown"),
+                status=cluster.get("actual_state") or cluster.get("status") or "unknown",
                 created_at=cluster.get("created_at"),
                 updated_at=cluster.get("updated_at"),
                 desired_state=cluster.get("desired_state"),
@@ -119,11 +115,6 @@ async def get_cluster(name: str):
         if not cluster:
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
         
-        status_info = await cluster_service.get_cluster_status(
-            cluster["name"],
-            cluster["provider"]
-        )
-        
         return ClusterInfo(
             name=cluster["name"],
             provider=cluster["provider"],
@@ -135,7 +126,7 @@ async def get_cluster(name: str):
             register_portainer=True,
             haproxy_route=True,
             register_argocd=True,
-            status=status_info.get("status", "unknown"),
+            status=cluster.get("actual_state") or cluster.get("status") or "unknown",
             created_at=cluster.get("created_at"),
             updated_at=cluster.get("updated_at"),
             desired_state=cluster.get("desired_state"),
@@ -199,20 +190,14 @@ async def get_cluster_status(name: str):
         if not cluster:
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
         
-        # Get runtime status
-        status_info = await cluster_service.get_cluster_status(
-            cluster["name"],
-            cluster["provider"]
-        )
-        
         return ClusterStatus(
             name=name,
-            status=status_info.get("status", "unknown"),
-            nodes_ready=status_info.get("nodes_ready", 0),
-            nodes_total=status_info.get("nodes_total", 0),
-            portainer_status="unknown",  # TODO: Query Portainer API
-            argocd_status="unknown",  # TODO: Query ArgoCD API
-            error_message=status_info.get("error")
+            status=cluster.get("actual_state") or cluster.get("status") or "unknown",
+            nodes_ready=0,
+            nodes_total=0,
+            portainer_status="unknown",
+            argocd_status="unknown",
+            error_message=cluster.get("reconcile_error")
         )
     
     except HTTPException:

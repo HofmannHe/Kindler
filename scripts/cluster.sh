@@ -147,6 +147,14 @@ YAML
   if [ -n "${KIND_NODE_IMAGE:-}" ]; then img_arg="--image ${KIND_NODE_IMAGE}"; fi
   run "kind create cluster --name ${name} --config ${cfg} ${img_arg}"
   limit_node_resources kind "$name"
+
+  # 修正 kubeconfig 中的 0.0.0.0 地址为 127.0.0.1（主机访问更稳定）
+  local host_port
+  host_port=$(docker port "${name}-control-plane" 6443/tcp 2>/dev/null | awk -F: '{print $NF}' | tail -1 || true)
+  if [ -n "$host_port" ]; then
+    log INFO "Fixing kind kubeconfig server from 0.0.0.0:$host_port to 127.0.0.1:$host_port"
+    kubectl config set-cluster "kind-${name}" --server="https://127.0.0.1:${host_port}" >/dev/null 2>&1 || true
+  fi
 }
 
 delete_kind() { local name="$1"; need_cmd kind || return 0; run "kind delete cluster --name ${name}"; }
