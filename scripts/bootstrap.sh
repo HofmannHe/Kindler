@@ -45,12 +45,13 @@ main() {
 		echo "[NETWORK] Shared network already exists"
 	fi
 
-	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists"
+	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists (bcrypt admin password)"
 	if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
 	: "${PORTAINER_ADMIN_PASSWORD:=admin123}"
 	docker volume inspect portainer_secrets >/dev/null 2>&1 || docker volume create portainer_secrets >/dev/null
-	docker run --rm -v portainer_secrets:/run/secrets alpine:3.20 \
-		sh -lc "umask 077; printf '%s' '$PORTAINER_ADMIN_PASSWORD' > /run/secrets/portainer_admin"
+	# 生成 bcrypt 哈希（Portainer 要求 --admin-password(-file) 为 bcrypt）
+	docker run --rm -v portainer_secrets:/run/secrets httpd:alpine \
+		sh -lc "umask 077; htpasswd -nbB admin '"$PORTAINER_ADMIN_PASSWORD"' | awk -F: '{print \$2}' > /run/secrets/portainer_admin"
 
 	echo "[BOOTSTRAP] Ensure HAProxy config has correct permissions"
 	chmod 644 "$ROOT_DIR/compose/infrastructure/haproxy.cfg" 2>/dev/null || true
