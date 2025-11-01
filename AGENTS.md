@@ -43,9 +43,9 @@
 ### 核心组件
 1. **HAProxy**: 统一入口网关，所有外部访问的唯一入口
 2. **Portainer CE**: 容器和集群统一管理界面
-3. **devops 集群**: 管理集群，运行 ArgoCD、PostgreSQL、pgAdmin 等 DevOps 和 PaaS 服务
+3. **devops 集群**: 管理集群，运行 ArgoCD 等 DevOps 服务
 4. **业务集群**: 运行实际应用的 k3d/kind 集群
-5. **PaaS 服务**: PostgreSQL 和 pgAdmin 部署在 devops 集群，供所有业务集群使用
+5. **数据存储**: SQLite 数据库存储在 WebUI 后端容器中（`/data/kindler-webui/kindler.db`），所有脚本和 WebUI 共享
 
 ### GitOps 工作流
 - **外部 Git 服务**: 托管应用代码（在 `config/git.env` 中配置）
@@ -62,9 +62,9 @@
 ### 生命周期管理
 
 #### devops 集群（管理集群）
-- **创建**: 通过 `bootstrap.sh` 创建，包含 HAProxy、Portainer、ArgoCD、PostgreSQL、pgAdmin
+- **创建**: 通过 `bootstrap.sh` 创建，包含 HAProxy、Portainer、ArgoCD、WebUI
 - **清理**: 默认不清理，需要 `clean.sh --all` 或 `clean.sh --include-devops` 才会清理
-- **说明**: devops 集群是管理集群，存储所有业务集群的配置和状态，通常保持运行
+- **说明**: devops 集群是管理集群，通常保持运行
 
 #### 业务集群
 - **创建**: `create_env.sh -n <name> -p kind|k3d` - 自动注册到 Portainer（Edge Agent）和 ArgoCD
@@ -205,22 +205,25 @@
 - ArgoCD 本身的安装和配置（通过 `scripts/setup_devops.sh`）
 - 临时调试用途（需在调试完成后清理）
 
-## PaaS 服务规范
+## 数据存储规范
 
-### PostgreSQL
-- **部署位置**: devops 集群的 `paas` namespace
+### SQLite 数据库
+- **部署位置**: WebUI 后端容器内（`/data/kindler-webui/kindler.db`）
 - **用途**: 存储集群配置信息（clusters 表）
-- **访问方式**: 集群内通过 `postgresql.paas.svc.cluster.local:5432`
-- **管理方式**: 由 ArgoCD 管理，配置存储在外部 Git 仓库
+- **访问方式**: 
+  - 脚本系统：通过 `scripts/lib_sqlite.sh` 访问（支持容器内外执行）
+  - WebUI 后端：通过 Python `app/db.py` 直接访问
+- **并发安全**: 使用文件锁（flock）确保并发操作安全
+- **初始化**: 在 `bootstrap.sh` 时自动初始化表结构
 
-### pgAdmin
-- **部署位置**: devops 集群的 `paas` namespace
-- **访问地址**: `https://pgadmin.devops.192.168.51.30.sslip.io`
-- **用途**: PostgreSQL 数据库管理界面
-- **管理方式**: 由 ArgoCD 管理，通过 Traefik Ingress 暴露
+### CSV 文件（仅初始化）
+- **位置**: `config/environments.csv`
+- **用途**: 仅在 `bootstrap.sh` 时一次性导入到 SQLite
+- **幂等性**: CSV 导入是幂等的（已存在则更新）
+- **说明**: 创建/删除集群操作不再读取 CSV，所有操作都基于 SQLite
 
 ### 集群配置管理
-- **优先级**: PostgreSQL > CSV 文件
-- **回退机制**: 数据库不可用时自动使用 `config/environments.csv`
-- **数据同步**: 创建/删除集群时自动更新数据库记录
-- **迁移工具**: `scripts/migrate_csv_to_db.sh` 用于一次性迁移
+- **数据源**: SQLite 为唯一真实数据源
+- **回退机制**: 数据库不可用时使用硬编码默认值
+- **数据同步**: 创建/删除集群时自动更新 SQLite 记录
+- **并发支持**: 通过文件锁和事务确保并发操作的数据一致性

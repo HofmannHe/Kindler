@@ -55,11 +55,33 @@ class Database:
                     pf_port INTEGER,
                     http_port INTEGER,
                     https_port INTEGER,
+                    server_ip TEXT,
                     status TEXT DEFAULT 'unknown',
+                    desired_state TEXT DEFAULT 'present',
+                    actual_state TEXT DEFAULT 'unknown',
+                    last_reconciled_at TIMESTAMP,
+                    reconcile_error TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Add new columns if they don't exist (for existing databases)
+            cursor.execute("""
+                PRAGMA table_info(clusters);
+            """)
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'server_ip' not in columns:
+                cursor.execute("ALTER TABLE clusters ADD COLUMN server_ip TEXT;")
+            if 'desired_state' not in columns:
+                cursor.execute("ALTER TABLE clusters ADD COLUMN desired_state TEXT DEFAULT 'present';")
+            if 'actual_state' not in columns:
+                cursor.execute("ALTER TABLE clusters ADD COLUMN actual_state TEXT DEFAULT 'unknown';")
+            if 'last_reconciled_at' not in columns:
+                cursor.execute("ALTER TABLE clusters ADD COLUMN last_reconciled_at TIMESTAMP;")
+            if 'reconcile_error' not in columns:
+                cursor.execute("ALTER TABLE clusters ADD COLUMN reconcile_error TEXT;")
             
             # Operations log table
             cursor.execute("""
@@ -111,8 +133,8 @@ class Database:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, server_ip, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 cluster['name'],
                 cluster['provider'],
@@ -121,6 +143,7 @@ class Database:
                 cluster.get('pf_port'),
                 cluster.get('http_port'),
                 cluster.get('https_port'),
+                cluster.get('server_ip'),
                 cluster.get('status', 'creating')
             ))
             return cursor.lastrowid

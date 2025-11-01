@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 echo "=========================================="
 echo "  清理孤立 Git 分支"

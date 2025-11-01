@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
@@ -47,10 +47,24 @@ generate_applicationset() {
   local first=1
   local cluster_count=0
 
-  # 从数据库读取所有集群（排除 devops）
+  # 从数据库读取所有集群（排除 devops），但只包含实际存在的集群
   while IFS='|' read -r name provider _; do
     # 跳过 devops 环境（不部署 whoami）
     [[ "$name" == "devops" ]] && continue
+    
+    # 验证集群是否实际存在（检查 kubectl context）
+    local ctx=""
+    if [ "$provider" = "k3d" ]; then
+      ctx="k3d-${name}"
+    else
+      ctx="kind-${name}"
+    fi
+    
+    # 验证集群是否存在且可访问
+    if ! kubectl --context "$ctx" get nodes >/dev/null 2>&1; then
+      log "  ⚠ 跳过不存在的集群: $name (context: $ctx)"
+      continue
+    fi
     
     # 分支名 = 集群名（一对一映射）
     local branch="$name"
@@ -71,7 +85,8 @@ generate_applicationset() {
         ingressClass: ${ingress_class}"
     
     cluster_count=$((cluster_count + 1))
-  done < <(db_query "SELECT name, provider, node_port FROM clusters ORDER BY name;" 2>/dev/null || echo "")
+    log "  ✓ 添加集群: $name ($provider, context: $ctx)"
+  done < <(sqlite_query "SELECT name, provider, node_port FROM clusters WHERE name != 'devops' ORDER BY name;" 2>/dev/null || echo "")
 
   if [ $cluster_count -eq 0 ]; then
     log "⚠️  数据库中没有业务集群记录"

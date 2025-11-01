@@ -191,20 +191,25 @@ main() {
         exit 1
     fi
     
-    # 步骤3: 创建业务集群（仅3个k3d集群: dev, uat, prod）
+    # 步骤3: 创建业务集群（动态：从 CSV 读取，排除 devops）
     echo ""
     echo "╔════════════════════════════════════════╗"
     echo "║  步骤 3/4: 创建业务集群 (3个k3d)       ║"
     echo "╚════════════════════════════════════════╝"
     local cluster_count=0
-    for cluster in dev uat prod; do
+    # 读取 environments.csv 中的业务集群列表（按顺序，最多创建前3个，避免过长测试时间）
+    mapfile -t biz_clusters < <(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | head -n 3)
+    if [ ${#biz_clusters[@]} -eq 0 ]; then
+        log_warn "CSV 未定义业务集群，跳过此步骤"
+    fi
+    for cluster in "${biz_clusters[@]}"; do
         cluster_count=$((cluster_count + 1))
         echo ""
         log_info "┌─────────────────────────────────────"
-        log_info "│ 创建集群 ${cluster_count}/3: $cluster"
+        log_info "│ 创建集群 ${cluster_count}: $cluster"
         log_info "└─────────────────────────────────────"
         if ! run_with_timeout 300 "创建集群 $cluster" \
-            "$ROOT_DIR/scripts/create_env.sh -n $cluster -p k3d"; then
+            "$ROOT_DIR/scripts/create_env.sh -n $cluster"; then
             log_error "❌ 创建集群 $cluster 失败，终止测试"
             exit 1
         fi

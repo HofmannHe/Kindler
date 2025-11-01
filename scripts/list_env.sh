@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "$ROOT_DIR/scripts/lib_db.sh"
+source "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 echo "=========================================="
 echo "  环境列表"
@@ -13,7 +13,7 @@ echo ""
 
 # 尝试从数据库读取
 if db_is_available 2>/dev/null; then
-  echo "[INFO] 数据来源: PostgreSQL 数据库"
+  echo "[INFO] 数据来源: SQLite 数据库"
   echo ""
   
   # 查询所有集群

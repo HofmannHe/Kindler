@@ -166,6 +166,13 @@ sequenceDiagram
    - 部署 ArgoCD (GitOps 引擎)
    - 校验 `config/git.env` 中配置的外部 Git 仓库
 
+### 声明式集群管理
+
+- WebUI 采用声明式：仅写入 SQLite 数据库中的期望状态；由宿主机上的 Reconciler 调用与预置集群相同的 `scripts/create_env.sh` 完成实际创建与 Portainer/ArgoCD 注册。
+- `bootstrap.sh` 会自动启动 Reconciler，可通过以下命令管理：
+  - `./scripts/start_reconciler.sh start|stop|status|logs`
+- 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
+
 4. **一键拉起（含计时/健康检查，建议）**
    ```bash
    # 可选：先全量清理

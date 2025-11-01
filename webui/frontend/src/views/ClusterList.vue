@@ -103,6 +103,17 @@ const columns = [
     }
   },
   {
+    title: '调和(期望/实际)',
+    key: 'reconcile',
+    width: 160,
+    render: (row) => {
+      const desired = row.desired_state || '-'
+      const actual = row.actual_state || '-'
+      const type = desired === actual && desired ? 'success' : 'warning'
+      return h(NTag, { type }, () => `${desired} / ${actual}`)
+    }
+  },
+  {
     title: 'HTTP Port',
     key: 'http_port',
     width: 120
@@ -356,4 +367,3 @@ onUnmounted(() => {
   })
 })
 </script>
-

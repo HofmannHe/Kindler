@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 usage() { echo "Usage: $0 -n <name> [-p kind|k3d]" >&2; exit 1; }
 

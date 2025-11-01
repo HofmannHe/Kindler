@@ -4,6 +4,8 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
+# 需要从 SQLite 数据库获取 provider 等信息
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
 DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
 LOCK_FILE="/tmp/haproxy_route.lock"
@@ -24,6 +26,11 @@ shift 2 || true
 label="$(env_label "$name")"
 [ -n "$label" ] || label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
 provider="$(provider_for "$name")"
+# 保护规则：禁止为 devops 生成动态 ACL/路由（避免与管理域名冲突）
+if [ "$name" = "devops" ]; then
+  echo "[haproxy] SKIP dynamic routing for 'devops' (management cluster is handled by explicit routes)"
+  exit 0
+fi
 case "$provider" in
 k3d) network_name="k3d-${name}" ;;
 kind) network_name="kind" ;;
@@ -151,7 +158,7 @@ add_acl() {
       ins=1
     }
   ' "$CFG" >"$tmp"
-	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
+  mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
 
 

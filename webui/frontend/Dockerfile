@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Configure npm to use Chinese mirror (default, not fallback)
+RUN npm config set registry https://registry.npmmirror.com
+
 # Copy package files
 COPY package.json ./
 RUN npm install

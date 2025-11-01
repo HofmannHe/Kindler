@@ -62,6 +62,24 @@ http_request() {
   fi
 }
 
+# 数据库查询（PostgreSQL 优先，失败则回退到 SQLite）
+db_get_value() {
+  local sql="$1" # 仅返回第一行第一列
+  # 尝试 Postgres（devops 集群内）
+  if kubectl --context k3d-devops -n paas get pod postgresql-0 >/dev/null 2>&1; then
+    kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+      psql -U kindler -d kindler -t -c "$sql" 2>/dev/null | xargs || true
+    return 0
+  fi
+  # 回退到 SQLite（WebUI 后端容器内）
+  if docker ps --format '{{.Names}}' | grep -q '^kindler-webui-backend$'; then
+    docker exec kindler-webui-backend sh -lc \
+      "sqlite3 -readonly /data/kindler-webui/kindler.db \"$sql\"" 2>/dev/null | xargs || true
+    return 0
+  fi
+  echo ""
+}
+
 # ==================================================
 # 测试用例 1: GET /api/clusters 返回 200
 # ==================================================
@@ -486,9 +504,14 @@ test_api_create_cluster_e2e() {
     sleep 5
   fi
   
-  # 清理数据库记录
-  kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-    psql -U kindler -d kindler -c "DELETE FROM clusters WHERE name='$cluster_name';" 2>/dev/null || true
+  # 清理数据库记录（PostgreSQL → SQLite 回退）
+  if kubectl --context k3d-devops -n paas get pod postgresql-0 >/dev/null 2>&1; then
+    kubectl --context k3d-devops -n paas exec postgresql-0 -- \
+      psql -U kindler -d kindler -c "DELETE FROM clusters WHERE name='$cluster_name';" 2>/dev/null || true
+  elif docker ps --format '{{.Names}}' | grep -q '^kindler-webui-backend$'; then
+    docker exec kindler-webui-backend sh -lc \
+      "sqlite3 /data/kindler-webui/kindler.db \"DELETE FROM clusters WHERE name='$cluster_name';\"" 2>/dev/null || true
+  fi
   
   # 清理 ArgoCD secret
   kubectl --context k3d-devops delete secret "cluster-$cluster_name" -n argocd 2>/dev/null || true
@@ -540,7 +563,7 @@ test_api_create_cluster_e2e() {
     return 1
   fi
   
-  # 3. 等待 server_ip 更新到数据库（最多 120秒）
+  # 3. 等待 server_ip 更新到数据库（最多 120秒，支持 SQLite 回退）
   echo "  [3/7] Waiting for server_ip in database (max 120s)..."
   local max_wait=120
   local interval=5
@@ -548,9 +571,7 @@ test_api_create_cluster_e2e() {
   local db_server_ip=""
   
   while [ $elapsed -lt $max_wait ]; do
-    db_server_ip=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-      psql -U kindler -d kindler -t \
-      -c "SELECT server_ip FROM clusters WHERE name='$cluster_name';" 2>/dev/null | xargs || echo "")
+    db_server_ip=$(db_get_value "SELECT server_ip FROM clusters WHERE name='$cluster_name';" || echo "")
     
     if [ -n "$db_server_ip" ] && [ "$db_server_ip" != "null" ]; then
       echo "  ✓ Database: server_ip updated ($db_server_ip, after ${elapsed}s)"
@@ -561,7 +582,7 @@ test_api_create_cluster_e2e() {
     elapsed=$((elapsed + interval))
   done
   
-  # 4. 验证数据库记录
+  # 4. 验证数据库记录（支持 SQLite 回退）
   echo "  [4/7] Verifying database record..."
   if [ -z "$db_server_ip" ] || [ "$db_server_ip" = "null" ]; then
     echo "  ✗ Database: server_ip still empty after ${max_wait}s"
@@ -684,9 +705,7 @@ test_api_delete_cluster_e2e() {
   
   # 4. 验证数据库清理
   echo "  [4/6] Verifying database cleanup..."
-  local db_count=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-    psql -U kindler -d kindler -t \
-    -c "SELECT COUNT(*) FROM clusters WHERE name='$cluster_name';" 2>/dev/null | xargs || echo "1")
+  local db_count=$(db_get_value "SELECT COUNT(*) FROM clusters WHERE name='$cluster_name';" || echo "1")
   
   if [ "$db_count" = "0" ]; then
     echo "  ✓ Database: record deleted"
@@ -738,4 +757,3 @@ test_api_delete_cluster_e2e() {
 
 # 执行主函数
 main "$@"
-

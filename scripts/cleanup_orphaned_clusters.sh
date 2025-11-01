@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 echo "=========================================="
 echo "  清理孤立 Kubernetes 集群"
@@ -21,7 +21,7 @@ load_env
 # 读取 DB 中的集群列表
 echo "[1/3] 读取数据库记录..."
 if db_is_available 2>/dev/null; then
-  db_clusters=$(db_exec "SELECT name FROM clusters ORDER BY name;" | tail -n +3 | head -n -2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  db_clusters=$(sqlite_query "SELECT name FROM clusters ORDER BY name;" 2>/dev/null | grep -v '^$' || echo "")
   echo "  ✓ DB: $(echo "$db_clusters" | grep -c '^' || echo "0") clusters"
 else
   echo "  ⚠ DB not available, using CSV"

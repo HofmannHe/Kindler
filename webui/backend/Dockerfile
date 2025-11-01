@@ -34,14 +34,15 @@ RUN apt-get clean && \
     apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
+        sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install kubectl (using Chinese mirror for faster download)
+# Install kubectl
 RUN KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt) && \
-    curl -LO "https://mirrors.aliyun.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" || \
     curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
     chmod +x kubectl && \
-    mv kubectl /usr/local/bin/
+    mv kubectl /usr/local/bin/ && \
+    kubectl version --client
 
 # Install docker CLI (for docker ps, docker exec, etc.)
 RUN curl -fsSL https://get.docker.com -o get-docker.sh \

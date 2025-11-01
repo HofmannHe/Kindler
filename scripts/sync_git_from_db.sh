@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 echo "=========================================="
 echo "  从数据库同步 Git 分支"
@@ -28,14 +28,14 @@ fi
 if ! db_is_available 2>/dev/null; then
   echo "[ERROR] Database not available" >&2
   echo "Please ensure:" >&2
-  echo "  1. devops cluster is running" >&2
-  echo "  2. PostgreSQL Pod is ready" >&2
+  echo "  1. WebUI backend container is running" >&2
+  echo "  2. SQLite database is accessible" >&2
   exit 1
 fi
 
-# 读取 DB 中的集群列表
+# 读取 DB 中的集群列表（排除 devops）
 echo "[1/3] 读取数据库记录..."
-clusters=$(db_exec "SELECT name FROM clusters WHERE name != 'devops' ORDER BY name;" | tail -n +3 | head -n -2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+clusters=$(sqlite_query "SELECT name FROM clusters WHERE name != 'devops' ORDER BY name;" 2>/dev/null | grep -v '^$' || echo "")
 count=$(echo "$clusters" | grep -c '^' || echo "0")
 
 if [ "$count" -eq 0 ]; then

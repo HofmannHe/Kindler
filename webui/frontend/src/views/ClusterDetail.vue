@@ -21,6 +21,8 @@
           <n-descriptions-item label="名称">{{ cluster.name }}</n-descriptions-item>
           <n-descriptions-item label="Provider">{{ cluster.provider }}</n-descriptions-item>
           <n-descriptions-item label="状态">{{ statusText }}</n-descriptions-item>
+          <n-descriptions-item label="期望状态">{{ cluster.desired_state || '-' }}</n-descriptions-item>
+          <n-descriptions-item label="实际状态">{{ cluster.actual_state || '-' }}</n-descriptions-item>
           <n-descriptions-item label="Node Port">{{ cluster.node_port }}</n-descriptions-item>
           <n-descriptions-item label="Port Forward Port">{{ cluster.pf_port }}</n-descriptions-item>
           <n-descriptions-item label="HTTP Port">{{ cluster.http_port }}</n-descriptions-item>
@@ -33,6 +35,12 @@
           </n-descriptions-item>
           <n-descriptions-item label="更新时间">
             {{ cluster.updated_at ? new Date(cluster.updated_at).toLocaleString('zh-CN') : '-' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="最后调和时间">
+            {{ cluster.last_reconciled_at ? new Date(cluster.last_reconciled_at).toLocaleString('zh-CN') : '-' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="调和错误" v-if="cluster.reconcile_error">
+            <n-text type="error">{{ cluster.reconcile_error }}</n-text>
           </n-descriptions-item>
         </n-descriptions>
       </n-card>
@@ -163,4 +171,3 @@ onMounted(() => {
   loadConfig()
 })
 </script>
-

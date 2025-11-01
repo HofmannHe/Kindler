@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_db.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 usage() {
   cat >&2 <<USAGE
@@ -301,13 +301,11 @@ if [ -f "$ROOT_DIR/scripts/create_git_branch.sh" ]; then
   if "$ROOT_DIR/scripts/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
     echo "[INFO] ✓ Git branch created successfully"
   else
-    echo "[ERROR] Git branch creation failed"
-    echo "[ERROR] This is a critical failure - cluster cannot function without Git branch"
-    exit 1
+    echo "[WARN] Git branch creation failed (continuing)"
+    echo "[WARN] GitOps deployment may not function until repository is reachable"
   fi
 else
-  echo "[ERROR] create_git_branch.sh not found"
-  exit 1
+  echo "[WARN] create_git_branch.sh not found (skipping Git branch creation)"
 fi
 
 # 保存集群配置到数据库（可选，失败不影响核心功能）
@@ -390,14 +388,14 @@ if db_is_available 2>/dev/null; then
   Error: $(cat /tmp/db_insert_error.log 2>/dev/null || echo 'no error log')
   
   Fix Suggestions:
-    1. Check if server_ip column exists in clusters table:
-       kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'
+    1. Check if SQLite database is accessible:
+       docker exec kindler-webui-backend sqlite3 /data/kindler-webui/kindler.db "SELECT * FROM clusters WHERE name='$name';"
     
-    2. Verify database connectivity:
-       kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c 'SELECT 1;'
+    2. Verify WebUI backend container is running:
+       docker ps | grep kindler-webui-backend
     
-    3. Check PostgreSQL pod status:
-       kubectl --context k3d-devops get pods -n paas
+    3. Check database file permissions:
+       docker exec kindler-webui-backend ls -la /data/kindler-webui/kindler.db
   
   Note: Cluster is created successfully, but not recorded in database.
         WebUI will not show this cluster until database record is added.

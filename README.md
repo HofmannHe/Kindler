@@ -852,3 +852,9 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - 📚 Documentation: [docs/](./docs/)
 - 🐛 Issues: [GitHub Issues](https://github.com/hofmannhe/kindler/issues)
 - 💬 Discussions: [GitHub Discussions](https://github.com/hofmannhe/kindler/discussions)
+### Declarative Cluster Management
+
+- WebUI uses a declarative flow: it writes desired state to the SQLite DB; a background reconciler running on the host performs actual creation/registration (Portainer Edge, ArgoCD) by invoking the same `scripts/create_env.sh` used for predefined clusters.
+- Bootstrap now starts the reconciler automatically. You can manage it via:
+  - `./scripts/start_reconciler.sh start|stop|status|logs`
+- Deletion is declarative too: `DELETE /api/clusters/{name}` sets `desired_state=absent`; the reconciler deletes the cluster and removes its DB record when finished.

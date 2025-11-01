@@ -9,9 +9,9 @@ class ClusterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern="^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
     provider: str = Field(..., pattern="^(kind|k3d)$")
     node_port: int = Field(default=30080, ge=1024, le=65535)
-    pf_port: int = Field(..., ge=1024, le=65535)
-    http_port: int = Field(..., ge=1024, le=65535)
-    https_port: int = Field(..., ge=1024, le=65535)
+    pf_port: int = Field(default=19000, ge=1024, le=65535)
+    http_port: int = Field(default=18080, ge=1024, le=65535)
+    https_port: int = Field(default=18443, ge=1024, le=65535)
     cluster_subnet: Optional[str] = Field(default=None)
     register_portainer: bool = True
     haproxy_route: bool = True
@@ -49,6 +49,11 @@ class ClusterInfo(ClusterBase):
     status: str = Field(default="unknown")  # running, stopped, creating, deleting, error
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # Declarative reconcile fields (from database)
+    desired_state: Optional[str] = Field(default=None)  # present | absent
+    actual_state: Optional[str] = Field(default=None)   # unknown | creating | running | failed | deleting
+    last_reconciled_at: Optional[str] = None
+    reconcile_error: Optional[str] = None
 
 
 class ClusterStatus(BaseModel):
@@ -60,4 +65,3 @@ class ClusterStatus(BaseModel):
     portainer_status: str = "unknown"  # online, offline, unknown
     argocd_status: str = "unknown"  # healthy, degraded, unknown
     error_message: Optional[str] = None
-

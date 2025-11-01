@@ -47,6 +47,7 @@ services:
       - PYTHONUNBUFFERED=1
       - DEMO_MODE=false
       - CSV_PATH=/app/config/environments.csv
+      - SCRIPTS_DIR=/app/scripts
     networks:
       infrastructure:
       k3d-shared:

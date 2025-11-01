@@ -16,15 +16,60 @@ spec:
         branch: dev
         clusterName: dev
         ingressClass: traefik
+      - env: dev-kind
+        hostEnv: dev-kind
+        branch: dev-kind
+        clusterName: dev-kind
+        ingressClass: traefik
       - env: prod
         hostEnv: prod
         branch: prod
         clusterName: prod
         ingressClass: traefik
+      - env: prod-kind
+        hostEnv: prod-kind
+        branch: prod-kind
+        clusterName: prod-kind
+        ingressClass: traefik
+      - env: test
+        hostEnv: test
+        branch: test
+        clusterName: test
+        ingressClass: traefik
+      - env: test-con1
+        hostEnv: test-con1
+        branch: test-con1
+        clusterName: test-con1
+        ingressClass: traefik
+      - env: test-con2
+        hostEnv: test-con2
+        branch: test-con2
+        clusterName: test-con2
+        ingressClass: traefik
+      - env: test1
+        hostEnv: test1
+        branch: test1
+        clusterName: test1
+        ingressClass: traefik
+      - env: test3
+        hostEnv: test3
+        branch: test3
+        clusterName: test3
+        ingressClass: traefik
+      - env: test4
+        hostEnv: test4
+        branch: test4
+        clusterName: test4
+        ingressClass: traefik
       - env: uat
         hostEnv: uat
         branch: uat
         clusterName: uat
+        ingressClass: traefik
+      - env: uat-kind
+        hostEnv: uat-kind
+        branch: uat-kind
+        clusterName: uat-kind
         ingressClass: traefik
   template:
     metadata:
@@ -35,7 +80,7 @@ spec:
     spec:
       project: default
       source:
-        repoURL: 'http://git.devops.192.168.51.30.sslip.io/fc005/devops.git'
+        repoURL: 'http://192.168.51.30:6080/fc005/devops.git'
         path: deploy
         # 每个集群对应一个同名的 Git 分支
         targetRevision: '{{.branch}}'

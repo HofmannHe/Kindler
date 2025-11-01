@@ -434,3 +434,231 @@ ab124ba - fix: WebUI CSV 同步修复，正确处理注释行
 490b170 - fix: WebUI CSV 同步逻辑完善，从注释行提取表头
 ```
 
+# Smoke Test @ 2025-11-01 21:36:58
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.dev.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-11-01 21:36:59
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.uat.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-11-01 21:36:59
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.prod.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-11-01 21:36:59
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.devkind.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-11-01 21:37:00
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.uatkind.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n
+# Smoke Test @ 2025-11-01 21:37:00
+- HAPROXY_HOST: 127.0.0.1
+- BASE_DOMAIN: local
+\n## Containers
+NAMES                     IMAGE                                   STATUS
+prod-kind-control-plane   kindest/node:v1.31.12                   Up 8 minutes
+uat-kind-control-plane    kindest/node:v1.31.12                   Up 9 minutes
+dev-kind-control-plane    kindest/node:v1.31.12                   Up 10 minutes
+k3d-prod-serverlb         ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 19 minutes
+k3d-prod-server-0         rancher/k3s:v1.31.5-k3s1                Up 19 minutes
+k3d-uat-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 20 minutes
+k3d-uat-server-0          rancher/k3s:v1.31.5-k3s1                Up 20 minutes
+k3d-dev-serverlb          ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 21 minutes
+k3d-dev-server-0          rancher/k3s:v1.31.5-k3s1                Up 21 minutes
+k3d-devops-serverlb       ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 23 minutes
+k3d-devops-server-0       rancher/k3s:v1.31.5-k3s1                Up 23 minutes
+kindler-webui-frontend    infrastructure-kindler-webui-frontend   Up 2 minutes (unhealthy)
+kindler-webui-backend     infrastructure-kindler-webui-backend    Up 2 minutes (healthy)
+portainer-ce              portainer/portainer-ce:2.33.2-alpine    Up 2 minutes
+haproxy-gw                haproxy:3.2.6-alpine3.22                Up About a minute
+romantic_mclaren          ghcr.io/github/github-mcp-server        Up 4 hours
+eager_cori                ghcr.io/github/github-mcp-server        Up 4 hours
+trusting_williamson       ghcr.io/github/github-mcp-server        Up 30 hours
+affectionate_greider      ghcr.io/github/github-mcp-server        Up 30 hours
+goofy_solomon             ghcr.io/github/github-mcp-server        Up 2 days
+gitlab                    gitlab/gitlab-ce:17.11.7-ce.0           Up 30 hours (healthy)
+local-registry            registry:2                              Up 2 weeks
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.1 301 Moved Permanently
+\n- Portainer HTTPS (443)
+  HTTP/2 200 
+\n- Ingress Host (whoami.prodkind.local via 80)
+  HTTP/1.1 404 Not Found
+
+## Portainer Endpoints
+- login failed
+\n---\n

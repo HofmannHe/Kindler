@@ -51,6 +51,24 @@ register_repo() {
   log "✓ 仓库已注册: ${repo_url}"
 }
 
+register_repo_creds() {
+  local server_url="$1"
+  log "注册主机级 Git 凭据 (repo-creds): ${server_url}"
+  local name="gitlab-host-creds"
+  local args=("--from-literal=url=${server_url}")
+  if [ -n "$GIT_USERNAME" ]; then
+    args+=("--from-literal=username=${GIT_USERNAME}")
+  fi
+  if [ -n "$GIT_PASSWORD" ]; then
+    args+=("--from-literal=password=${GIT_PASSWORD}")
+  fi
+  kubectl create secret generic "$name" -n argocd \
+    "${args[@]}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl label secret "$name" -n argocd argocd.argoproj.io/secret-type=repo-creds --overwrite >/dev/null
+  log "✓ 主机级凭据已注册: ${server_url}"
+}
+
 deploy_applicationset() {
   log "部署 whoami ApplicationSet（动态生成）..."
   # 使用动态生成而非静态文件，确保与数据库一致
@@ -78,6 +96,10 @@ main() {
   fi
 
   register_repo "$GIT_REPO_URL"
+  # 额外为主机注册通配凭据，增强匹配鲁棒性
+  if [ -n "${GIT_SERVER_URL:-}" ]; then
+    register_repo_creds "$GIT_SERVER_URL"
+  fi
   deploy_applicationset
 
   log "✅ 外部 Git 仓库已注册到 ArgoCD"

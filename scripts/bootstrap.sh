@@ -141,51 +141,6 @@ main() {
 	echo "[BOOTSTRAP] Register external Git repository to ArgoCD"
 	"$ROOT_DIR/scripts/register_git_to_argocd.sh" devops
 	
-	echo "[BOOTSTRAP] Deploy PostgreSQL via ArgoCD"
-	"$ROOT_DIR/scripts/deploy_postgresql_gitops.sh"
-	
-	echo "[BOOTSTRAP] Setup PostgreSQL NodePort Service"
-	"$ROOT_DIR/scripts/setup_postgresql_nodeport.sh"
-	
-	echo "[BOOTSTRAP] Setup HAProxy PostgreSQL TCP proxy"
-	"$ROOT_DIR/scripts/setup_haproxy_postgres.sh"
-	
-	echo "[BOOTSTRAP] Initialize database tables"
-	"$ROOT_DIR/scripts/init_database.sh"
-	
-	echo "[BOOTSTRAP] Record devops cluster to database"
-	# devops 集群已创建，现在数据库已就绪，记录到数据库
-	. "$ROOT_DIR/scripts/lib_db.sh"
-	if db_is_available; then
-		devops_server_ip=$(docker inspect k3d-devops-server-0 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
-		if [ -z "$devops_server_ip" ]; then
-			echo "[WARN] Could not detect devops server IP"
-			devops_server_ip="10.101.0.4"
-		fi
-		echo "[DEVOPS] Server IP: $devops_server_ip"
-		
-		max_retries=3
-		for attempt in $(seq 1 $max_retries); do
-			if db_insert_cluster "devops" "k3d" "" "30800" "19000" "10800" "10843" "$devops_server_ip" 2>/tmp/db_devops_bootstrap.log; then
-				echo "[DEVOPS] ✓ devops cluster recorded to database"
-				break
-			else
-				if [ $attempt -eq $max_retries ]; then
-					echo "[ERROR] Failed to record devops cluster after $max_retries attempts"
-					echo "[ERROR] Error: $(cat /tmp/db_devops_bootstrap.log 2>/dev/null || echo 'no log')"
-					echo "[ERROR] This is critical - WebUI will not show devops cluster"
-					exit 1
-				else
-					echo "[WARN] Database insert failed (attempt $attempt/$max_retries), retrying in 3s..."
-					sleep 3
-				fi
-			fi
-		done
-	else
-		echo "[ERROR] Database not available after init_database.sh - this should not happen!"
-		exit 1
-	fi
-	
 	echo "[BOOTSTRAP] Sync Git branches from database"
 	if [ -f "$ROOT_DIR/scripts/sync_git_from_db.sh" ]; then
 		"$ROOT_DIR/scripts/sync_git_from_db.sh" 2>&1 | sed 's/^/  /' || echo "  [WARN] Git sync failed (can be done manually later)"
@@ -200,8 +155,10 @@ main() {
 	if [ -d "$ROOT_DIR/webui" ]; then
 		# 清理可能的僵尸容器
 		docker rm -f kindler-webui-backend kindler-webui-frontend 2>/dev/null || true
-		# 启动 WebUI（在 infrastructure compose 中定义）
+		# 构建并启动 WebUI（在 infrastructure compose 中定义）
 		cd "$ROOT_DIR/compose/infrastructure"
+		echo "  Building WebUI images..."
+		docker compose build kindler-webui-backend kindler-webui-frontend 2>&1 | grep -E "Building|Built|Step" | tail -5 | sed 's/^/    /'
 		docker compose up -d kindler-webui-backend kindler-webui-frontend 2>&1 | grep -E "Creating|Created|Starting|Started" | sed 's/^/  /'
 		# 等待服务就绪（通过容器健康检查）
 		echo "  Waiting for WebUI to be ready..."
@@ -213,9 +170,34 @@ main() {
 			[ $i -eq 60 ] && echo "  ⚠ WebUI backend timeout (non-fatal)" || sleep 2
 		done
 		cd "$ROOT_DIR"
+		
+		# 从 CSV 导入数据到 SQLite（一次性初始化，幂等）
+	echo "[BOOTSTRAP] Import CSV data to SQLite database"
+		if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+			# 使用 WebUI 后端的 sync_from_csv 方法导入
+			# 通过 Python 脚本调用 WebUI 的 db.py 的 sync_from_csv 方法
+			if docker exec kindler-webui-backend python3 -c "
+import sys
+sys.path.insert(0, '/app')
+from app.db import get_db
+db = get_db()
+db.sync_from_csv('/app/config/environments.csv')
+print('CSV data imported successfully')
+" 2>/dev/null; then
+				echo "  ✓ CSV data imported to SQLite"
+				
+			else
+				echo "  ⚠ CSV import failed (may already be imported)"
+			fi
+		else
+			echo "  ⚠ CSV file not found: $ROOT_DIR/config/environments.csv"
+		fi
 	else
 		echo "  ⚠ WebUI directory not found, skipping"
 	fi
+
+	echo "[BOOTSTRAP] Start Kindler Reconciler (declarative controller)"
+	"$ROOT_DIR/scripts/start_reconciler.sh" start 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to start reconciler (you can start it later)"
 
 	echo "[READY]"
 	portainer_url="https://portainer.devops.${BASE_DOMAIN}"
@@ -230,9 +212,15 @@ main() {
 	if [ "${HAPROXY_HTTP_PORT}" != "80" ]; then
 		argocd_url="${argocd_url}:${HAPROXY_HTTP_PORT}"
 	fi
+	webui_url="http://kindler.devops.${BASE_DOMAIN}"
+	if [ "${HAPROXY_HTTP_PORT}" != "80" ]; then
+		webui_url="${webui_url}:${HAPROXY_HTTP_PORT}"
+	fi
 	echo "- Portainer: ${portainer_url} (admin/$PORTAINER_ADMIN_PASSWORD)"
 	echo "- HAProxy:   ${haproxy_url}/stat"
 	echo "- ArgoCD:    ${argocd_url}"
+	echo "- WebUI:     ${webui_url}"
+	echo "- Reconciler: tail -f /tmp/kindler_reconciler.log (running)"
 }
 
 main "$@"

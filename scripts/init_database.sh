@@ -1,85 +1,49 @@
 #!/usr/bin/env bash
-# 初始化 PostgreSQL 数据库表结构
+# 初始化 SQLite 数据库表结构
 
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 echo "=========================================="
-echo "  初始化数据库表结构"
+echo "  初始化 SQLite 数据库表结构"
 echo "=========================================="
 echo ""
 
-CTX="k3d-devops"
-NAMESPACE="paas"
-POD="postgresql-0"
-
-echo "[DB] 等待 PostgreSQL 就绪..."
-kubectl --context "$CTX" wait --for=condition=ready pod "$POD" -n "$NAMESPACE" --timeout=60s || {
-  echo "[ERROR] PostgreSQL Pod 未就绪"
-  exit 1
-}
-
-echo ""
-echo "[DB] 创建 clusters 表..."
-kubectl --context "$CTX" exec -i "$POD" -n "$NAMESPACE" -- psql -U kindler -d kindler <<'EOF'
--- 创建 clusters 表（包含 server_ip 列）
-CREATE TABLE IF NOT EXISTS clusters (
-  name VARCHAR(63) PRIMARY KEY,
-  provider VARCHAR(10) NOT NULL CHECK (provider IN ('k3d', 'kind')),
-  subnet CIDR,
-  node_port INT NOT NULL,
-  pf_port INT NOT NULL,
-  http_port INT NOT NULL,
-  https_port INT NOT NULL,
-  server_ip VARCHAR(45),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 创建索引
-CREATE INDEX IF NOT EXISTS idx_clusters_provider ON clusters(provider);
-CREATE INDEX IF NOT EXISTS idx_clusters_created_at ON clusters(created_at);
-
--- 创建任务表（用于任务持久化）
-CREATE TABLE IF NOT EXISTS tasks (
-  task_id VARCHAR(64) PRIMARY KEY,
-  status VARCHAR(20) NOT NULL,
-  progress INT DEFAULT 0,
-  message TEXT,
-  logs TEXT,
-  error TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 创建任务索引
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
-
-EOF
-
-echo ""
-echo "[DB] 验证 server_ip 列存在..."
-if ! kubectl --context "$CTX" exec -i "$POD" -n "$NAMESPACE" -- \
-  psql -U kindler -d kindler -c "\d clusters" | grep -q "server_ip"; then
-  echo "[ERROR] server_ip column not found in clusters table!"
-  echo "[FIX] Check CREATE TABLE statement in this script"
+echo "[DB] 检查数据库可用性..."
+if ! sqlite_is_available; then
+  echo "[ERROR] SQLite 数据库不可用"
+  echo "[INFO] 请确保 WebUI 后端容器正在运行：docker ps | grep kindler-webui-backend"
   exit 1
 fi
-echo "✓ server_ip column exists"
+
+echo "[DB] 初始化表结构..."
+# lib_sqlite.sh 会自动初始化表结构，这里只是验证
+if sqlite_query "SELECT name FROM sqlite_master WHERE type='table' AND name='clusters';" 2>/dev/null | grep -q "clusters"; then
+  echo "✓ clusters 表已存在"
+else
+  echo "[ERROR] clusters 表未创建"
+  exit 1
+fi
 
 echo ""
 echo "[DB] 验证表结构..."
-kubectl --context "$CTX" exec -i "$POD" -n "$NAMESPACE" -- psql -U kindler -d kindler -c '\d clusters' | head -20
+sqlite_query "PRAGMA table_info(clusters);" | head -15
+
+echo ""
+echo "[DB] 验证 server_ip 列存在..."
+if sqlite_query "PRAGMA table_info(clusters);" 2>/dev/null | grep -q "server_ip"; then
+  echo "✓ server_ip 列存在"
+else
+  echo "[ERROR] server_ip column not found in clusters table!"
+  exit 1
+fi
 
 echo ""
 echo "=========================================="
-echo "✅ 数据库初始化完成！"
+echo "✅ SQLite 数据库初始化完成！"
 echo "=========================================="
 echo ""
 echo "验证："
-echo "  kubectl --context $CTX exec -i $POD -n $NAMESPACE -- psql -U kindler -d kindler -c 'SELECT * FROM clusters;'"
-echo ""
-
-
+echo "  sqlite_query \"SELECT * FROM clusters;\""

@@ -24,21 +24,20 @@ async def list_clusters():
     """List all clusters"""
     try:
         db_clusters = await db_service.list_clusters()
-        
-        # Enhance with runtime status
+
+        # Enhance with runtime status and include reconcile fields
         result = []
         for cluster in db_clusters:
             status_info = await cluster_service.get_cluster_status(
-                cluster["name"],
-                cluster["provider"]
+                cluster["name"], cluster["provider"]
             )
-            
+
             cluster_info = ClusterInfo(
                 name=cluster["name"],
                 provider=cluster["provider"],
                 node_port=cluster.get("node_port", 30080),
                 pf_port=cluster.get("pf_port", 19000),
-                http_port=cluster.get("http_port", 18090),
+                http_port=cluster.get("http_port", 18080),
                 https_port=cluster.get("https_port", 18443),
                 cluster_subnet=cluster.get("subnet"),
                 register_portainer=True,
@@ -46,10 +45,14 @@ async def list_clusters():
                 register_argocd=True,
                 status=status_info.get("status", "unknown"),
                 created_at=cluster.get("created_at"),
-                updated_at=cluster.get("updated_at")
+                updated_at=cluster.get("updated_at"),
+                desired_state=cluster.get("desired_state"),
+                actual_state=cluster.get("actual_state"),
+                last_reconciled_at=cluster.get("last_reconciled_at"),
+                reconcile_error=cluster.get("reconcile_error"),
             )
             result.append(cluster_info)
-        
+
         return result
     
     except Exception as e:
@@ -59,7 +62,16 @@ async def list_clusters():
 
 @router.post("", response_model=TaskCreate, status_code=202)
 async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTasks):
-    """Create a new cluster (async operation)"""
+    """
+    Create a new cluster (declarative - declares desired state)
+    
+    This API uses declarative approach:
+    1. WebUI writes desired state to database
+    2. Background reconciler (scripts/reconciler.sh) creates the actual cluster
+    3. Reconciler executes on host, same as predefined clusters (dev/uat/prod)
+    
+    This ensures WebUI creation is as stable as predefined cluster creation.
+    """
     try:
         # Check if cluster already exists
         exists = await db_service.cluster_exists(cluster.name)
@@ -69,24 +81,8 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
                 detail=f"Cluster {cluster.name} already exists"
             )
         
-        # Create task
-        task_id = task_manager.create_task(f"Creating cluster {cluster.name}")
-        
-        # Add WebSocket callback
-        async def ws_callback(task_status):
-            await ws_manager.broadcast_task_update(task_id, {
-                "type": "task_update",
-                "task": task_status.dict()
-            })
-        
-        task_manager.add_callback(task_id, ws_callback)
-        
-        # Progress callback for script output
-        async def progress_callback(log_line: str):
-            await task_manager.update_task(task_id, log_line=log_line)
-        
-        # Prepare cluster data
-        cluster_data = {
+        # Declare desired state in database (reconciler will handle actual creation)
+        await db_service.create_cluster({
             "name": cluster.name,
             "provider": cluster.provider,
             "node_port": cluster.node_port,
@@ -94,30 +90,24 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
             "http_port": cluster.http_port,
             "https_port": cluster.https_port,
             "subnet": cluster.cluster_subnet,
-            "register_portainer": cluster.register_portainer,
-            "haproxy_route": cluster.haproxy_route,
-            "register_argocd": cluster.register_argocd,
-        }
+            "desired_state": "present",      # Declare: we want this cluster
+            "actual_state": "unknown",        # Actual: reconciler will update
+            "status": "pending"               # For compatibility
+        })
         
-        # Run creation in background
-        background_tasks.add_task(
-            task_manager.run_task,
-            task_id,
-            cluster_service.create_cluster,
-            cluster_data=cluster_data,
-            progress_callback=progress_callback
-        )
+        logger.info(f"Cluster creation declared: {cluster.name} ({cluster.provider})")
+        logger.info(f"Reconciler will create the cluster on host (same as predefined clusters)")
         
         return TaskCreate(
-            task_id=task_id,
+            task_id=f"reconcile-{cluster.name}",  # Reconciler task
             status="pending",
-            message=f"Cluster creation task created for {cluster.name}"
+            message=f"Cluster creation declared. Reconciler will create {cluster.name} on host."
         )
     
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating cluster: {e}")
+        logger.error(f"Error declaring cluster creation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -139,7 +129,7 @@ async def get_cluster(name: str):
             provider=cluster["provider"],
             node_port=cluster.get("node_port", 30080),
             pf_port=cluster.get("pf_port", 19000),
-            http_port=cluster.get("http_port", 18090),
+            http_port=cluster.get("http_port", 18080),
             https_port=cluster.get("https_port", 18443),
             cluster_subnet=cluster.get("subnet"),
             register_portainer=True,
@@ -147,7 +137,11 @@ async def get_cluster(name: str):
             register_argocd=True,
             status=status_info.get("status", "unknown"),
             created_at=cluster.get("created_at"),
-            updated_at=cluster.get("updated_at")
+            updated_at=cluster.get("updated_at"),
+            desired_state=cluster.get("desired_state"),
+            actual_state=cluster.get("actual_state"),
+            last_reconciled_at=cluster.get("last_reconciled_at"),
+            reconcile_error=cluster.get("reconcile_error"),
         )
     
     except HTTPException:
@@ -159,48 +153,40 @@ async def get_cluster(name: str):
 
 @router.delete("/{name}", response_model=TaskCreate, status_code=202)
 async def delete_cluster(name: str, background_tasks: BackgroundTasks):
-    """Delete a cluster (async operation)"""
+    """
+    Delete a cluster (declarative):
+    - Protect devops cluster
+    - Update desired_state to 'absent'
+    - Reconciler performs actual deletion
+    """
     try:
+        # Protect devops cluster
+        if name == "devops":
+            raise HTTPException(status_code=403, detail="devops cluster cannot be deleted")
+
         # Check if cluster exists
         exists = await db_service.cluster_exists(name)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
-        
-        # Create task
-        task_id = task_manager.create_task(f"Deleting cluster {name}")
-        
-        # Add WebSocket callback
-        async def ws_callback(task_status):
-            await ws_manager.broadcast_task_update(task_id, {
-                "type": "task_update",
-                "task": task_status.dict()
-            })
-        
-        task_manager.add_callback(task_id, ws_callback)
-        
-        # Progress callback
-        async def progress_callback(log_line: str):
-            await task_manager.update_task(task_id, log_line=log_line)
-        
-        # Run deletion in background
-        background_tasks.add_task(
-            task_manager.run_task,
-            task_id,
-            cluster_service.delete_cluster,
-            name=name,
-            progress_callback=progress_callback
-        )
-        
+
+        # Update desired state to 'absent'; reconciler will handle actual deletion
+        await db_service.update_cluster(name, {
+            "desired_state": "absent",
+            # clear previous error to avoid confusion for new action
+            "reconcile_error": None,
+        })
+
+        # Return a reconcile task stub (WebSocket can still track generic progress if needed)
         return TaskCreate(
-            task_id=task_id,
+            task_id=f"reconcile-delete-{name}",
             status="pending",
-            message=f"Cluster deletion task created for {name}"
+            message=f"Cluster deletion declared. Reconciler will delete {name}."
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting cluster: {e}")
+        logger.error(f"Error declaring cluster deletion: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -328,4 +314,3 @@ async def stop_cluster(name: str, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Error stopping cluster: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

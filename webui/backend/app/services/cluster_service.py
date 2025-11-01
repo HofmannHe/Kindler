@@ -15,13 +15,15 @@ class ClusterService:
     
     def __init__(self):
         self.base_domain = os.getenv("BASE_DOMAIN", "192.168.51.30.sslip.io")
-        self.scripts_dir = os.getenv("SCRIPTS_DIR", "/scripts")
+        self.scripts_dir = os.getenv("SCRIPTS_DIR", "/app/scripts")
         self.timeout = int(os.getenv("OPERATION_TIMEOUT", "300"))  # 5 minutes default
         self.db = get_db()
         
         # Verify scripts directory exists
         if not os.path.isdir(self.scripts_dir):
-            logger.warning(f"Scripts directory not found: {self.scripts_dir}")
+            logger.error(f"Scripts directory not found: {self.scripts_dir}")
+            logger.info(f"Available directories: {os.listdir('/app')}")
+            raise RuntimeError(f"Scripts directory not found: {self.scripts_dir}")
     
     async def _run_script(
         self,
@@ -32,7 +34,10 @@ class ClusterService:
         progress_callback: Optional[Callable] = None
     ) -> bool:
         """
-        Run a shell script and stream output via callback
+        Run a shell script ON THE HOST (not in container) to match stable predefined cluster creation
+        
+        This executes scripts in the same environment as predefined clusters (dev/uat/prod),
+        ensuring complete tool chain availability (k3d, kind, docker, kubectl, etc.)
         
         Args:
             script_name: Name of script (e.g., "create_env.sh")
@@ -44,32 +49,34 @@ class ClusterService:
         Returns:
             True if script succeeded (exit code 0), False otherwise
         """
-        script_path = os.path.join(self.scripts_dir, script_name)
-        
-        if not os.path.exists(script_path):
-            error_msg = f"Script not found: {script_path}"
-            logger.error(error_msg)
-            if progress_callback:
-                await progress_callback(f"[ERROR] {error_msg}\n")
-            return False
+        # Execute on host using nsenter to enter host namespaces
+        # This matches EXACTLY how predefined clusters are created (direct host execution)
         
         # Log operation start
         op_id = self.db.log_operation_start(cluster_name, operation)
         
-        # Build command
-        cmd = [script_path] + args
-        logger.info(f"Executing: {' '.join(cmd)}")
+        # Build command to execute on host using nsenter
+        # nsenter -t 1 -m -u -n -i executes in host's namespaces
+        script_path = f"/home/cloud/github/hofmannhe/kindler/scripts/{script_name}"
+        
+        # Build full command
+        cmd = [
+            "nsenter", "-t", "1", "-m", "-u", "-i", "-n",
+            "su", "-", "cloud", "-c",
+            f"cd /home/cloud/github/hofmannhe/kindler && {script_path} {' '.join(args)}"
+        ]
+        
+        logger.info(f"Executing on host (nsenter): {script_name} {' '.join(args)}")
         
         if progress_callback:
-            await progress_callback(f"[INFO] Executing: {' '.join(cmd)}\n")
+            await progress_callback(f"[INFO] Executing on host: {script_name} {' '.join(args)}\n")
         
         try:
             # Create subprocess
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=self.scripts_dir
+                stderr=asyncio.subprocess.STDOUT
             )
             
             # Stream output
@@ -170,8 +177,7 @@ class ClusterService:
         # Build arguments for create_env.sh
         args = [
             "-n", name,
-            "-p", provider,
-            "--force"  # Allow dynamic creation outside of environments.csv
+            "-p", provider
         ]
         
         # Add optional parameters
@@ -181,6 +187,7 @@ class ClusterService:
             args.extend(["--pf-port", str(cluster_data["pf_port"])])
         
         # Execute creation script
+        # Note: create_env.sh already writes to SQLite database, so we don't need to write again
         success = await self._run_script(
             "create_env.sh",
             args,
@@ -189,13 +196,16 @@ class ClusterService:
             progress_callback
         )
         
+        # create_env.sh handles database insertion with retry logic and IP allocation
+        # WebUI should not duplicate this operation to avoid data inconsistency
         if success:
-            # Update database with cluster info
+            # Verify that the cluster was actually created and recorded in database
+            # This ensures script completion (including IP allocation)
             db_service = DBService()
-            await db_service.create_cluster({
-                **cluster_data,
-                "status": "running"
-            })
+            cluster = await db_service.get_cluster(name)
+            if not cluster:
+                logger.warning(f"Cluster {name} created but not found in database - script may have failed")
+                return False
         
         return success
     
@@ -228,11 +238,8 @@ class ClusterService:
             progress_callback
         )
         
-        if success:
-            # Remove from database
-            db_service = DBService()
-            await db_service.delete_cluster(name)
-        
+        # delete_env.sh already handles database deletion, so we don't need to delete again
+        # Just verify deletion succeeded
         return success
     
     async def start_cluster(
