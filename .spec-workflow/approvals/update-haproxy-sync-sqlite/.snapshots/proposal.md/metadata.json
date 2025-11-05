@@ -1,0 +1,14 @@
+{
+  "filePath": "openspec/changes/update-haproxy-sync-sqlite/proposal.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-03T04:53:39.959Z",
+      "trigger": "initial",
+      "approvalId": "approval_1762145619951_j1nbuxfw1",
+      "approvalTitle": "Proposal: Switch HAProxy route sync to SQLite source-of-truth (with CSV fallback)"
+    }
+  ]
+}

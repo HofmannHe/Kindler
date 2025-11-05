@@ -1,0 +1,459 @@
+[SETUP] 生成测试集群清单 (CLUSTERS=4, WORKERS=3, RECONCILER_CONCURRENCY=3, CYCLES=3)
+[INFO] 本次测试的集群:
+  - testcd-120910-1 (k3d)
+  - testcd-120910-2 (kind)
+  - testcd-120910-3 (k3d)
+  - testcd-120910-4 (kind)
+
+================= 循环 1/3: 并发创建 =================
+{"task_id":"reconcile-testcd-120910-1","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-120910-1 on host."}
+202{"task_id":"reconcile-testcd-120910-2","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-120910-2 on host."}
+202{"task_id":"reconcile-testcd-120910-3","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-120910-3 on host."}
+202{"task_id":"reconcile-testcd-120910-4","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-120910-4 on host."}
+202[2025-11-05 12:10:02] ==========================================
+[2025-11-05 12:10:02] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:10:02] ==========================================
+[2025-11-05 12:10:04] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:10:04] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:10:04] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:10:04] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:10:04] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:10:04] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:10:04] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:10:04] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:10:04] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:10:05] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:10:05] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:10:05] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:10:05] [RECONCILE] Reconciling testcd-120910-1: desired=present, actual=unknown
+[2025-11-05 12:10:05] [RECONCILE] Creating cluster: testcd-120910-1 (k3d)
+[2025-11-05 12:10:05] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:10:05] [RECONCILE] Reconciling testcd-120910-2: desired=present, actual=unknown
+[2025-11-05 12:10:05] [RECONCILE] Creating cluster: testcd-120910-2 (kind)
+[2025-11-05 12:10:05] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:10:05] [RECONCILE] Reconciling testcd-120910-3: desired=present, actual=unknown
+[2025-11-05 12:10:05] [RECONCILE] Creating cluster: testcd-120910-3 (k3d)
+[2025-11-05 12:10:06] [RECONCILE] Reconciling testcd-120910-4: desired=present, actual=unknown
+[2025-11-05 12:10:06] [RECONCILE] Creating cluster: testcd-120910-4 (kind)
+[2025-11-05 12:10:13] [RECONCILE] ✗ Cluster testcd-120910-1 creation failed: [36mINFO[0m[0000] Starting new tools node...                    [31mERRO[0m[0000] Failed to run tools container for cluster 'testcd-120910-1'  [36mINFO[0m[0001] Creating node 'k3d-testcd-120910-
+[2025-11-05 12:10:13] [RECONCILE]   Full log: /tmp/reconcile_create_testcd-120910-1.log
+[2025-11-05 12:11:07] [RECONCILE] ✓ Cluster testcd-120910-2 created successfully
+[2025-11-05 12:11:07] [RECONCILE] ✓ Cluster testcd-120910-2 verified running
+[2025-11-05 12:11:28] [RECONCILE] ✓ Cluster testcd-120910-4 created successfully
+[2025-11-05 12:11:28] [RECONCILE] ✓ Cluster testcd-120910-4 verified running
+[2025-11-05 12:11:28] [RECONCILE] Reconciled 11 cluster(s) (concurrency=3)
+[2025-11-05 12:11:28] ==========================================
+
+[2025-11-05 12:11:34] ==========================================
+[2025-11-05 12:11:34] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:11:34] ==========================================
+[2025-11-05 12:11:35] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:11:35] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:11:35] [RECONCILE] Reconciling prod: desired=present, actual=failed
+[2025-11-05 12:11:35] [RECONCILE] Creating cluster: prod (k3d)
+[2025-11-05 12:11:36] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:11:36] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:11:36] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:11:36] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:11:36] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:11:36] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:11:36] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:11:36] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:11:37] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:11:37] [RECONCILE] Reconciling testcd-120910-1: desired=present, actual=failed
+[2025-11-05 12:11:37] [RECONCILE] Creating cluster: testcd-120910-1 (k3d)
+[2025-11-05 12:11:37] [RECONCILE] Reconciling testcd-120910-2: desired=present, actual=running
+[2025-11-05 12:11:38] [RECONCILE] ✓ Cluster testcd-120910-2 health check passed
+[2025-11-05 12:11:38] [RECONCILE] Reconciling testcd-120910-3: desired=present, actual=creating
+[2025-11-05 12:11:38] [RECONCILE] ✓ Cluster testcd-120910-3 creation completed
+[2025-11-05 12:11:38] [RECONCILE] Reconciling testcd-120910-4: desired=present, actual=running
+[2025-11-05 12:11:39] [RECONCILE] ✓ Cluster testcd-120910-4 health check passed
+[2025-11-05 12:12:40] [RECONCILE] ✓ Cluster prod created successfully
+[2025-11-05 12:12:41] [RECONCILE] ✗ Cluster prod created but not accessible
+[2025-11-05 12:13:10] [RECONCILE] ✓ Cluster testcd-120910-1 created successfully
+[2025-11-05 12:13:11] [RECONCILE] ✓ Cluster testcd-120910-1 verified running
+[2025-11-05 12:13:11] [RECONCILE] Reconciled 11 cluster(s) (concurrency=3)
+[2025-11-05 12:13:11] ==========================================
+
+  ✓ 所有 4 集群创建完成
+================= 循环 1/3: 并发删除 =================
+{"task_id":"reconcile-delete-testcd-120910-1","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-120910-1."}
+202{"task_id":"reconcile-delete-testcd-120910-2","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-120910-2."}
+202{"task_id":"reconcile-delete-testcd-120910-3","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-120910-3."}
+202{"task_id":"reconcile-delete-testcd-120910-4","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-120910-4."}
+202[2025-11-05 12:13:16] ==========================================
+[2025-11-05 12:13:16] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:13:16] ==========================================
+[2025-11-05 12:13:17] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:13:17] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:13:17] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:13:17] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:13:18] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:13:18] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:13:18] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:13:18] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:13:18] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:13:18] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:13:18] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:13:19] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:13:19] [RECONCILE] Reconciling testcd-120910-1: desired=absent, actual=running
+[2025-11-05 12:13:19] [RECONCILE] Deleting cluster: testcd-120910-1 (k3d)
+[2025-11-05 12:13:19] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:13:19] [RECONCILE] Reconciling testcd-120910-2: desired=absent, actual=running
+[2025-11-05 12:13:19] [RECONCILE] Deleting cluster: testcd-120910-2 (kind)
+[2025-11-05 12:13:19] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:13:19] [RECONCILE] Reconciling testcd-120910-3: desired=absent, actual=running
+[2025-11-05 12:13:19] [RECONCILE] Deleting cluster: testcd-120910-3 (k3d)
+[2025-11-05 12:13:20] [RECONCILE] Reconciling testcd-120910-4: desired=absent, actual=running
+[2025-11-05 12:13:20] [RECONCILE] Deleting cluster: testcd-120910-4 (kind)
+[2025-11-05 12:13:45] [RECONCILE] ✓ Cluster testcd-120910-2 deleted successfully
+[2025-11-05 12:13:46] [RECONCILE] ✓ Cluster testcd-120910-2 record removed from database
+[2025-11-05 12:13:50] [RECONCILE] ✓ Cluster testcd-120910-4 deleted successfully
+[2025-11-05 12:13:51] [RECONCILE] ✓ Cluster testcd-120910-4 record removed from database
+[2025-11-05 12:14:04] [RECONCILE] ✓ Cluster testcd-120910-1 deleted successfully
+[2025-11-05 12:14:05] [RECONCILE] ✓ Cluster testcd-120910-1 record removed from database
+[2025-11-05 12:14:05] [RECONCILE] Reconciled 11 cluster(s) (concurrency=3)
+[2025-11-05 12:14:05] ==========================================
+
+[2025-11-05 12:14:10] ==========================================
+[2025-11-05 12:14:10] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:14:10] ==========================================
+[2025-11-05 12:14:11] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:14:11] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:14:11] [RECONCILE] Reconciling prod: desired=present, actual=failed
+[2025-11-05 12:14:11] [RECONCILE] Creating cluster: prod (k3d)
+[2025-11-05 12:14:12] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:14:12] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:14:12] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:14:12] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:14:13] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:14:13] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:14:13] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:14:13] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:14:13] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:14:13] [RECONCILE] Reconciling testcd-120910-3: desired=absent, actual=deleting
+[2025-11-05 12:14:13] [RECONCILE] ⏳ Cluster testcd-120910-3 still deleting...
+[2025-11-05 12:14:13] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:15:04] [RECONCILE] ✓ Cluster prod created successfully
+[2025-11-05 12:15:04] [RECONCILE] ✗ Cluster prod created but not accessible
+[2025-11-05 12:15:04] [RECONCILE] Reconciled 8 cluster(s) (concurrency=3)
+[2025-11-05 12:15:04] ==========================================
+
+  ✓ 所有 4 集群删除完成
+  ✓ 无剩余 ArgoCD 集群密钥
+  ✓ DB 无残留记录
+
+================= 循环 2/3: 并发创建 =================
+curl: (7) Failed to connect to localhost port 8000 after 0 ms: Could not connect to server
+
+000curl: (7) Failed to connect to localhost port 8000 after 0 ms: Could not connect to server
+
+000curl: (7) Failed to connect to localhost port 8000 after 0 ms: Could not connect to server
+
+000curl: (7) Failed to connect to localhost port 8000 after 0 ms: Could not connect to server
+
+000[2025-11-05 12:16:00] ==========================================
+[2025-11-05 12:16:00] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:16:00] ==========================================
+[2025-11-05 12:16:01] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:16:01] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:16:01] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:16:01] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:16:01] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:16:02] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:16:02] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:16:02] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:16:02] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:16:02] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:16:02] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:16:02] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:16:02] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:16:03] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:16:03] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:16:03] ==========================================
+
+[2025-11-05 12:16:08] ==========================================
+[2025-11-05 12:16:08] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:16:08] ==========================================
+[2025-11-05 12:16:09] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:16:14] ==========================================
+[2025-11-05 12:16:14] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:16:14] ==========================================
+[2025-11-05 12:16:15] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:16:15] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:16:15] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:16:15] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:16:15] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:16:16] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:16:16] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:16:16] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:16:16] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:16:16] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:16:16] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:16:17] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:16:17] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:16:17] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:16:17] ==========================================
+
+[2025-11-05 12:16:22] ==========================================
+[2025-11-05 12:16:22] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:16:22] ==========================================
+[2025-11-05 12:16:23] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:16:23] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:16:23] [RECONCILE] Reconciling prod: desired=present, actual=failed
+[2025-11-05 12:16:23] [RECONCILE] Creating cluster: prod (k3d)
+[2025-11-05 12:16:24] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:16:24] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:16:24] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:16:24] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:16:25] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:16:25] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:16:25] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:16:25] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:16:26] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:16:26] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:17:14] [RECONCILE] ✓ Cluster prod created successfully
+[2025-11-05 12:17:15] [RECONCILE] ✗ Cluster prod created but not accessible
+[2025-11-05 12:17:15] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:15] ==========================================
+
+[2025-11-05 12:17:20] ==========================================
+[2025-11-05 12:17:20] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:17:20] ==========================================
+[2025-11-05 12:17:21] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:17:21] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:17:21] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:17:21] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:17:21] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:17:22] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:17:22] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:17:22] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:17:22] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:17:22] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:17:22] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:17:23] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:17:23] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:17:23] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:17:23] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:23] ==========================================
+
+[2025-11-05 12:17:28] ==========================================
+[2025-11-05 12:17:28] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:17:28] ==========================================
+[2025-11-05 12:17:29] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:17:29] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:17:29] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:17:29] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:17:30] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:17:30] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:17:30] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:17:30] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:17:30] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:17:30] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:17:30] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:17:31] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:17:31] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:17:31] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:17:31] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:31] ==========================================
+
+[2025-11-05 12:17:36] ==========================================
+[2025-11-05 12:17:36] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:17:36] ==========================================
+[2025-11-05 12:17:38] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:17:38] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:17:38] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:17:38] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:17:38] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:17:38] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:17:38] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:17:38] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:17:38] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:17:38] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:17:38] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:17:39] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:17:39] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:17:39] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:17:39] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:39] ==========================================
+
+[2025-11-05 12:17:45] ==========================================
+[2025-11-05 12:17:45] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:17:45] ==========================================
+[2025-11-05 12:17:46] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:17:46] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:17:46] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:17:46] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:17:46] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:17:46] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:17:46] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:17:47] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:17:47] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:17:47] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:17:47] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:17:47] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:17:47] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:17:47] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:47] ==========================================
+
+[2025-11-05 12:17:53] ==========================================
+[2025-11-05 12:17:53] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:17:53] ==========================================
+[2025-11-05 12:17:54] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:17:54] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:17:54] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:17:54] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:17:54] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:17:56] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:17:56] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:17:56] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:17:56] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:17:56] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:17:56] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:17:57] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:17:57] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:17:57] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:17:57] ==========================================
+
+[2025-11-05 12:18:03] ==========================================
+[2025-11-05 12:18:03] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:18:03] ==========================================
+[2025-11-05 12:18:04] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:18:04] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:18:04] [RECONCILE] Reconciling prod: desired=present, actual=creating
+[2025-11-05 12:18:04] [RECONCILE] ⏳ Cluster prod still creating...
+[2025-11-05 12:18:04] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:18:05] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:18:05] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:18:05] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:18:05] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:18:05] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:18:05] ==========================================
+
+[2025-11-05 12:18:11] ==========================================
+[2025-11-05 12:18:11] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:18:11] ==========================================
+[2025-11-05 12:18:12] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-05 12:18:12] [RECONCILE] Reconciling prod: desired=present, actual=failed
+[2025-11-05 12:18:12] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:18:12] [RECONCILE] Creating cluster: prod (k3d)
+[2025-11-05 12:18:13] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-05 12:18:13] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:18:13] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:18:13] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:18:14] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:18:14] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:18:14] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:18:14] [RECONCILE] Reconciling test-lifecycle-2650709: desired=present, actual=running
+[2025-11-05 12:18:14] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:18:14] [RECONCILE] ✓ Cluster test-lifecycle-2650709 health check passed
+[2025-11-05 12:18:49] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-05 12:18:49] ==========================================
+
+[2025-11-05 12:18:55] ==========================================
+[2025-11-05 12:18:55] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:18:55] ==========================================
+[2025-11-05 12:18:55] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:00] ==========================================
+[2025-11-05 12:19:00] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:00] ==========================================
+[2025-11-05 12:19:00] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:05] ==========================================
+[2025-11-05 12:19:05] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:05] ==========================================
+[2025-11-05 12:19:05] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:10] ==========================================
+[2025-11-05 12:19:10] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:10] ==========================================
+[2025-11-05 12:19:10] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:15] ==========================================
+[2025-11-05 12:19:15] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:15] ==========================================
+[2025-11-05 12:19:15] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:21] ==========================================
+[2025-11-05 12:19:21] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:21] ==========================================
+[2025-11-05 12:19:21] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:26] ==========================================
+[2025-11-05 12:19:26] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:26] ==========================================
+[2025-11-05 12:19:26] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:31] ==========================================
+[2025-11-05 12:19:31] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:31] ==========================================
+[2025-11-05 12:19:31] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:36] ==========================================
+[2025-11-05 12:19:36] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:36] ==========================================
+[2025-11-05 12:19:36] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:42] ==========================================
+[2025-11-05 12:19:42] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:42] ==========================================
+[2025-11-05 12:19:42] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:47] ==========================================
+[2025-11-05 12:19:47] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:47] ==========================================
+[2025-11-05 12:19:47] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:52] ==========================================
+[2025-11-05 12:19:52] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:52] ==========================================
+[2025-11-05 12:19:52] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:19:57] ==========================================
+[2025-11-05 12:19:57] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:19:57] ==========================================
+[2025-11-05 12:19:58] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:20:03] ==========================================
+[2025-11-05 12:20:03] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:20:03] ==========================================
+[2025-11-05 12:20:03] [RECONCILE] ✗ Database not available, skipping this cycle
+[2025-11-05 12:20:08] ==========================================
+[2025-11-05 12:20:08] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:20:08] ==========================================
+[2025-11-05 12:20:09] [RECONCILE] Reconciling uat: desired=present, actual=unknown
+[2025-11-05 12:20:09] [RECONCILE] Reconciling dev: desired=present, actual=unknown
+[2025-11-05 12:20:09] [RECONCILE] Reconciling prod: desired=present, actual=unknown
+[2025-11-05 12:20:09] [RECONCILE] Creating cluster: uat (k3d)
+[2025-11-05 12:20:09] [RECONCILE] Creating cluster: dev (k3d)
+[2025-11-05 12:20:09] [RECONCILE] Creating cluster: prod (k3d)
+[2025-11-05 12:22:17] [RECONCILE] ✓ Cluster dev created successfully
+[2025-11-05 12:22:17] [RECONCILE] ✗ Cluster dev created but not accessible
+[2025-11-05 12:22:17] [RECONCILE] Reconciling dev-a: desired=present, actual=unknown
+[2025-11-05 12:22:17] [RECONCILE] Creating cluster: dev-a (kind)
+[2025-11-05 12:22:17] [RECONCILE] ✓ Cluster prod created successfully
+[2025-11-05 12:22:18] [RECONCILE] ✓ Cluster prod verified running
+[2025-11-05 12:22:18] [RECONCILE] Reconciling dev-b: desired=present, actual=unknown
+[2025-11-05 12:22:18] [RECONCILE] Creating cluster: dev-b (kind)
+[2025-11-05 12:22:19] [RECONCILE] Reconciling dev-c: desired=present, actual=unknown
+[2025-11-05 12:22:19] [RECONCILE] Creating cluster: dev-c (kind)
+[2025-11-05 12:22:28] [RECONCILE] ✓ Cluster uat created successfully
+[2025-11-05 12:22:38] [RECONCILE] ✓ Cluster dev-a created successfully
+[2025-11-05 12:22:40] [RECONCILE] ✓ Cluster dev-a verified running
+[2025-11-05 12:22:51] [RECONCILE] ✓ Cluster dev-c created successfully
+[2025-11-05 12:22:51] [RECONCILE] ✓ Cluster dev-c verified running
+[2025-11-05 12:22:51] [RECONCILE] Reconciled 6 cluster(s) (concurrency=3)
+[2025-11-05 12:22:51] ==========================================
+
+[2025-11-05 12:22:57] ==========================================
+[2025-11-05 12:22:57] [RECONCILE] Starting reconcile cycle
+[2025-11-05 12:22:57] ==========================================
+[2025-11-05 12:22:58] [RECONCILE] Reconciling dev: desired=present, actual=creating
+[2025-11-05 12:22:58] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-05 12:22:58] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-05 12:22:58] [RECONCILE] ⏳ Cluster dev still creating...
+[2025-11-05 12:22:58] [RECONCILE] Reconciling dev-a: desired=present, actual=running
+[2025-11-05 12:22:58] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-05 12:22:58] [RECONCILE] Reconciling dev-b: desired=present, actual=running
+[2025-11-05 12:22:59] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-05 12:22:59] [RECONCILE] Reconciling dev-c: desired=present, actual=running
+[2025-11-05 12:22:59] [RECONCILE] ✓ Cluster dev-a health check passed
+[2025-11-05 12:22:59] [RECONCILE] ✓ Cluster dev-b health check passed
+[2025-11-05 12:22:59] [RECONCILE] ✓ Cluster dev-c health check passed
+[2025-11-05 12:22:59] [RECONCILE] Reconciled 6 cluster(s) (concurrency=3)
+[2025-11-05 12:22:59] ==========================================
+
+  ✗ 等待创建超时 (420s): 0/4 就绪

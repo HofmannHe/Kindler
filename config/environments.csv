@@ -1,13 +1,24 @@
-# env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port
-# 示例：按需增删环境行，env 不可重复；布尔值可用 true/false 或 1/0
-devops,k3d,30080,19000,true,true,23081,23444
-dev,kind,30080,19001,true,true,18090,18443
-uat,kind,30080,29001,true,true,28080,28443
-prod,kind,30080,39001,true,true,38080,38443
-# k3d 环境示例
-dev-k3d,k3d,30080,19002,true,true,18091,18444
-uat-k3d,k3d,30080,19003,true,true,28091,28444
-prod-k3d,k3d,30080,39002,true,true,38091,38444
-debug-k3d,k3d,30080,19004,false,false,48091,48444
-test-final,k3d,30080,19005,true,false,38092,38445
-test-k3d-fixed,k3d,30080,19006,true,false,38093,38446
+# env,provider,node_port,pf_port,register_portainer,haproxy_route,http_port,https_port,cluster_subnet
+# 
+# 说明：
+# - env: 集群名称（业务导向，不应包含 provider 类型）
+# - provider: k3d 或 kind（默认 k3d，用户可根据需要修改）
+# - cluster_subnet: k3d 集群的独立子网（kind 无需配置）
+# - devops 使用共享网络 k3d-shared 以便 HAProxy 通过固定IP访问
+# - 业务集群使用独立子网避免 IP 冲突
+#
+# 预置集群：只包含 devops, dev, uat, prod（默认 k3d）
+# 用户可通过 WebUI 或命令行动态创建新的业务集群
+
+# devops 管理集群（k3d，共享网络，固定）
+devops,k3d,30800,19000,false,false,23800,23843,
+
+# 预置业务集群（默认 k3d，用户可修改 provider 为 kind）
+dev,k3d,30080,19001,true,true,18090,18443,10.101.0.0/16
+uat,k3d,30080,19002,true,true,18091,18444,10.102.0.0/16
+prod,k3d,30080,19003,true,true,18092,18445,10.103.0.0/16
+
+# 增补的 kind 业务集群（并发创建验证；名称不包含 provider）
+dev-a,kind,30081,19011,true,true,18093,18446,
+dev-b,kind,30082,19012,true,true,18094,18447,
+dev-c,kind,30083,19013,true,true,18095,18448,

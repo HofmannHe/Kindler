@@ -1,0 +1,28 @@
+version: v1
+
+cluster:
+  provider: kind
+
+network:
+  http_port: 18091
+  https_port: 18444
+  node_port: 30080
+  pf_port: 19002
+  subnet: ""  # kind 使用共享网络，无需独立子网
+
+integrations:
+  portainer:
+    enabled: true
+    tags: ["example", "kind", "business"]
+  
+  haproxy:
+    enabled: true
+  
+  argocd:
+    enabled: true
+    labels:
+      env: example-kind
+      provider: kind
+      type: business
+
+

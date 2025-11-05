@@ -4,8 +4,12 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
-CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+# 需要从 SQLite 数据库获取 provider 等信息
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
+# Allow overriding HAProxy config path for tests via HAPROXY_CFG
+CFG="${HAPROXY_CFG:-$ROOT_DIR/compose/infrastructure/haproxy.cfg}"
 DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")
+LOCK_FILE="/tmp/haproxy_route.lock"
 
 # load base domain suffix from config if present
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -23,6 +27,11 @@ shift 2 || true
 label="$(env_label "$name")"
 [ -n "$label" ] || label="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
 provider="$(provider_for "$name")"
+# 保护规则：禁止为 devops 生成动态 ACL/路由（避免与管理域名冲突）
+if [ "$name" = "devops" ]; then
+  echo "[haproxy] SKIP dynamic routing for 'devops' (management cluster is handled by explicit routes)"
+  exit 0
+fi
 case "$provider" in
 k3d) network_name="k3d-${name}" ;;
 kind) network_name="kind" ;;
@@ -30,12 +39,69 @@ kind) network_name="kind" ;;
 esac
 
 ensure_network() {
-	# HAProxy 需要连接到 k3d-shared 网络以访问所有集群
-	local shared_network="k3d-shared"
-	if docker network inspect "$shared_network" >/dev/null 2>&1; then
-		docker network connect "$shared_network" haproxy-gw 2>/dev/null || true
+	# In test mode, do not attempt any docker network operations
+	if [ "${SKIP_NETWORK_CONNECT:-0}" = "1" ]; then
+		echo "[haproxy] SKIP network connect (test mode)"
+		return 0
 	fi
-	# 兼容旧的独立网络模式
+	# HAProxy 需要连接到集群网络以访问集群
+	# k3d 集群：有独立子网的使用 k3d-<name> 网络，无子网的使用共享网络 k3d-shared
+	
+	# 1. k3d 集群：检查是否有独立子网
+	if [ "$provider" = "k3d" ]; then
+		# 优先从 DB 读取子网配置；回退 CSV
+		local subnet
+		if command -v db_is_available >/dev/null 2>&1 && db_is_available 2>/dev/null; then
+			subnet="$(sqlite_query "SELECT COALESCE(subnet,'') FROM clusters WHERE name='$name';" 2>/dev/null | head -1 || echo "")"
+		else
+			subnet="$(subnet_for "$name" 2>/dev/null || true)"
+		fi
+		
+		if [ -n "$subnet" ]; then
+			# 有独立子网：连接到专用网络（检查幂等性）
+			local dedicated_network="k3d-${name}"
+            if docker network inspect "$dedicated_network" >/dev/null 2>&1; then
+                if docker inspect haproxy-gw 2>/dev/null | jq -e ".[0].NetworkSettings.Networks.\"$dedicated_network\"" >/dev/null 2>&1; then
+                    echo "[haproxy] Already connected to k3d network: $dedicated_network"
+                else
+                    echo "[haproxy] Connecting to k3d network: $dedicated_network"
+                    if ! docker network connect "$dedicated_network" haproxy-gw 2>/dev/null; then
+                        echo "[haproxy] WARN: connect failed, restarting haproxy-gw and retrying..."
+                        docker restart haproxy-gw >/dev/null 2>&1 || true
+                        sleep 2
+                        docker network connect "$dedicated_network" haproxy-gw 2>/dev/null || echo "[haproxy] WARN: connect retry failed (continuing)"
+                    fi
+                fi
+			else
+				echo "[haproxy] WARN: Network $dedicated_network not found"
+			fi
+		else
+			# 无子网（使用共享网络）：HAProxy 已在 bootstrap 时连接到 k3d-shared
+			echo "[haproxy] Cluster $name uses shared network k3d-shared (already connected)"
+		fi
+		return 0
+	fi
+	
+	# 2. kind 集群：连接到 kind 网络（如果存在且未连接）
+	if [ "$provider" = "kind" ]; then
+		if docker network inspect "kind" >/dev/null 2>&1; then
+			# 检查 HAProxy 是否已连接到 kind 网络（幂等性）
+            if docker inspect haproxy-gw 2>/dev/null | jq -e '.[0].NetworkSettings.Networks.kind' >/dev/null 2>&1; then
+                echo "[haproxy] Already connected to kind network"
+            else
+                echo "[haproxy] Connecting to kind network"
+                if ! docker network connect "kind" haproxy-gw 2>/dev/null; then
+                    echo "[haproxy] WARN: connect to kind failed, restarting haproxy-gw and retrying..."
+                    docker restart haproxy-gw >/dev/null 2>&1 || true
+                    sleep 2
+                    docker network connect "kind" haproxy-gw 2>/dev/null || echo "[haproxy] WARN: connect retry to kind failed (continuing)"
+                fi
+            fi
+		fi
+		return 0
+	fi
+	
+	# 3. 其他情况：尝试使用 network_name 变量（兼容性）
 	if [ -n "${network_name:-}" ]; then
 		docker network connect "$network_name" haproxy-gw 2>/dev/null || true
 	fi
@@ -57,36 +123,125 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$cmd" ] && [ -n "$name" ] || usage
 
+# 获取文件锁（使用flock或mkdir作为fallback）
+acquire_lock() {
+	if command -v flock >/dev/null 2>&1; then
+		# 使用 flock (推荐)
+		exec 200>"$LOCK_FILE"
+		flock -x 200
+	else
+		# fallback: 使用 mkdir 原子性
+		local max_wait=30 waited=0
+		while ! mkdir "$LOCK_FILE.dir" 2>/dev/null; do
+			sleep 0.1
+			waited=$((waited+1))
+			if [ $waited -gt $((max_wait*10)) ]; then
+				echo "[WARN] Lock timeout, forcing acquisition" >&2
+				rm -rf "$LOCK_FILE.dir" 2>/dev/null || true
+				mkdir "$LOCK_FILE.dir" 2>/dev/null || true
+				break
+			fi
+		done
+	fi
+}
+
+# 释放文件锁
+release_lock() {
+	if command -v flock >/dev/null 2>&1; then
+		flock -u 200 2>/dev/null || true
+		exec 200>&- 2>/dev/null || true
+	else
+		rm -rf "$LOCK_FILE.dir" 2>/dev/null || true
+	fi
+}
+
 add_acl() {
-	local tmp acl_begin acl_end
+	local tmp acl_begin acl_end env_name
 	acl_begin="^[[:space:]]*# BEGIN DYNAMIC ACL"
 	acl_end="^[[:space:]]*# END DYNAMIC ACL"
+	
+	# 使用完整集群名作为域名环境部分（避免 ACL 冲突）
+	# 新的域名格式：service.cluster_name.base_domain
+	# 例如：dev -> whoami.dev.xxx, dev-k3d -> whoami.dev-k3d.xxx
+	env_name="$name"
+	
 	tmp=$(mktemp)
-	awk -v n="$name" -v l="$label" -v B="$acl_begin" -v E="$acl_end" '
+	# 新的 ACL 模式：匹配 service.env.base_domain
+	# 例如：whoami.dev.192.168.51.30.sslip.io
+	awk -v n="$name" -v en="$env_name" -v B="$acl_begin" -v E="$acl_end" '
     BEGIN{ins=0}
     {print $0}
-    $0 ~ B {print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." l "\\.[^:]+"; print "  use_backend be_" n " if host_" n; ins=1}
+    $0 ~ B {
+      # ACL 模式：匹配 <service>.<env>.<base-domain>
+      print "  acl host_" n "  hdr_reg(host) -i ^[^.]+\\." en "\\.[^:]+"
+      ins=1
+    }
   ' "$CFG" >"$tmp"
-	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
+  mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
 }
 
 
+add_use_backend() {
+  local tmp ub_begin ub_end
+  ub_begin="^[[:space:]]*# BEGIN DYNAMIC USE_BACKEND"
+  ub_end="^[[:space:]]*# END DYNAMIC USE_BACKEND"
+  tmp=$(mktemp)
+  awk -v n="$name" -v UB="$ub_begin" -v UE="$ub_end" '
+    {print $0}
+    $0 ~ UB {
+      print "  use_backend be_" n " if host_" n
+    }
+  ' "$CFG" >"$tmp"
+  mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
+}
+
 add_backend() {
 	local tmp b_begin b_end ip detected_port
-	# Resolve cluster node container IP and always target NodePort for simplicity (k3d and kind)
-	if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null); then
-		# kind cluster detected - use NodePort on control-plane container IP
-		detected_port="$node_port"
-	elif ip=$(docker inspect "k3d-${name}-server-0" --format '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' 2>/dev/null) && [ -n "$ip" ]; then
-		# k3d cluster on shared network - use server-0 container IP + NodePort
-		detected_port="$node_port"
-	elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${name}-server-0" 2>/dev/null); then
-		# k3d cluster (legacy/without shared network info) - use server-0 container IP + NodePort
-		detected_port="$node_port"
+	
+	# 获取 http_port（极端 fallback 情况使用）：优先 DB，回退 CSV
+	local http_port
+	if command -v db_is_available >/dev/null 2>&1 && db_is_available 2>/dev/null; then
+		http_port=$(sqlite_query "SELECT COALESCE(http_port,'') FROM clusters WHERE name='$name';" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "")
 	else
-		ip="127.0.0.1" # fallback (may not work for kind)
-		detected_port="$node_port"
+		http_port=$(awk -F, -v n="$name" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "")
 	fi
+	
+	# Resolve cluster node container IP and target port
+    # kind cluster detected - 优先取 kind 网络的 IP；回退到第一个IP（以空格分隔）
+    if ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAddress}}{{end}}' "${name}-control-plane" 2>/dev/null) && [ -n "$ip" ]; then
+        detected_port="$node_port"
+        echo "[haproxy] kind cluster $name: using kind-net IP $ip:$detected_port"
+    elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${name}-control-plane" 2>/dev/null | awk '{print $1}') && [ -n "$ip" ]; then
+        detected_port="$node_port"
+        echo "[haproxy] kind cluster $name: using first IP $ip:$detected_port"
+	elif [ "$provider" = "k3d" ]; then
+		# k3d cluster: HAProxy直接访问server-0的NodePort（Traefik Ingress Controller）
+		# 不使用serverlb，因为Traefik移除了hostPort配置（避免多集群冲突）
+        server_name="k3d-${name}-server-0"
+        # 优先使用专用网络 k3d-<name> 的 IP；如果不存在，再使用 k3d-shared；最后回退到第一个IP（以空格分隔）
+        if ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "k3d-'"$name"'"}}{{.IPAddress}}{{end}}' "$server_name" 2>/dev/null) && [ -n "$ip" ]; then
+            detected_port="$node_port"
+            echo "[haproxy] k3d cluster $name: using k3d-$name IP $ip:$detected_port (NodePort)"
+        elif ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' "$server_name" 2>/dev/null) && [ -n "$ip" ]; then
+            detected_port="$node_port"
+            echo "[haproxy] k3d cluster $name: using k3d-shared IP $ip:$detected_port (NodePort)"
+        elif ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$server_name" 2>/dev/null | awk '{print $1}') && [ -n "$ip" ]; then
+            detected_port="$node_port"
+            echo "[haproxy] k3d cluster $name: using first IP $ip:$detected_port (NodePort)"
+		else
+			echo "[ERROR] k3d cluster $name: cannot find server container $server_name" >&2
+			return 1
+		fi
+	else
+		ip="127.0.0.1" # fallback
+		detected_port="${http_port:-$node_port}"
+	fi
+	
+	if [ -z "$ip" ]; then
+		echo "[WARN] Could not resolve IP for cluster $name, using fallback 127.0.0.1" >&2
+		ip="127.0.0.1"
+	fi
+	
 	b_begin="^# BEGIN DYNAMIC BACKENDS"
 	b_end="^# END DYNAMIC BACKENDS"
 	tmp=$(mktemp)
@@ -114,43 +269,162 @@ remove_acl() {
 }
 
 remove_backend() {
-	local tmp
-	tmp=$(mktemp)
-	awk -v n="$name" 'BEGIN{inblk=0}
-    /^backend be_/ {inblk=($2=="be_" n)}
-    inblk {next}
-    {print $0}
-  ' "$CFG" >"$tmp"
-	mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
+    local tmp
+    tmp=$(mktemp)
+    awk -v n="$name" '
+      BEGIN{inblk=0}
+      /^[[:space:]]*backend[[:space:]]+be_/ {
+        # detect start of a backend block (any indentation)
+        # set inblk=1 only for the target backend
+        split($0, a, /[[:space:]]+/)
+        if (a[2] == "be_" n) { inblk=1; next } else { inblk=0 }
+      }
+      inblk { next }
+      { print $0 }
+    ' "$CFG" >"$tmp"
+    mv "$tmp" "$CFG" && chmod 644 "$CFG" || true
+}
+
+validate_config() {
+	# Allow tests to skip validation
+	if [ "${SKIP_VALIDATE:-0}" = "1" ]; then
+		return 0
+	fi
+	# Validate HAProxy configuration using the running container
+	local validation_output
+	if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'haproxy-gw'; then
+		validation_output=$(docker exec haproxy-gw /usr/local/sbin/haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1 || true)
+		# Check for fatal errors (ALERT), ignore warnings
+		if echo "$validation_output" | grep -q "ALERT"; then
+			echo "[ERROR] HAProxy configuration validation failed" >&2
+			echo "$validation_output" | grep -E "(ALERT|ERROR)" | head -5 >&2 || true
+			return 1
+		fi
+		return 0
+	fi
+	echo "[WARN] haproxy-gw not running; skipping validation" >&2
+	return 0
+}
+
+route_exists() {
+	# Check if route already exists (both ACL and backend)
+	local n="$1"
+	grep -q "acl host_${n}" "$CFG" && grep -q "backend be_${n}" "$CFG"
 }
 
 reload() {
+	if [ -n "${NO_RELOAD:-}" ] && [ "${NO_RELOAD}" = "1" ]; then
+		return 0
+	fi
+	
+	# Validate configuration before reloading
+	if ! validate_config; then
+		echo "[ERROR] HAProxy configuration invalid, skipping reload" >&2
+		return 1
+	fi
+	
 	if ! "${DCMD[@]}" restart >/dev/null 2>&1; then
 		"${DCMD[@]}" up -d >/dev/null
 	fi
+	
+	# Verify HAProxy is running after reload
+	sleep 2
+	if ! docker ps --filter name=haproxy-gw --filter status=running | grep -q haproxy-gw; then
+		echo "[ERROR] HAProxy failed to start after reload" >&2
+		docker logs haproxy-gw --tail 20 2>&1 || true
+		return 1
+	fi
+	return 0
 }
 
 case "$cmd" in
 add)
+	# Determine environment name for output
+	output_env_name=""
+	case "$provider" in
+		k3d) output_env_name="${name%-k3d}" ;;
+		kind) output_env_name="$name" ;;
+		*) output_env_name="$label" ;;
+	esac
+	
 	if [ "${DRY_RUN:-}" = "1" ]; then
-		echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[DRY-RUN][haproxy] add route for $name (host: <svc>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	else
+		# Check if route already exists (idempotent)
+		if route_exists "$name"; then
+			echo "[haproxy] route for $name already exists, updating..."
+		fi
+		
+		# 获取锁保护配置文件修改
+		acquire_lock
+		
+		# Backup current config
+		# 确保配置文件可写
+		if [ ! -w "$CFG" ]; then
+			echo "[haproxy] Fixing config file permissions..."
+			chmod 644 "$CFG" || {
+				echo "[ERROR] Cannot write to $CFG" >&2
+				release_lock
+				exit 1
+			}
+		fi
+		
+		cp "$CFG" "${CFG}.backup" 2>/dev/null || true
+		
+		# Remove existing entries (idempotent)
 		remove_acl || true
 		remove_backend || true
-		add_acl
-		add_backend
+		
+        # Add new entries
+        add_acl
+        add_use_backend
+        add_backend
+		
+		# Validate before reload
+		if ! validate_config; then
+			echo "[ERROR] Configuration validation failed, restoring backup" >&2
+			mv "${CFG}.backup" "$CFG" 2>/dev/null || true
+			release_lock
+			exit 1
+		fi
+		
+		# Connect HAProxy to cluster network
 		ensure_network
-		reload
-		echo "[haproxy] added route for $name (pattern: <service>.${label}.${BASE_DOMAIN}, node-port=$node_port)"
+		
+		# Reload HAProxy
+		if ! reload; then
+			echo "[ERROR] HAProxy reload failed, restoring backup" >&2
+			mv "${CFG}.backup" "$CFG" 2>/dev/null || true
+			reload || true
+			release_lock
+			exit 1
+		fi
+		
+		# Cleanup backup on success
+		rm -f "${CFG}.backup" 2>/dev/null || true
+		release_lock
+		
+		if [ "$provider" = "k3d" ] || [ "$provider" = "kind" ]; then
+			echo "[haproxy] added route for $name (pattern: <service>.${provider}.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		else
+			echo "[haproxy] added route for $name (pattern: <service>.${output_env_name}.${BASE_DOMAIN}, node-port=$node_port)"
+		fi
 	fi
 	;;
 remove)
 	if [ "${DRY_RUN:-}" = "1" ]; then
 		echo "[DRY-RUN][haproxy] remove route for $name"
 	else
+		# 获取锁保护配置文件修改
+		acquire_lock
 		remove_acl
 		remove_backend
 		reload
+		release_lock
 		echo "[haproxy] removed route for $name"
 	fi
 	;;

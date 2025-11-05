@@ -1,0 +1,198 @@
+[SETUP] 生成测试集群清单 (CLUSTERS=4, WORKERS=3, RECONCILER_CONCURRENCY=3, CYCLES=3)
+[INFO] 本次测试的集群:
+  - testcd-093707-1 (k3d)
+  - testcd-093707-2 (kind)
+  - testcd-093707-3 (k3d)
+  - testcd-093707-4 (kind)
+
+================= 循环 1/3: 并发创建 =================
+{"task_id":"reconcile-testcd-093707-1","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-093707-1 on host."}
+202{"task_id":"reconcile-testcd-093707-3","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-093707-3 on host."}
+202{"task_id":"reconcile-testcd-093707-2","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-093707-2 on host."}
+202{"task_id":"reconcile-testcd-093707-4","status":"pending","message":"Cluster creation declared. Reconciler will create testcd-093707-4 on host."}
+202[2025-11-02 09:37:58] ==========================================
+[2025-11-02 09:37:58] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:37:58] ==========================================
+[2025-11-02 09:37:59] [RECONCILE] Reconciling uat: desired=present, actual=creating
+[2025-11-02 09:37:59] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:37:59] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:38:00] [RECONCILE] ✓ Cluster uat creation completed
+[2025-11-02 09:38:00] [RECONCILE] Reconciling testcd-093707-1: desired=present, actual=unknown
+[2025-11-02 09:38:00] [RECONCILE] Creating cluster: testcd-093707-1 (k3d)
+[2025-11-02 09:38:00] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:38:00] [RECONCILE] Reconciling testcd-093707-3: desired=present, actual=unknown
+[2025-11-02 09:38:00] [RECONCILE] Creating cluster: testcd-093707-3 (k3d)
+[2025-11-02 09:38:00] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:38:00] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=unknown
+[2025-11-02 09:38:00] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:38:43] [RECONCILE] ✗ Cluster testcd-093707-2 creation failed: Have a question, bug, or feature request? Let us know! https://kind.sigs.k8s.io/#community 🙂 [INFO] Fixing kind kubeconfig server from 0.0.0.0:37421 to 127.0.0.1:37421 [INFO] Preloading image 'trae
+[2025-11-02 09:38:43] [RECONCILE]   Full log: /tmp/reconcile_create_testcd-093707-2.log
+[2025-11-02 09:38:43] [RECONCILE] Reconciling testcd-093707-4: desired=present, actual=unknown
+[2025-11-02 09:38:43] [RECONCILE] Creating cluster: testcd-093707-4 (kind)
+[2025-11-02 09:39:45] [RECONCILE] ✗ Cluster testcd-093707-4 creation failed: [ALERT]    (8) : [/usr/local/etc/haproxy/haproxy.cfg:112] : 'server be_argocd/s1' : could not resolve address '10.101.0.4172.18.0.6'. [ALERT]    (8) : Failed to initialize server(s) addr. [NOTICE]   (
+[2025-11-02 09:39:45] [RECONCILE]   Full log: /tmp/reconcile_create_testcd-093707-4.log
+[2025-11-02 09:39:56] [RECONCILE] ✓ Cluster testcd-093707-3 created successfully
+[2025-11-02 09:39:57] [RECONCILE] ✓ Cluster testcd-093707-3 verified running
+[2025-11-02 09:40:12] [RECONCILE] ✓ Cluster testcd-093707-1 created successfully
+[2025-11-02 09:40:12] [RECONCILE] ✓ Cluster testcd-093707-1 verified running
+[2025-11-02 09:40:12] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-02 09:40:12] ==========================================
+
+  ✓ 所有 4 集群创建完成
+================= 循环 1/3: 并发删除 =================
+{"task_id":"reconcile-delete-testcd-093707-2","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-093707-2."}
+202{"task_id":"reconcile-delete-testcd-093707-1","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-093707-1."}
+202{"task_id":"reconcile-delete-testcd-093707-3","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-093707-3."}
+202{"task_id":"reconcile-delete-testcd-093707-4","status":"pending","message":"Cluster deletion declared. Reconciler will delete testcd-093707-4."}
+202[2025-11-02 09:40:18] ==========================================
+[2025-11-02 09:40:18] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:40:18] ==========================================
+[2025-11-02 09:40:19] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:40:19] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:40:19] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:40:19] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:40:19] [RECONCILE] Reconciling testcd-093707-2: desired=absent, actual=creating
+[2025-11-02 09:40:19] [RECONCILE] ℹ Cluster testcd-093707-2: desired=absent, actual=creating (no action needed)
+[2025-11-02 09:40:19] [RECONCILE] Reconciling testcd-093707-4: desired=absent, actual=failed
+[2025-11-02 09:40:19] [RECONCILE] Deleting cluster: testcd-093707-4 (kind)
+[2025-11-02 09:40:19] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:40:19] [RECONCILE] Reconciling testcd-093707-3: desired=absent, actual=running
+[2025-11-02 09:40:19] [RECONCILE] Deleting cluster: testcd-093707-3 (k3d)
+[2025-11-02 09:40:19] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:40:19] [RECONCILE] Reconciling testcd-093707-1: desired=absent, actual=running
+[2025-11-02 09:40:19] [RECONCILE] Deleting cluster: testcd-093707-1 (k3d)
+[2025-11-02 09:40:31] [RECONCILE] ✓ Cluster testcd-093707-4 deleted successfully
+[2025-11-02 09:40:32] [RECONCILE] ✓ Cluster testcd-093707-4 record removed from database
+[2025-11-02 09:40:40] [RECONCILE] ✓ Cluster testcd-093707-3 deleted successfully
+[2025-11-02 09:40:41] [RECONCILE] ✓ Cluster testcd-093707-3 record removed from database
+[2025-11-02 09:40:48] [RECONCILE] ✓ Cluster testcd-093707-1 deleted successfully
+[2025-11-02 09:40:48] [RECONCILE] ✓ Cluster testcd-093707-1 record removed from database
+[2025-11-02 09:40:48] [RECONCILE] Reconciled 7 cluster(s) (concurrency=3)
+[2025-11-02 09:40:48] ==========================================
+
+[2025-11-02 09:40:53] ==========================================
+[2025-11-02 09:40:53] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:40:53] ==========================================
+[2025-11-02 09:40:54] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:40:54] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:40:54] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:40:55] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:40:55] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:40:55] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:40:55] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:40:55] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:41:21] [RECONCILE] ✗ Cluster testcd-093707-2 creation failed: [WARNING]  (8) : config : parsing [/usr/local/etc/haproxy/haproxy.cfg:35] : a 'http-request' rule placed after a 'use_backend' rule will still be processed before. [ALERT]    (8) : [/usr/local/etc/hap
+[2025-11-02 09:41:21] [RECONCILE]   Full log: /tmp/reconcile_create_testcd-093707-2.log
+[2025-11-02 09:41:21] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:41:21] ==========================================
+
+[2025-11-02 09:41:27] ==========================================
+[2025-11-02 09:41:27] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:41:27] ==========================================
+[2025-11-02 09:41:27] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:41:27] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:41:27] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:41:28] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:41:28] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:41:28] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:41:28] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:41:56] [RECONCILE] ✗ Cluster testcd-093707-2 creation failed: [ALERT]    (8) : [/usr/local/etc/haproxy/haproxy.cfg:100] : 'server be_argocd/s1' : could not resolve address '10.101.0.4172.18.0.6'. [ALERT]    (8) : Failed to initialize server(s) addr. [NOTICE]   (
+[2025-11-02 09:41:56] [RECONCILE]   Full log: /tmp/reconcile_create_testcd-093707-2.log
+[2025-11-02 09:41:56] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:41:56] ==========================================
+
+[2025-11-02 09:42:01] ==========================================
+[2025-11-02 09:42:01] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:42:01] ==========================================
+[2025-11-02 09:42:02] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:42:02] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:42:02] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:42:03] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:42:03] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:42:03] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:42:03] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:42:03] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:42:59] [RECONCILE] ✓ Cluster testcd-093707-2 created successfully
+[2025-11-02 09:43:00] [RECONCILE] ✗ Cluster testcd-093707-2 created but not accessible
+[2025-11-02 09:43:00] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:43:00] ==========================================
+
+[2025-11-02 09:43:05] ==========================================
+[2025-11-02 09:43:05] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:43:05] ==========================================
+[2025-11-02 09:43:06] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:43:06] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:43:06] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:43:06] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:43:06] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:43:06] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:43:06] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:43:06] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:44:03] [RECONCILE] ✓ Cluster testcd-093707-2 created successfully
+[2025-11-02 09:44:03] [RECONCILE] ✗ Cluster testcd-093707-2 created but not accessible
+[2025-11-02 09:44:03] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:44:03] ==========================================
+
+[2025-11-02 09:44:08] ==========================================
+[2025-11-02 09:44:08] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:44:08] ==========================================
+[2025-11-02 09:44:09] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:44:09] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:44:09] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:44:10] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:44:10] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:44:10] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:44:10] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:44:10] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:45:05] [RECONCILE] ✓ Cluster testcd-093707-2 created successfully
+[2025-11-02 09:45:06] [RECONCILE] ✗ Cluster testcd-093707-2 created but not accessible
+[2025-11-02 09:45:06] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:45:06] ==========================================
+
+[2025-11-02 09:45:11] ==========================================
+[2025-11-02 09:45:11] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:45:11] ==========================================
+[2025-11-02 09:45:12] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:45:12] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:45:12] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:45:12] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:45:12] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:45:12] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:45:12] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:45:12] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:46:09] [RECONCILE] ✓ Cluster testcd-093707-2 created successfully
+[2025-11-02 09:46:09] [RECONCILE] ✗ Cluster testcd-093707-2 created but not accessible
+[2025-11-02 09:46:09] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:46:09] ==========================================
+
+[2025-11-02 09:46:14] ==========================================
+[2025-11-02 09:46:14] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:46:14] ==========================================
+[2025-11-02 09:46:15] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:46:15] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:46:15] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:46:16] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:46:16] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=failed
+[2025-11-02 09:46:16] [RECONCILE] Creating cluster: testcd-093707-2 (kind)
+[2025-11-02 09:46:16] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:46:16] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:47:11] [RECONCILE] ✓ Cluster testcd-093707-2 created successfully
+[2025-11-02 09:47:11] [RECONCILE] ✗ Cluster testcd-093707-2 created but not accessible
+[2025-11-02 09:47:11] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:47:11] ==========================================
+
+[2025-11-02 09:47:16] ==========================================
+[2025-11-02 09:47:16] [RECONCILE] Starting reconcile cycle
+[2025-11-02 09:47:16] ==========================================
+[2025-11-02 09:47:17] [RECONCILE] Reconciling prod: desired=present, actual=running
+[2025-11-02 09:47:17] [RECONCILE] Reconciling uat: desired=present, actual=running
+[2025-11-02 09:47:17] [RECONCILE] Reconciling dev: desired=present, actual=running
+[2025-11-02 09:47:18] [RECONCILE] ✓ Cluster uat health check passed
+[2025-11-02 09:47:18] [RECONCILE] Reconciling testcd-093707-2: desired=present, actual=creating
+[2025-11-02 09:47:18] [RECONCILE] ⏳ Cluster testcd-093707-2 still creating...
+[2025-11-02 09:47:18] [RECONCILE] ✓ Cluster dev health check passed
+[2025-11-02 09:47:18] [RECONCILE] ✓ Cluster prod health check passed
+[2025-11-02 09:47:18] [RECONCILE] Reconciled 4 cluster(s) (concurrency=3)
+[2025-11-02 09:47:18] ==========================================
+
+  ✗ 等待删除超时 (420s): 剩余 1/4 未删除

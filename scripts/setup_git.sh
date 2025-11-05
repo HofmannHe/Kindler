@@ -11,6 +11,8 @@ EXAMPLE_DIR="$ROOT_DIR/examples/whoami"
 log() { echo "[setup_git] $*"; }
 
 require_config() {
+  # 加载集群基础配置（提供 BASE_DOMAIN 等用于 git.env 变量展开）
+  load_env
   if [ ! -f "$CONFIG_FILE" ]; then
     log "❌ 未找到配置文件 $CONFIG_FILE (请复制 config/git.env.example 并填写)"
     exit 1
@@ -59,7 +61,66 @@ ls_remote() {
   if git ls-remote "$url" >/dev/null 2>&1; then
     return 0
   fi
+  # Fallback: 通过 127.0.0.1 + Host 头访问 HAProxy（适配 sslip.io 场景）
+  local host
+  host=$(printf '%s' "$url" | sed -E 's#^https?://([^/]+)/.*#\1#')
+  if printf '%s' "$host" | grep -q '\.sslip\.io$'; then
+    if git -c http.extraHeader="Host: $host" ls-remote "$(echo "$url" | sed -E 's#^https?://[^/]+/#http://127.0.0.1/#')" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
   return 1
+}
+
+# GitLab API helpers (HTTP via HAProxy using Host header)
+gitlab_api() {
+  local method="$1" path="$2" data="${3:-}" header_token
+  local base="$GIT_SERVER_URL" host url
+  host=$(printf '%s' "$base" | sed -E 's#^https?://([^/]+)/?.*#\1#')
+  url=$(printf '%s' "$base" | sed -E 's#^https?://[^/]+##')
+  url="http://127.0.0.1${url}${path}"
+  header_token="PRIVATE-TOKEN: ${GITLAB_TOKEN:-$GIT_PASSWORD}"
+  if [ -n "$data" ]; then
+    curl -sS -H "Host: $host" -H "$header_token" -H 'Content-Type: application/json' -X "$method" --data "$data" "$url"
+  else
+    curl -sS -H "Host: $host" -H "$header_token" -X "$method" "$url"
+  fi
+}
+
+ensure_gitlab_project_exists() {
+  # Parse group and project from GIT_REPO_URL: http(s)://host/<group>/<project>.git
+  local path group project
+  path=$(printf '%s' "$GIT_REPO_URL" | sed -E 's#^https?://[^/]+/##; s#\.git$##')
+  group=$(printf '%s' "$path" | cut -d'/' -f1)
+  project=$(printf '%s' "$path" | cut -d'/' -f2)
+  [ -n "$project" ] || return 0
+
+  # If ls-remote works, project exists
+  if ls_remote "$(with_credentials "$GIT_REPO_URL")"; then
+    return 0
+  fi
+
+  # Find group id
+  local groups gid
+  groups=$(gitlab_api GET "/api/v4/groups?search=${group}") || true
+  gid=$(echo "$groups" | jq -r ".[0].id" 2>/dev/null || echo "null")
+  if [ -z "$gid" ] || [ "$gid" = "null" ]; then
+    # Try to create group if token allows (optional)
+    created=$(gitlab_api POST "/api/v4/groups" "{\"name\":\"${group}\",\"path\":\"${group}\"}") || true
+    gid=$(echo "$created" | jq -r ".id" 2>/dev/null || echo "null")
+  fi
+
+  # Create project if not exists
+  local payload
+  if [ "$gid" != "null" ] && [ -n "$gid" ]; then
+    payload=$(printf '{"name":"%s","path":"%s","namespace_id":%s}' "$project" "$project" "$gid")
+  else
+    payload=$(printf '{"name":"%s","path":"%s"}' "$project" "$project")
+  fi
+  gitlab_api POST "/api/v4/projects" "$payload" >/dev/null 2>&1 || true
+
+  # Re-check
+  ls_remote "$(with_credentials "$GIT_REPO_URL")" || return 1
 }
 
 repo_default_branch() {
@@ -166,8 +227,13 @@ ensure_repo_ready() {
 
   log "检查外部 Git 仓库连通性: $GIT_REPO_URL"
   if ! ls_remote "$auth_url"; then
-    log "⚠️  无法访问 $GIT_REPO_URL，跳过仓库检查与初始化（仅影响 GitOps 演示）"
-    return 0
+    log "⚠️  无法访问 $GIT_REPO_URL，尝试通过 GitLab API 创建项目..."
+    if ensure_gitlab_project_exists; then
+      log "✓ 远端项目已存在或创建成功"
+    else
+      log "⚠️  远端项目创建失败，跳过仓库检查与初始化（仅影响 GitOps 演示）"
+      return 0
+    fi
   fi
   log "✓ 仓库访问正常"
 
@@ -176,9 +242,21 @@ ensure_repo_ready() {
 
   log "克隆仓库以检测内容..."
   if ! git clone "$auth_url" "$tmp_dir/repo" >/dev/null 2>&1; then
-    log "克隆失败，跳过仓库初始化（仅影响 GitOps 演示）"
-    rm -rf "$tmp_dir"
-    return 0
+    # fallback via 127.0.0.1 + Host header
+    local host
+    host=$(printf '%s' "$auth_url" | sed -E 's#^https?://([^/]+)/.*#\1#')
+    if printf '%s' "$host" | grep -q '\.sslip\.io$'; then
+      log "使用 127.0.0.1 + Host: $host 回退克隆"
+      if ! git -c http.extraHeader="Host: $host" clone "$(echo "$auth_url" | sed -E 's#^https?://[^/]+/#http://127.0.0.1/#')" "$tmp_dir/repo" >/dev/null 2>&1; then
+        log "克隆失败，跳过仓库初始化（仅影响 GitOps 演示）"
+        rm -rf "$tmp_dir"
+        return 0
+      fi
+    else
+      log "克隆失败，跳过仓库初始化（仅影响 GitOps 演示）"
+      rm -rf "$tmp_dir"
+      return 0
+    fi
   fi
 
   local repo_path="$tmp_dir/repo"

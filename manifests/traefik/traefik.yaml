@@ -89,7 +89,7 @@ metadata:
   name: traefik
   namespace: traefik
 spec:
-  type: NodePort
+  type: LoadBalancer  # 业务集群通过Ingress暴露服务，使用LoadBalancer让k3d serverlb处理流量转发
   selector:
     app: traefik
   ports:

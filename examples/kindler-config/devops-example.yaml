@@ -1,0 +1,23 @@
+version: v1
+
+cluster:
+  provider: k3d
+
+network:
+  http_port: 23800
+  https_port: 23843
+  node_port: 30800
+  pf_port: 19000
+  subnet: ""  # devops 使用 k3d-shared 共享网络
+
+integrations:
+  portainer:
+    enabled: false  # devops 集群是 Portainer 的宿主，不注册自己
+  
+  haproxy:
+    enabled: false  # devops 服务通过 NodePort 直接访问
+  
+  argocd:
+    enabled: false  # devops 集群是 ArgoCD 的宿主
+
+

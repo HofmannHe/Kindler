@@ -1,0 +1,82 @@
+{{- if .Values.portainer.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portainer-edge
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer-edge-agent
+  namespace: portainer-edge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer-edge-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: portainer-edge-agent
+  namespace: portainer-edge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s-portainer-agent-headless
+  namespace: portainer-edge
+spec:
+  clusterIP: None
+  selector:
+    app: portainer-edge-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer-edge-agent
+  namespace: portainer-edge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer-edge-agent
+  template:
+    metadata:
+      labels:
+        app: portainer-edge-agent
+    spec:
+      serviceAccountName: portainer-edge-agent
+      containers:
+      - name: agent
+        image: {{ .Values.portainer.image.repository }}:{{ .Values.portainer.image.tag }}
+        imagePullPolicy: {{ .Values.portainer.image.pullPolicy }}
+        env:
+        - name: EDGE
+          value: "1"
+        - name: EDGE_ID
+          value: "{{ .Values.portainer.edge.id }}"
+        - name: EDGE_KEY
+          value: "{{ .Values.portainer.edge.key }}"
+        - name: EDGE_INSECUREPOLL
+          value: "{{ .Values.portainer.edge.insecurePoll }}"
+        - name: CAP_HOST_MANAGEMENT
+          value: "1"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: KUBERNETES_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 9001
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+{{- end }}

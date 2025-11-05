@@ -4,6 +4,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
@@ -25,44 +26,50 @@ fi
 : "${GIT_REPO_URL:?请在 config/git.env 中设置 GIT_REPO_URL}"
 
 APPSET_FILE="$ROOT_DIR/manifests/argocd/whoami-applicationset.yaml"
-CSV_FILE="$ROOT_DIR/config/environments.csv"
 
 log() { echo "[sync_applicationset] $*"; }
 
 # 分支名 = 环境名（严格一一对应）
 get_branch_for_env() { echo "$1"; }
 
-# 读取 environments.csv 生成 ApplicationSet
+# 从数据库读取集群列表并生成 ApplicationSet
 generate_applicationset() {
-  log "读取 environments.csv 生成 ApplicationSet..."
+  log "从数据库读取集群列表并生成 ApplicationSet..."
 
-  if [ ! -f "$CSV_FILE" ]; then
-    log "❌ 找不到 $CSV_FILE"
-    return 1
+  # 检查数据库可用性
+  if ! db_is_available 2>/dev/null; then
+    log "⚠️  数据库不可用，ApplicationSet 不会更新"
+    log "  ArgoCD 将继续使用现有的 ApplicationSet 配置"
+    return 0
   fi
 
   local elements=""
   local first=1
+  local cluster_count=0
 
-  # 读取 CSV（跳过注释和空行）
-  while IFS=, read -r env provider node_port pf_port reg_portainer haproxy_route http_port https_port; do
-    # 跳过注释和空行
-    [[ "$env" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "$env" ]] && continue
-
+  # 从数据库读取所有集群（排除 devops），但只包含实际存在的集群
+  while IFS='|' read -r name provider _; do
     # 跳过 devops 环境（不部署 whoami）
-    [[ "$env" == "devops" ]] && continue
-
-    # 严格模式：仅包含已在 ArgoCD 注册的集群（cluster-<env>）
-    if [ "${STRICT_MODE:-1}" = "1" ]; then
-      if ! kubectl --context k3d-devops -n argocd get secret "cluster-${env}" >/dev/null 2>&1; then
-        continue
-      fi
+    [[ "$name" == "devops" ]] && continue
+    
+    # 验证集群是否实际存在（检查 kubectl context）
+    local ctx=""
+    if [ "$provider" = "k3d" ]; then
+      ctx="k3d-${name}"
+    else
+      ctx="kind-${name}"
     fi
-
-    local branch=$(get_branch_for_env "$env")
-    local label_env
-    label_env="$(env_label "$env")"
+    
+    # 验证集群是否存在且可访问
+    if ! kubectl --context "$ctx" get nodes >/dev/null 2>&1; then
+      log "  ⚠ 跳过不存在的集群: $name (context: $ctx)"
+      continue
+    fi
+    
+    # 分支名 = 集群名（一对一映射）
+    local branch="$name"
+    local host_env="$name"
+    local ingress_class="traefik"
 
     if [ $first -eq 1 ]; then
       first=0
@@ -71,14 +78,25 @@ generate_applicationset() {
 "
     fi
 
-    elements="${elements}      - env: ${env}
-        hostEnv: ${label_env}
+    elements="${elements}      - env: ${name}
+        hostEnv: ${host_env}
         branch: ${branch}
-        clusterName: ${env}"
+        clusterName: ${name}
+        ingressClass: ${ingress_class}"
+    
+    cluster_count=$((cluster_count + 1))
+    log "  ✓ 添加集群: $name ($provider, context: $ctx)"
+  done < <(sqlite_query "SELECT name, provider, node_port FROM clusters WHERE name != 'devops' ORDER BY name;" 2>/dev/null || echo "")
 
-  done < <(grep -v '^[[:space:]]*$' "$CSV_FILE")
+  if [ $cluster_count -eq 0 ]; then
+    log "⚠️  数据库中没有业务集群记录"
+    log "  创建集群后会自动更新 ApplicationSet"
+    return 0
+  fi
 
-  # 生成 ApplicationSet YAML
+  log "  发现 $cluster_count 个业务集群"
+
+  # 生成 ApplicationSet YAML（使用 List Generator + 数据库数据源）
   cat > "$APPSET_FILE" <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -91,7 +109,8 @@ spec:
   generators:
   - list:
       elements:
-      # 自动从 environments.csv 生成（通过 scripts/sync_applicationset.sh）
+      # 自动从数据库读取（通过 scripts/sync_applicationset.sh）
+      # 数据流：Database (clusters表) → Git Branch → ArgoCD Application
 ${elements}
   template:
     metadata:
@@ -104,6 +123,7 @@ ${elements}
       source:
         repoURL: '${GIT_REPO_URL}'
         path: deploy
+        # 每个集群对应一个同名的 Git 分支
         targetRevision: '{{.branch}}'
         helm:
           releaseName: whoami
@@ -111,15 +131,18 @@ ${elements}
           # 动态设置 Ingress host
           - name: ingress.host
             value: 'whoami.{{.hostEnv}}.${BASE_DOMAIN}'
+          # 统一使用 traefik Ingress Controller
+          - name: ingress.className
+            value: '{{.ingressClass}}'
           # 使用固定 tag，避免 :latest 触发 Always 拉取
           - name: image.tag
             value: 'v1.10.2'
           - name: image.pullPolicy
-            value: 'Never'
+            value: 'IfNotPresent'
       destination:
         # 部署到对应的集群
         name: '{{.clusterName}}'
-        namespace: default
+        namespace: whoami
       syncPolicy:
         automated:
           prune: true
@@ -129,6 +152,9 @@ ${elements}
 EOF
 
   log "✓ ApplicationSet 已生成: $APPSET_FILE"
+  log "  数据源：Database (clusters表，排除 devops)"
+  log "  集群数量：$cluster_count"
+  log "  数据流：Database → Git Branch → ArgoCD Application"
 }
 
 # 应用 ApplicationSet 到 ArgoCD
@@ -147,12 +173,6 @@ apply_applicationset() {
 
   log "✓ ApplicationSet 已应用到 ArgoCD"
 }
-
-# 参数解析（默认严格模式，--no-strict 可关闭）
-STRICT_MODE=1
-for arg in "$@"; do
-  if [ "$arg" = "--no-strict" ]; then STRICT_MODE=0; fi
-done
 
 main() {
   generate_applicationset

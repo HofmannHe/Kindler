@@ -1,0 +1,378 @@
+"""Cluster management API endpoints"""
+import logging
+from typing import List
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+
+from ..models.cluster import ClusterCreate, ClusterInfo, ClusterStatus, ClusterUpdate
+from ..models.task import TaskCreate
+from ..services.db_service import DBService
+from ..services.cluster_service import ClusterService
+from ..services.task_manager import task_manager
+from ..websocket.manager import ws_manager
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/clusters", tags=["clusters"])
+
+# Service instances
+db_service = DBService()
+cluster_service = ClusterService()
+
+
+@router.get("", response_model=List[ClusterInfo])
+async def list_clusters():
+    """List all clusters"""
+    try:
+        db_clusters = await db_service.list_clusters()
+        
+        # Enhance with runtime status
+        result = []
+        for cluster in db_clusters:
+            status_info = await cluster_service.get_cluster_status(
+                cluster["name"],
+                cluster["provider"]
+            )
+            
+            cluster_info = ClusterInfo(
+                name=cluster["name"],
+                provider=cluster["provider"],
+                node_port=cluster.get("node_port", 30080),
+                pf_port=cluster.get("pf_port", 19000),
+                http_port=cluster.get("http_port", 18090),
+                https_port=cluster.get("https_port", 18443),
+                cluster_subnet=cluster.get("subnet"),
+                register_portainer=True,
+                haproxy_route=True,
+                register_argocd=True,
+                status=status_info.get("status", "unknown"),
+                created_at=cluster.get("created_at"),
+                updated_at=cluster.get("updated_at")
+            )
+            result.append(cluster_info)
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error listing clusters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("", response_model=TaskCreate, status_code=202)
+async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTasks):
+    """Create a new cluster (async operation)"""
+    try:
+        # Check if cluster already exists
+        exists = await db_service.cluster_exists(cluster.name)
+        if exists:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cluster {cluster.name} already exists"
+            )
+        
+        # Pre-create database record (pending status)
+        # This allows:
+        # 1. Satisfying operations table foreign key constraint
+        # 2. User can immediately see the pending cluster
+        # 3. Avoid inconsistency on creation failure
+        success = await db_service.create_cluster({
+            "name": cluster.name,
+            "provider": cluster.provider,
+            "node_port": cluster.node_port,
+            "pf_port": cluster.pf_port,
+            "http_port": cluster.http_port,
+            "https_port": cluster.https_port,
+            "subnet": cluster.cluster_subnet or None,  # Note: 'subnet' not 'cluster_subnet'
+            # Note: register_portainer, haproxy_route, register_argocd are not stored in clusters table
+            "status": "creating"  # Special status for ongoing creation
+        })
+        if not success:
+            logger.error(f"Failed to pre-create cluster record for {cluster.name}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create cluster record in database"
+            )
+        logger.info(f"Pre-created database record for cluster {cluster.name}")
+        
+        # Create task
+        task_id = task_manager.create_task(f"Creating cluster {cluster.name}")
+        
+        # Add WebSocket callback
+        async def ws_callback(task_status):
+            await ws_manager.broadcast_task_update(task_id, {
+                "type": "task_update",
+                "task": task_status.model_dump(mode='json')
+            })
+        
+        task_manager.add_callback(task_id, ws_callback)
+        
+        # Progress callback for script output
+        async def progress_callback(log_line: str):
+            await task_manager.update_task(task_id, log_line=log_line)
+        
+        # Prepare cluster data
+        cluster_data = {
+            "name": cluster.name,
+            "provider": cluster.provider,
+            "node_port": cluster.node_port,
+            "pf_port": cluster.pf_port,
+            "http_port": cluster.http_port,
+            "https_port": cluster.https_port,
+            "subnet": cluster.cluster_subnet,
+            "register_portainer": cluster.register_portainer,
+            "haproxy_route": cluster.haproxy_route,
+            "register_argocd": cluster.register_argocd,
+        }
+        
+        # Wrapper function with cleanup on failure
+        async def create_with_cleanup():
+            try:
+                success = await cluster_service.create_cluster(
+                    cluster_data=cluster_data,
+                    progress_callback=progress_callback
+                )
+                if success:
+                    # Update status to running on success
+                    await db_service.update_cluster(cluster.name, {"status": "running"})
+                    logger.info(f"Cluster {cluster.name} created successfully")
+                else:
+                    # Creation failed, remove database record
+                    await db_service.delete_cluster(cluster.name)
+                    logger.warning(f"Cleaned up failed cluster record: {cluster.name}")
+                return success
+            except Exception as e:
+                # Exception occurred, also remove database record
+                try:
+                    await db_service.delete_cluster(cluster.name)
+                    logger.error(f"Cleaned up failed cluster record after exception: {cluster.name}")
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup cluster record: {cleanup_error}")
+                raise
+        
+        # Run creation in background
+        background_tasks.add_task(
+            task_manager.run_task,
+            task_id,
+            create_with_cleanup
+        )
+        
+        return TaskCreate(
+            task_id=task_id,
+            status="pending",
+            message=f"Cluster creation task created for {cluster.name}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating cluster: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{name}", response_model=ClusterInfo)
+async def get_cluster(name: str):
+    """Get cluster details"""
+    try:
+        cluster = await db_service.get_cluster(name)
+        if not cluster:
+            raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
+        
+        status_info = await cluster_service.get_cluster_status(
+            cluster["name"],
+            cluster["provider"]
+        )
+        
+        return ClusterInfo(
+            name=cluster["name"],
+            provider=cluster["provider"],
+            node_port=cluster.get("node_port", 30080),
+            pf_port=cluster.get("pf_port", 19000),
+            http_port=cluster.get("http_port", 18090),
+            https_port=cluster.get("https_port", 18443),
+            cluster_subnet=cluster.get("subnet"),
+            register_portainer=True,
+            haproxy_route=True,
+            register_argocd=True,
+            status=status_info.get("status", "unknown"),
+            created_at=cluster.get("created_at"),
+            updated_at=cluster.get("updated_at")
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting cluster: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{name}", response_model=TaskCreate, status_code=202)
+async def delete_cluster(name: str, background_tasks: BackgroundTasks):
+    """Delete a cluster (async operation)"""
+    try:
+        # Check if cluster exists
+        exists = await db_service.cluster_exists(name)
+        if not exists:
+            raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
+        
+        # Create task
+        task_id = task_manager.create_task(f"Deleting cluster {name}")
+        
+        # Add WebSocket callback
+        async def ws_callback(task_status):
+            await ws_manager.broadcast_task_update(task_id, {
+                "type": "task_update",
+                "task": task_status.model_dump(mode='json')
+            })
+        
+        task_manager.add_callback(task_id, ws_callback)
+        
+        # Progress callback
+        async def progress_callback(log_line: str):
+            await task_manager.update_task(task_id, log_line=log_line)
+        
+        # Run deletion in background
+        background_tasks.add_task(
+            task_manager.run_task,
+            task_id,
+            cluster_service.delete_cluster,
+            name=name,
+            progress_callback=progress_callback
+        )
+        
+        return TaskCreate(
+            task_id=task_id,
+            status="pending",
+            message=f"Cluster deletion task created for {name}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting cluster: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{name}/status", response_model=ClusterStatus)
+async def get_cluster_status(name: str):
+    """Get detailed cluster status"""
+    try:
+        # Check if cluster exists in DB
+        cluster = await db_service.get_cluster(name)
+        if not cluster:
+            raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
+        
+        # Get runtime status
+        status_info = await cluster_service.get_cluster_status(
+            cluster["name"],
+            cluster["provider"]
+        )
+        
+        return ClusterStatus(
+            name=name,
+            status=status_info.get("status", "unknown"),
+            nodes_ready=status_info.get("nodes_ready", 0),
+            nodes_total=status_info.get("nodes_total", 0),
+            portainer_status="unknown",  # TODO: Query Portainer API
+            argocd_status="unknown",  # TODO: Query ArgoCD API
+            error_message=status_info.get("error")
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting cluster status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{name}/start", response_model=TaskCreate, status_code=202)
+async def start_cluster(name: str, background_tasks: BackgroundTasks):
+    """Start a stopped cluster (async operation)"""
+    try:
+        # Check if cluster exists
+        exists = await db_service.cluster_exists(name)
+        if not exists:
+            raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
+        
+        # Create task
+        task_id = task_manager.create_task(f"Starting cluster {name}")
+        
+        # Add WebSocket callback
+        async def ws_callback(task_status):
+            await ws_manager.broadcast_task_update(task_id, {
+                "type": "task_update",
+                "task": task_status.model_dump(mode='json')
+            })
+        
+        task_manager.add_callback(task_id, ws_callback)
+        
+        # Progress callback
+        async def progress_callback(log_line: str):
+            await task_manager.update_task(task_id, log_line=log_line)
+        
+        # Run start in background
+        background_tasks.add_task(
+            task_manager.run_task,
+            task_id,
+            cluster_service.start_cluster,
+            name=name,
+            progress_callback=progress_callback
+        )
+        
+        return TaskCreate(
+            task_id=task_id,
+            status="pending",
+            message=f"Cluster start task created for {name}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting cluster: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{name}/stop", response_model=TaskCreate, status_code=202)
+async def stop_cluster(name: str, background_tasks: BackgroundTasks):
+    """Stop a running cluster (async operation)"""
+    try:
+        # Check if cluster exists
+        exists = await db_service.cluster_exists(name)
+        if not exists:
+            raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
+        
+        # Create task
+        task_id = task_manager.create_task(f"Stopping cluster {name}")
+        
+        # Add WebSocket callback
+        async def ws_callback(task_status):
+            await ws_manager.broadcast_task_update(task_id, {
+                "type": "task_update",
+                "task": task_status.model_dump(mode='json')
+            })
+        
+        task_manager.add_callback(task_id, ws_callback)
+        
+        # Progress callback
+        async def progress_callback(log_line: str):
+            await task_manager.update_task(task_id, log_line=log_line)
+        
+        # Run stop in background
+        background_tasks.add_task(
+            task_manager.run_task,
+            task_id,
+            cluster_service.stop_cluster,
+            name=name,
+            progress_callback=progress_callback
+        )
+        
+        return TaskCreate(
+            task_id=task_id,
+            status="pending",
+            message=f"Cluster stop task created for {name}"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error stopping cluster: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

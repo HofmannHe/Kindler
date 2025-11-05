@@ -1,3 +1,22 @@
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
+
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
+
 # Repository Guidelines
 
 本仓库用于维护本地轻量级环境与容器编排：以 Portainer CE 统一管理容器/轻量级集群（kind/k3d 可选），HAProxy 提供统一入口。目标：简单、快速、够用。
@@ -43,8 +62,9 @@
 ### 核心组件
 1. **HAProxy**: 统一入口网关，所有外部访问的唯一入口
 2. **Portainer CE**: 容器和集群统一管理界面
-3. **devops 集群**: 管理集群，运行 ArgoCD 等 DevOps 工具
+3. **devops 集群**: 管理集群，运行 ArgoCD 等 DevOps 服务
 4. **业务集群**: 运行实际应用的 k3d/kind 集群
+5. **数据存储**: SQLite 数据库存储在 WebUI 后端容器中（`/data/kindler-webui/kindler.db`），所有脚本和 WebUI 共享
 
 ### GitOps 工作流
 - **外部 Git 服务**: 托管应用代码（在 `config/git.env` 中配置）
@@ -59,12 +79,21 @@
 - ArgoCD 通过 ServiceAccount token 连接业务集群 API Server
 
 ### 生命周期管理
-- `clean.sh`: 清理所有环境（集群、容器、网络、数据）
-- `bootstrap.sh`: 拉起基础设施（HAProxy + Portainer + devops 集群 + ArgoCD，并验证外部 Git 配置）
-- `create_env.sh`: 创建业务集群并自动注册到 Portainer、ArgoCD，同步 ApplicationSet
-- `stop_env.sh`: 停止集群但保留配置（临时释放资源）
-- `start_env.sh`: 启动已停止的集群
-- `delete_env.sh`: 永久删除集群（含 CSV 配置、Portainer 注册、ArgoCD 注册、ApplicationSet）
+
+#### devops 集群（管理集群）
+- **创建**: 通过 `bootstrap.sh` 创建，包含 HAProxy、Portainer、ArgoCD、WebUI
+- **清理**: 默认不清理，需要 `clean.sh --all` 或 `clean.sh --include-devops` 才会清理
+- **说明**: devops 集群是管理集群，通常保持运行
+
+#### 业务集群
+- **创建**: `create_env.sh -n <name> -p kind|k3d` - 自动注册到 Portainer（Edge Agent）和 ArgoCD
+- **删除**: `delete_env.sh <name>` - 自动反注册，清理所有相关资源
+- **停止**: `stop_env.sh <name>` - 停止集群但保留配置（临时释放资源）
+- **启动**: `start_env.sh <name>` - 启动已停止的集群
+
+#### 完整清理
+- `clean.sh`: 清理所有业务集群，保留 devops 集群
+- `clean.sh --all`: 清理所有环境（包括 devops 集群、容器、网络、数据）
 
 ## 语言与沟通
 - 文档与日常交流默认使用中文。
@@ -134,6 +163,22 @@
 - 每次修订README等文档的时候需要同时修订中英文版本
 - devops集群不应该部署whoami服务，应该部署到其它业务集群上。另外注意这些集群名称包括域名不应存在硬编码，因为环境配置csv中的环境名称是可能增删改的，测试用例也需要覆盖环境名增删改
 
+### 分支与工作树（强制要求）
+- 根目录仅用于 `master/main` 稳定分支，供实际部署与用户使用；禁止在根目录直接开发或推送（master 为保护分支，仅允许通过 PR 合并）。
+- 所有开发与测试必须在 `worktrees/` 目录下的 git worktree 中进行：每个子目录代表一个开发分支。
+- 环境隔离：开发分支下运行脚本前必须设置 `KINDLER_NS=<ns>`（建议与分支名一致，例如 `develop`）。脚本会将实际资源（集群名、HAProxy 路由、ArgoCD secret/应用等）添加命名空间后缀，避免影响 master 运行环境。
+- 清理：在开发分支不要运行根目录的 `clean.sh`（会影响全局）。使用 `scripts/clean_ns.sh`，它只清理 `KINDLER_NS` 对应的资源。
+- 建议流程：
+  ```bash
+  mkdir -p worktrees
+  git worktree add worktrees/develop develop
+  cd worktrees/develop
+  export KINDLER_NS=develop
+  ./scripts/create_env.sh -n dev
+  # ... 开发与验证 ...
+  ./scripts/clean_ns.sh --from-csv   # 仅清理 develop 命名空间下的资源
+  ```
+
 ## 开发模式（Git Flow + Git Worktree）
 
 - 目标：实现“部署与开发隔离”。项目根目录仅承载 `master`（或 `main`）稳定分支，供用户直接使用与部署；开发分支使用 `git worktree` 挂载到本地 `worktrees/` 目录下。
@@ -162,3 +207,42 @@
 - 约束：
   - 所有部署脚本、CI/测试不得依赖 `worktrees/` 内容；生产使用始终以根目录的 `master/main` 为准。
   - 文档/脚本若需说明开发流程，统一指向 `git worktree` 方式；避免在根目录创建临时开发文件。
+
+## GitOps 合规要求
+
+### 核心原则
+- **除 ArgoCD 本身外，所有 Kubernetes 应用必须由 ArgoCD 管理**
+- **禁止使用 `kubectl apply` 直接部署应用**（ArgoCD 安装除外）
+- **配置变更必须通过 Git 提交触发**
+
+### 合规检查
+- 所有应用部署必须有对应的 ArgoCD Application 或 ApplicationSet
+- 应用配置存储在外部 Git 仓库（`config/git.env` 配置）
+- 使用 `scripts/check_gitops_compliance.sh` 检查合规性
+
+### 例外情况
+- ArgoCD 本身的安装和配置（通过 `scripts/setup_devops.sh`）
+- 临时调试用途（需在调试完成后清理）
+
+## 数据存储规范
+
+### SQLite 数据库
+- **部署位置**: WebUI 后端容器内（`/data/kindler-webui/kindler.db`）
+- **用途**: 存储集群配置信息（clusters 表）
+- **访问方式**: 
+  - 脚本系统：通过 `scripts/lib_sqlite.sh` 访问（支持容器内外执行）
+  - WebUI 后端：通过 Python `app/db.py` 直接访问
+- **并发安全**: 使用文件锁（flock）确保并发操作安全
+- **初始化**: 在 `bootstrap.sh` 时自动初始化表结构
+
+### CSV 文件（仅初始化）
+- **位置**: `config/environments.csv`
+- **用途**: 仅在 `bootstrap.sh` 时一次性导入到 SQLite
+- **幂等性**: CSV 导入是幂等的（已存在则更新）
+- **说明**: 创建/删除集群操作不再读取 CSV，所有操作都基于 SQLite
+
+### 集群配置管理
+- **数据源**: SQLite 为唯一真实数据源
+- **回退机制**: 数据库不可用时使用硬编码默认值
+- **数据同步**: 创建/删除集群时自动更新 SQLite 记录
+- **并发支持**: 通过文件锁和事务确保并发操作的数据一致性

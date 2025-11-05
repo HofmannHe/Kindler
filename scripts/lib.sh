@@ -20,8 +20,45 @@ load_env() {
 	if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 }
 
+# Effective naming helpers for branch/worktree isolation
+effective_name() {
+  local n="$1"
+  if [ -n "${KINDLER_NS:-}" ]; then echo "${n}-${KINDLER_NS}"; else echo "$n"; fi
+}
+host_label() {
+  # base env label + optional namespace suffix (alnum only)
+  local n="$1" nslabel
+  n="$(env_label "$n")"
+  if [ -n "${KINDLER_NS:-}" ]; then
+    nslabel="$(env_label "$KINDLER_NS")"
+    echo "${n}${nslabel}"
+  else
+    echo "$n"
+  fi
+}
+
 env_label() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+}
+
+# 生成域名（新格式：不含 provider）
+# 参数：
+#   $1: 服务名（如 whoami）
+#   $2: 环境名（如 dev）
+#   $3: 基础域名（可选，默认从配置读取）
+# 输出：service.env.base_domain
+generate_domain() {
+	local service="$1"
+	local env="$2"
+	local base_domain="${3:-}"
+	
+	# 从配置读取基础域名
+	if [ -z "$base_domain" ]; then
+		load_env
+		base_domain="${BASE_DOMAIN:-192.168.51.30.sslip.io}"
+	fi
+	
+	echo "${service}.${env}.${base_domain}"
 }
 
 ctx_name() {
@@ -42,24 +79,42 @@ provider_for() {
 		echo "$PROVIDER"
 		return
 	fi
-	# prefer CSV if available
+	
+	# 1. 优先从数据库读取
+	if command -v db_get_cluster >/dev/null 2>&1 && db_is_available 2>/dev/null; then
+		local db_provider db_record
+		db_record=$(db_get_cluster "$env" 2>/dev/null || echo "")
+		if [ -n "$db_record" ]; then
+			# db_get_cluster 返回格式: name|provider|subnet|node_port|pf_port|http_port|https_port
+			db_provider=$(echo "$db_record" | cut -d'|' -f2)
+			if [ -n "$db_provider" ]; then
+				echo "$db_provider"
+				return
+			fi
+		fi
+	fi
+	
+	# 2. fallback到CSV if available
 	local line provider
 	line=$(csv_lookup "$env" || true)
 	if [ -n "$line" ]; then
-		IFS=, read -r _env provider _np _pf _rp _hr _hp _hs <<<"$line"
-		IFS=$'
-	'
+		IFS=, read -r _env provider _np _pf _rp _hr _hp _hs _subnet <<<"$line"
+		IFS=$'\n\t'
+		provider=$(echo "${provider:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
 		if [ -n "${provider:-}" ]; then
 			echo "$provider"
 			return
 		fi
 	fi
+	
+	# 3. 最后fallback到默认值
 	case "$env" in
-	dev) echo "${PROVIDER_DEV:-kind}" ;;
-	uat) echo "${PROVIDER_UAT:-kind}" ;;
-	prod) echo "${PROVIDER_PROD:-kind}" ;;
-	ops) echo "${PROVIDER_OPS:-kind}" ;;
-	*) echo kind ;;
+	dev) echo "${PROVIDER_DEV:-k3d}" ;;
+	uat) echo "${PROVIDER_UAT:-k3d}" ;;
+	prod) echo "${PROVIDER_PROD:-k3d}" ;;
+	ops) echo "${PROVIDER_OPS:-k3d}" ;;
+	devops) echo "k3d" ;;
+	*) echo "k3d" ;;  # 默认使用k3d而非kind
 	esac
 }
 
@@ -67,9 +122,11 @@ ports_for() {
 	local env="$1" line hp hs
 	line=$(csv_lookup "$env" || true)
 	if [ -n "$line" ]; then
-		IFS=, read -r _env _prov _np _pf _rp _hr hp hs <<<"$line"
-		IFS=$'
-	'
+		IFS=, read -r _env _prov _np _pf _rp _hr hp hs _subnet <<<"$line"
+		IFS=$'\n\t'
+		# trim whitespace
+		hp=$(echo "${hp:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
+		hs=$(echo "${hs:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
 		if [ -n "${hp:-}" ] && [ -n "${hs:-}" ]; then
 			echo "$hp $hs"
 			return
@@ -89,7 +146,26 @@ csv_lookup() {
 	local n="$1" csv="$ROOT_DIR/config/environments.csv"
 	[ -f "$csv" ] || return 1
 	# return comma-separated line for env n, ignoring comments/blank
-	awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d ''
+	awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d '
+'
+}
+
+# Get cluster subnet for environment (k3d only)
+subnet_for() {
+	local env="$1" line subnet
+	line=$(csv_lookup "$env" || true)
+	if [ -n "$line" ]; then
+		IFS=, read -r _env _prov _np _pf _rp _hr _hp _hs subnet <<<"$line"
+		IFS=$'\n\t'
+		# trim whitespace
+		subnet=$(echo "${subnet:-}" | sed -e 's/^\s\+//' -e 's/\s\+$//')
+		if [ -n "$subnet" ]; then
+			echo "$subnet"
+			return
+		fi
+	fi
+	# No subnet specified
+	echo ""
 }
 
 # Preload a container image into a cluster runtime to avoid ImagePullBackOff
@@ -163,35 +239,78 @@ prefetch_image() {
 # Usage: ensure_pod_running_with_preload <ctx> <namespace> <label-selector> <provider> <cluster-name> <image> <timeout-seconds>
 ensure_pod_running_with_preload() {
   local ctx="$1" ns="$2" sel="$3" provider="$4" name="$5" image="$6" timeout="${7:-180}"
-  local attempt=0 max_attempts=3 base_wait=4 status waited step
+  local attempt=0 max_attempts=5 base_wait=2 status waited step check_interval
+
+  log INFO "Waiting for pods '$sel' in $ns (max ${max_attempts} attempts, ${timeout}s per attempt)"
 
   while [ $attempt -lt $max_attempts ]; do
-    # quick wait loop before deciding to preload
+    # Smart wait loop with adaptive checking
     waited=0; step=$base_wait
+    check_interval=2  # Start with 2s checks
+    preload_triggered=0  # 追踪是否已经触发过预加载
+    
     while [ $waited -lt "$timeout" ]; do
       status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)
-      [ "$status" = "Running" ] && return 0
-      if [ $((waited % 10)) -eq 0 ]; then
-        log INFO "waiting pods '$sel' in $ns (elapsed ${waited}s/${timeout}s, attempt $((attempt+1)))"
+      
+      if [ "$status" = "Running" ]; then
+        log INFO "✓ Pods '$sel' in $ns are Running (elapsed: ${waited}s, attempt: $((attempt+1)))"
+        return 0
       fi
-      sleep $step; waited=$((waited+step))
+      
+      # 如果 Pod 在 Pending/ContainerCreating 超过 30 秒，立即预加载镜像
+      if [ "$preload_triggered" -eq 0 ] && [ $waited -gt 30 ] && [ "$status" = "Pending" ]; then
+        local reason=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+        if echo "$reason" | grep -qi "ContainerCreating\|ImagePull"; then
+          log WARN "⚡ Pod stuck in $reason for ${waited}s, preloading image immediately..."
+          preload_image_to_cluster "$provider" "$name" "$image" || log WARN "Preload failed, continuing..."
+          preload_triggered=1
+        fi
+      fi
+      
+      # Report progress every 10 seconds
+      if [ $((waited % 10)) -eq 0 ]; then
+        local pod_status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.containerStatuses[0].state}' 2>/dev/null || echo "unknown")
+        log INFO "⏳ Waiting pods '$sel' in $ns (${waited}s/${timeout}s, attempt $((attempt+1))/$max_attempts, status: ${status:-none}, state: ${pod_status})"
+      fi
+      
+      # Adaptive sleep: increase interval after first 30s
+      if [ $waited -gt 30 ] && [ $check_interval -lt 5 ]; then
+        check_interval=5
+      fi
+      
+      sleep $check_interval
+      waited=$((waited+check_interval))
     done
 
-    # not running within timeout: attempt preload + delete to restart
-    log WARN "Pods '$sel' in $ns not Running; attempt $((attempt+1))/$max_attempts — preloading '$image'"
-    preload_image_to_cluster "$provider" "$name" "$image"
+    # Not running within timeout: attempt preload + delete to restart
+    log WARN "⚠ Pods '$sel' in $ns not Running after ${timeout}s; attempt $((attempt+1))/$max_attempts — preloading '$image' and restarting"
+    
+    # Force preload image to cluster
+    preload_image_to_cluster "$provider" "$name" "$image" || log WARN "Preload failed, continuing anyway"
+    
+    # Delete pods to trigger restart
     kubectl --context "$ctx" delete pod -n "$ns" -l "$sel" --force --grace-period=0 >/dev/null 2>&1 || true
+    
+    # Wait a bit for pod to be recreated
+    sleep 5
 
-    # exponential backoff for next cycle
+    # Exponential backoff for next cycle (but cap the timeout increase)
     attempt=$((attempt+1))
-    base_wait=$((base_wait*2))
+    if [ $base_wait -lt 8 ]; then
+      base_wait=$((base_wait*2))
+    fi
   done
 
-  # final check one last time
+  # Final check one last time
   status=$(kubectl --context "$ctx" get pods -n "$ns" -l "$sel" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)
   if [ "$status" = "Running" ]; then
+    log INFO "✓ Pods '$sel' in $ns are Running (final check succeeded)"
     return 0
   fi
-  log WARN "Pods with selector '$sel' in $ns not Running after retries"
+  
+  log WARN "✗ Pods with selector '$sel' in $ns not Running after $max_attempts attempts"
+  log WARN "Pod status dump:"
+  kubectl --context "$ctx" get pods -n "$ns" -l "$sel" 2>/dev/null || true
+  kubectl --context "$ctx" describe pods -n "$ns" -l "$sel" 2>/dev/null | tail -50 || true
   return 1
 }

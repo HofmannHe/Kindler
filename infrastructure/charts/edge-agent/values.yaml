@@ -1,0 +1,31 @@
+# Portainer Edge Agent Configuration
+enabled: true
+
+# Edge Agent 凭证（从 cluster secret annotations 注入）
+edgeId: ""
+edgeKey: ""
+
+# 集群信息
+cluster:
+  name: ""
+  env: ""
+  provider: ""
+
+# Edge Agent 配置
+image:
+  repository: portainer/agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# 资源限制
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Namespace
+namespace: portainer-edge
+
