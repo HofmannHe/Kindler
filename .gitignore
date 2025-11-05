@@ -65,3 +65,6 @@ FIX_SUMMARY.md
 tests/*.html
 tests/diagnose_*.sh
 tests/quick_*.sh
+
+# ArgoCD ApplicationSet with credentials (use templates instead)
+manifests/argocd/*applicationset*.yaml
