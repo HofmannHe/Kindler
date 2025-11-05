@@ -60,8 +60,28 @@
 - 最小变更原则：建立最小可用基准后，非必要不变更；避免破坏性命令与硬编码环境名（测试需覆盖环境名增删改）。
 - 接口统一：通过 `scripts/*` 入口暴露操作，不新增 Makefile 目标。
 
+## Git 仓库说明
+
+**重要**：项目使用两个 Git 仓库，用途不同：
+
+### 1. GitHub 代码仓库（本仓库）
+- **地址**: https://github.com/HofmannHe/Kindler/
+- **用途**: 存放项目代码、脚本、配置、文档
+- **分支策略**: main 为稳定分支，特性开发使用 worktree
+- **推送**: 通过 PR 合并到 main
+
+### 2. GitOps 应用仓库
+- **地址**: 由用户在 `config/git.env` 中配置（如 `git.devops.192.168.51.30.sslip.io/fc005/devops.git`）
+- **用途**: 存放业务集群的应用配置（如 whoami 的 Kubernetes manifests）
+- **分支策略**: 分支名与集群名一一对应（dev/uat/prod 等）
+- **访问**: 通过 HAProxy 提供统一入口（隔离环境差异）
+- **同步**: ArgoCD 监听此仓库，ApplicationSet 动态生成 Applications
+
+**注意**: 不要混淆这两个仓库。代码变更提交到 GitHub，应用配置由脚本自动同步到 GitOps 仓库。
+
 ## External Dependencies
-- 外部 Git 服务（`config/git.env` 配置 `GIT_REPO_URL` 等），作为应用与 ApplicationSet 的源。
+- 外部 GitOps 仓库（`config/git.env` 配置 `GIT_REPO_URL`），存放应用配置，由 ArgoCD 监听
+- GitHub（代码仓库，本项目托管地）
 - Docker / Docker Compose（Portainer 与 HAProxy 运行时）
 - k3d / kind / kubectl（轻量集群与 CLI）
 - ArgoCD（管理集群内），ApplicationSet Controller
