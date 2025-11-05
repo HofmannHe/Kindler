@@ -171,12 +171,16 @@ sequenceDiagram
 - WebUI 采用声明式：仅写入 SQLite 数据库中的期望状态；由宿主机上的 Reconciler 调用与预置集群相同的 `scripts/create_env.sh` 完成实际创建与 Portainer/ArgoCD 注册。
 - `bootstrap.sh` 会自动启动 Reconciler，可通过以下命令管理：
   - `./scripts/start_reconciler.sh start|stop|status|logs`
+  - 并发度可调：设置 `RECONCILER_CONCURRENCY`（默认 3），用于同时并行调和多个集群；同名集群始终串行（集群级锁保障）
 - 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
+ - P2 修复：bootstrap 会在 SQLite 中初始化 `devops` 集群的 `actual_state=running`（并记录 `last_reconciled_at`），确保 WebUI 正确显示管理集群状态。
+ - 可选：如需在 `devops` 上部署业务，可在 bootstrap 前导出 `REGISTER_DEVOPS_ARGOCD=1`，系统将把 `devops` 注册到 ArgoCD（默认不注册；ApplicationSet 仍仅匹配业务集群）。
 
 4. **一键拉起（含计时/健康检查，建议）**
    ```bash
    # 可选：先全量清理
-   ./scripts/clean.sh
+   # 建议使用 --all 确保重置 Portainer 管理员（会清理 portainer_data/portainer_secrets 卷）
+   ./scripts/clean.sh --all
 
    # 一键全流程（含 bootstrap + 批量创建 CSV 环境）
    ./scripts/full_cycle.sh --concurrency 3
@@ -222,7 +226,7 @@ for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n 
 - ✅ 创建 Kubernetes 集群 (根据 CSV 配置选择 kind/k3d)
 - ✅ 通过 Edge Agent 注册到 Portainer
 - ✅ 使用 kubectl context 注册到 ArgoCD
-- ✅ 配置 HAProxy 域名路由 (如果在 CSV 中启用)
+- ✅ 配置 HAProxy 域名路由（运行期以 SQLite `clusters` 为准；CSV 仅在 bootstrap 导入）
 
 ### 访问集群与应用
 
@@ -440,7 +444,7 @@ sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
 修改 `clusters.env` 后的最小操作（手动路径）
 ```bash
 # 1) 同步 HAProxy 路由
-./scripts/haproxy_sync.sh --prune
+./scripts/haproxy_sync.sh --prune   # SQLite 为源，DB 不可用时临时回退 CSV
 
 # 2) 更新 devops 集群的 ArgoCD Ingress（按 BASE_DOMAIN 重建）
 ./scripts/setup_devops.sh
@@ -726,6 +730,43 @@ curl -I http://${HAPROXY_HOST}
 curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
 # 预期: HTTP/1.1 200 OK (或后端服务响应)
 ```
+
+## 运维操作
+
+- Portainer 管理员密码
+  - 在 `config/secrets.env` 配置 `PORTAINER_ADMIN_PASSWORD`（明文）。
+  - 运行 `./scripts/portainer.sh up` 会把密码写入命名卷 `portainer_secrets:/run/secrets/portainer_admin` 并启动 Portainer。
+  - 轮换/重置管理员密码：更新 `config/secrets.env` 后执行 `./scripts/portainer.sh reset-admin`（会重建数据卷并重新应用密码）。
+
+- 在 Portainer 中查看 devops 集群
+  - `bootstrap.sh` 会以 Edge Agent 方式把 devops（管理）集群注册到 Portainer，便于从 Portainer 观察 ArgoCD 等核心组件。
+  - 可通过环境变量关闭：`REGISTER_DEVOPS_PORTAINER=0 ./scripts/bootstrap.sh`（跳过注册）。
+  - 随时手动注册：`./scripts/register_edge_agent.sh devops k3d`。
+
+- HAProxy 路由（数据库驱动）
+  - 运行期以 SQLite 数据库 `clusters` 表为唯一真实来源；CSV 仅在 bootstrap 时导入（DB 临时不可用时回退）。
+  - 集群新增/删除后执行 `./scripts/haproxy_sync.sh --prune` 同步（幂等、单次 reload）。
+  - `compose/infrastructure/haproxy.cfg` 中的动态区块默认留空，由脚本完全管理以避免陈旧条目；`setup_devops.sh` 会将 ArgoCD backend 自动重写为当前 devops 节点 IP/NodePort。
+  - 已启用 Docker DNS 解析器（`resolvers docker`）与后端懒解析（如 `init-addr none`），启动时若后端容器名暂不可解析不会导致 HAProxy 重启；后端就绪后自动生效。
+  - 若出现异常路由（如 `use_backend` 指向不存在的 backend），执行 `./scripts/haproxy_sync.sh --prune` 可自动清理悬挂条目并恢复稳定。
+
+- WebUI 健康检查
+  - WebUI 前端健康检查使用 `curl -sf http://localhost/`（替换原先的 wget），减少不必要的 Unhealthy 抖动。
+  - 访问 WebUI：`curl -I -H "Host: kindler.devops.$BASE_DOMAIN" http://$HAPROXY_HOST` 预期 200。
+
+- 全量回归（从零开始）
+  - 完整校验流程：
+  ```bash
+  ./scripts/clean.sh --all
+  ./scripts/bootstrap.sh
+    # 至少创建 ≥3 个 kind 与 ≥3 个 k3d（从 CSV 读取）
+    awk -F, 'NR>1 && $2=="kind" {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    awk -F, 'NR>1 && $2=="k3d"  {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    ./scripts/haproxy_sync.sh --prune
+    ./tests/regression_test.sh
+    # 可选：为每个环境记录冒烟报告（docs/TEST_REPORT.md）
+    for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
+  ```
 
 ## 高级用法
 

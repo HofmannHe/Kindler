@@ -45,13 +45,13 @@ main() {
 		echo "[NETWORK] Shared network already exists"
 	fi
 
-	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists (bcrypt admin password)"
+	echo "[BOOTSTRAP] Ensure portainer_secrets volume exists (plaintext admin password)"
 	if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
 	: "${PORTAINER_ADMIN_PASSWORD:=admin123}"
 	docker volume inspect portainer_secrets >/dev/null 2>&1 || docker volume create portainer_secrets >/dev/null
-	# 生成 bcrypt 哈希（Portainer 要求 --admin-password(-file) 为 bcrypt）
-	docker run --rm -v portainer_secrets:/run/secrets httpd:alpine \
-		sh -lc "umask 077; htpasswd -nbB admin '"$PORTAINER_ADMIN_PASSWORD"' | awk -F: '{print \$2}' > /run/secrets/portainer_admin"
+	# 写入明文密码（Portainer --admin-password-file 期望明文）
+	docker run --rm -v portainer_secrets:/run/secrets alpine:3.20 \
+		sh -lc "umask 077; printf '%s' '"$PORTAINER_ADMIN_PASSWORD"' > /run/secrets/portainer_admin"
 
 	echo "[BOOTSTRAP] Ensure HAProxy config has correct permissions"
 	chmod 644 "$ROOT_DIR/compose/infrastructure/haproxy.cfg" 2>/dev/null || true
@@ -88,7 +88,9 @@ main() {
 	echo "[BOOTSTRAP] Portainer is ready"
 
 	echo "[BOOTSTRAP] Adding local Docker endpoint to Portainer..."
-	"$ROOT_DIR/scripts/portainer_add_local.sh"
+	if ! "$ROOT_DIR/scripts/portainer_add_local.sh"; then
+		echo "[WARN] Failed to add local Docker endpoint to Portainer (non-fatal)"
+	fi
 
 	# 创建 devops 集群（幂等性检查）
 	if ! kubectl config get-contexts k3d-devops >/dev/null 2>&1; then
@@ -159,8 +161,11 @@ main() {
 		# 构建并启动 WebUI（在 infrastructure compose 中定义）
 		cd "$ROOT_DIR/compose/infrastructure"
 		echo "  Building WebUI images..."
-		docker compose build kindler-webui-backend kindler-webui-frontend 2>&1 | grep -E "Building|Built|Step" | tail -5 | sed 's/^/    /'
-		docker compose up -d kindler-webui-backend kindler-webui-frontend 2>&1 | grep -E "Creating|Created|Starting|Started" | sed 's/^/  /'
+        docker compose build kindler-webui-backend kindler-webui-frontend 2>&1 | \
+          grep -E "Building|Built|Step|Successfully tagged" | tail -5 | sed 's/^/    /' || true
+        # 兼容已经是 Up-to-date/Recreated 的情况，grep 匹配不到时不应失败
+        docker compose up -d kindler-webui-backend kindler-webui-frontend 2>&1 | \
+          grep -E "Creating|Created|Starting|Started|Recreated|Up-to-date" | sed 's/^/  /' || true
 		# 等待服务就绪（通过容器健康检查）
 		echo "  Waiting for WebUI to be ready..."
 		for i in {1..60}; do
@@ -172,9 +177,9 @@ main() {
 		done
 		cd "$ROOT_DIR"
 		
-		# 从 CSV 导入数据到 SQLite（一次性初始化，幂等）
-	echo "[BOOTSTRAP] Import CSV data to SQLite database"
-		if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+			# 从 CSV 导入数据到 SQLite（一次性初始化，幂等）
+		echo "[BOOTSTRAP] Import CSV data to SQLite database"
+			if [ -f "$ROOT_DIR/config/environments.csv" ]; then
 			# 使用 WebUI 后端的 sync_from_csv 方法导入
 			# 通过 Python 脚本调用 WebUI 的 db.py 的 sync_from_csv 方法
 			if docker exec kindler-webui-backend python3 -c "
@@ -192,10 +197,45 @@ print('CSV data imported successfully')
 			fi
 		else
 			echo "  ⚠ CSV file not found: $ROOT_DIR/config/environments.csv"
+			fi
+		else
+			echo "  ⚠ WebUI directory not found, skipping"
 		fi
-	else
-		echo "  ⚠ WebUI directory not found, skipping"
-	fi
+
+		# P2 修复：初始化 devops 集群在 SQLite 中的状态（仅管理用途，不触发业务部署）
+    echo "[BOOTSTRAP] Initialize devops cluster state in SQLite (actual_state=running)"
+		if docker ps --format '{{.Names}}' | grep -q '^kindler-webui-backend$'; then
+			# 创建或更新 devops 行，避免覆盖其它字段（仅设置状态与时间戳）
+			docker exec kindler-webui-backend sh -lc "sqlite3 /data/kindler-webui/kindler.db \"
+			INSERT INTO clusters(name, provider, desired_state, actual_state, status, updated_at, last_reconciled_at)
+			VALUES('devops','k3d','present','running','running', datetime('now'), datetime('now'))
+			ON CONFLICT(name) DO UPDATE SET
+			  provider='k3d',
+			  desired_state='present',
+			  actual_state='running',
+			  status='running',
+			  last_reconciled_at=datetime('now'),
+			  updated_at=datetime('now');
+			\"" >/dev/null 2>&1 || echo "  [WARN] Failed to initialize devops state"
+		else
+			echo "  [WARN] WebUI backend container not running, skip devops state init"
+            fi
+
+            # 注册 devops 集群到 Portainer（Edge Agent），便于在 Portainer 中可见管理集群
+            # 允许通过环境变量关闭（默认开启）：REGISTER_DEVOPS_PORTAINER=0
+            : "${REGISTER_DEVOPS_PORTAINER:=1}"
+            if [ "$REGISTER_DEVOPS_PORTAINER" = "1" ]; then
+              echo "[BOOTSTRAP] Register devops cluster to Portainer (Edge Agent)"
+              "$ROOT_DIR/scripts/register_edge_agent.sh" devops k3d 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to register devops to Portainer"
+            else
+              echo "[BOOTSTRAP] Skipping Portainer registration for devops (REGISTER_DEVOPS_PORTAINER=0)"
+            fi
+
+		# 可选：将 devops 注册到 ArgoCD（默认关闭，仅当需要在 devops 部署业务时开启）
+		if [ "${REGISTER_DEVOPS_ARGOCD:-0}" = "1" ]; then
+			echo "[BOOTSTRAP] Register devops cluster to ArgoCD (optional)"
+			"$ROOT_DIR/scripts/argocd_register.sh" register devops k3d 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to register devops to ArgoCD"
+		fi
 
 	echo "[BOOTSTRAP] Start Kindler Reconciler (declarative controller)"
 	"$ROOT_DIR/scripts/start_reconciler.sh" start 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to start reconciler (you can start it later)"

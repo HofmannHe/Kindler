@@ -36,6 +36,10 @@ chk "has explicit kindler route" \
 chk "has explicit argocd route" \
   "rg -n 'use_backend\\s+be_argocd\\s+if\\s+host_argocd' -S \"$CFG\" >/dev/null 2>&1"
 
+# 4) be_argocd 的 server 行必须是单一 IPv4:PORT（不能出现拼接无分隔的多IP）
+chk "be_argocd server uses single IPv4:PORT" \
+  "awk '/^backend be_argocd$/{f=1;next} f&&/^  server s1/{print $3; exit}' \"$CFG\" | grep -Eq '^[0-9]+(\\.[0-9]+){3}:[0-9]+$'"
+
 echo ""
 echo "Total: $total"
 echo "Failed: $fail"
@@ -44,4 +48,3 @@ if [ $fail -eq 0 ]; then
 else
   echo "Status: ✗ FAILED"; exit 1
 fi
-

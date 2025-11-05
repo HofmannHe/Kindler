@@ -24,6 +24,22 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# 记录容器重启计数
+log_restart_counts() {
+    local containers=("haproxy-gw" "portainer-ce" "kindler-webui-backend" "kindler-webui-frontend")
+    echo "Restart counters:" | tee -a "$SUMMARY_LOG"
+    for c in "${containers[@]}"; do
+        if docker inspect "$c" >/dev/null 2>&1; then
+            local rc status
+            rc=$(docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo "n/a")
+            status=$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo "n/a")
+            echo "  - $c: restart=$rc status=$status" | tee -a "$SUMMARY_LOG"
+        else
+            echo "  - $c: not running" | tee -a "$SUMMARY_LOG"
+        fi
+    done
+}
+
 # 日志函数
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$SUMMARY_LOG"
@@ -163,7 +179,7 @@ main() {
     echo "  测试流程:"
     echo "    1️⃣  完全清理环境 (300s)"
     echo "    2️⃣  部署基础环境 (600s)"
-    echo "    3️⃣  创建业务集群 (900s = 3 x 300s)"
+    echo "    3️⃣  创建业务集群（并行）"
     echo "    4️⃣  执行测试套件 (1020s = 6个测试)"
     echo "════════════════════════════════════════════════════════"
     echo ""
@@ -190,30 +206,23 @@ main() {
         log_error "❌ 基础环境部署失败，终止测试"
         exit 1
     fi
+    # 基础环境部署后打印关键容器重启计数（用于区分主动重载 vs 异常重启）
+    log_info "[诊断] 基础容器重启计数"
+    log_restart_counts
     
     # 步骤3: 创建业务集群（动态：从 CSV 读取，排除 devops）
     echo ""
     echo "╔════════════════════════════════════════╗"
-    echo "║  步骤 3/4: 创建业务集群 (3个k3d)       ║"
+    echo "║  步骤 3/4: 创建业务集群（并行创建）     ║"
     echo "╚════════════════════════════════════════╝"
-    local cluster_count=0
-    # 读取 environments.csv 中的业务集群列表（按顺序，最多创建前3个，避免过长测试时间）
-    mapfile -t biz_clusters < <(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | head -n 3)
-    if [ ${#biz_clusters[@]} -eq 0 ]; then
-        log_warn "CSV 未定义业务集群，跳过此步骤"
+    # 使用并行批量创建脚本，从 CSV 读取业务集群（默认排除 devops）
+    # 默认最大并发数 6，可通过环境变量 REGRESSION_MAX_PARALLEL 覆盖
+    MAXP="${REGRESSION_MAX_PARALLEL:-6}"
+    if ! run_with_timeout 1800 "并行创建业务集群（max-parallel=$MAXP）" \
+        "$ROOT_DIR/scripts/batch_create_envs.sh --max-parallel $MAXP"; then
+        log_error "❌ 并行创建业务集群失败，终止测试"
+        exit 1
     fi
-    for cluster in "${biz_clusters[@]}"; do
-        cluster_count=$((cluster_count + 1))
-        echo ""
-        log_info "┌─────────────────────────────────────"
-        log_info "│ 创建集群 ${cluster_count}: $cluster"
-        log_info "└─────────────────────────────────────"
-        if ! run_with_timeout 300 "创建集群 $cluster" \
-            "$ROOT_DIR/scripts/create_env.sh -n $cluster"; then
-            log_error "❌ 创建集群 $cluster 失败，终止测试"
-            exit 1
-        fi
-    done
     
     # 等待集群稳定
     log_info "=========================================="
@@ -225,6 +234,13 @@ main() {
     done
     echo ""
     log_info "✓ 集群稳定等待完成"
+    # 同步 HAProxy 路由（确保动态区块与 DB 一致，且已连接各集群网络）
+    log_info "[维护] 同步 HAProxy 路由并修剪缺失环境"
+    "$ROOT_DIR/scripts/haproxy_sync.sh" --prune >> "$SUMMARY_LOG" 2>&1 || true
+    sleep 2
+    # 路由同步后再次打印重启计数（haproxy 预期会有一次重启）
+    log_info "[诊断] 路由同步后的重启计数"
+    log_restart_counts
     
     # 步骤4: 运行测试套件
     echo ""
@@ -234,11 +250,14 @@ main() {
     
     local test_modules=(
         "portainer_test.sh:120:Portainer集成测试"
+        "portainer_login_test.sh:120:Portainer登录测试"
         "haproxy_test.sh:120:HAProxy路由测试"
+        "haproxy_config_unit_test.sh:60:HAProxy配置单元测试"
         "services_test.sh:180:服务访问测试"
         "cluster_lifecycle_test.sh:300:集群生命周期测试"
         "four_source_consistency_test.sh:120:四源一致性测试"
         "webui_visibility_test.sh:60:WebUI集群可见性测试"
+        "webui_create_delete_cycles_test.sh:1200:WebUI并发创建删除循环(3轮)"
     )
     
     local failed_tests=()
@@ -262,6 +281,13 @@ main() {
             log_success "✅ 测试 ${test_count}/${total_tests} 通过: $test_name"
         fi
         
+        # 在关键生命周期类测试后修剪路由，避免遗留临时 use_backend 影响后续
+        if echo "$test_file" | grep -qE "cluster_lifecycle_test\.sh|four_source_consistency_test\.sh"; then
+            log_info "[维护] 修剪 HAProxy 动态路由以清理临时环境"
+            "$ROOT_DIR/scripts/haproxy_sync.sh" --prune >> "$SUMMARY_LOG" 2>&1 || true
+            sleep 1
+        fi
+
         # 短暂停顿，避免测试之间相互影响
         echo "  💤 休息2秒..."
         sleep 2
@@ -294,6 +320,8 @@ main() {
         echo ""
         log_info "📝 详细日志: $SUMMARY_LOG"
         echo ""
+        log_info "[诊断] 结束时的重启计数"
+        log_restart_counts
         return 0
     else
         echo ""
@@ -310,6 +338,8 @@ main() {
         echo ""
         log_info "📝 详细日志: $SUMMARY_LOG"
         log_warn "⚠️  请修复上述问题后，从 Round 1 重新开始完整回归测试"
+        log_info "[诊断] 结束时的重启计数"
+        log_restart_counts
         echo ""
         return 1
     fi

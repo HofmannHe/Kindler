@@ -328,21 +328,28 @@ class ClusterService:
         context = f"{provider}-{name}"
         
         try:
-            # Get nodes using kubectl
-            process = await asyncio.create_subprocess_exec(
-                "kubectl", "--context", context,
-                "get", "nodes",
-                "-o", "json",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=10
-            )
-            
-            if process.returncode == 0:
+            # Try container kubectl first
+            async def _kubectl_cmd(cmd: list[str]):
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=10)
+                return proc.returncode, out, err
+
+            rc, stdout, stderr = await _kubectl_cmd([
+                "kubectl", "--context", context, "get", "nodes", "-o", "json"
+            ])
+
+            # Fallback: run host kubectl via nsenter (enter host namespaces)
+            if rc != 0:
+                rc, stdout, stderr = await _kubectl_cmd([
+                    "nsenter", "-t", "1", "-m", "-u", "-i", "-n",
+                    "kubectl", "--context", context, "get", "nodes", "-o", "json"
+                ])
+
+            if rc == 0:
                 import json
                 nodes_data = json.loads(stdout.decode())
                 

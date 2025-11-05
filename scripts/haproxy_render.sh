@@ -15,6 +15,7 @@ Usage: $0 [--dry-run]
 
 说明：
 - 仅渲染动态后端（BACKENDS），不改动 ACL 区域；根据 CSV (haproxy_route=true) 生成后端列表。
+- 仅为“实际存在”的集群生成后端；跳过不存在或未就绪的集群，避免写入 127.0.0.1 或 Service 网段地址。
 - 单次重载 HAProxy。
 USG
 }
@@ -30,16 +31,55 @@ done
 
 resolve_ip() {
   local env="$1" ip=""
-  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${env}-control-plane" 2>/dev/null); then
-    echo "$ip"; return 0
+  # kind: 优先取 kind 网络 IP；回退到第一个 IP（空格分隔）
+  if ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAddress}}{{end}}' "${env}-control-plane" 2>/dev/null); then
+    [ -n "$ip" ] && { echo "$ip"; return 0; }
+  fi
+  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "${env}-control-plane" 2>/dev/null | awk '{print $1}'); then
+    [ -n "$ip" ] && { echo "$ip"; return 0; }
+  fi
+  # k3d: 优先专用网络，其次 k3d-shared；回退第一个 IP
+  if ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "k3d-'"$env"'"}}{{.IPAddress}}{{end}}' "k3d-${env}-server-0" 2>/dev/null); then
+    [ -n "$ip" ] && { echo "$ip"; return 0; }
   fi
   if ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' "k3d-${env}-server-0" 2>/dev/null); then
     [ -n "$ip" ] && { echo "$ip"; return 0; }
   fi
-  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "k3d-${env}-server-0" 2>/dev/null); then
-    echo "$ip"; return 0
+  if ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "k3d-${env}-server-0" 2>/dev/null | awk '{print $1}'); then
+    [ -n "$ip" ] && { echo "$ip"; return 0; }
   fi
-  echo 127.0.0.1
+  # 未能解析容器 IP 时返回空，由调用方决定是否跳过
+  echo ""
+}
+
+# 判断目标集群容器是否存在（避免渲染不存在的后端）
+cluster_container_exists() {
+  local env="$1" provider="$2"
+  if [ "$provider" = "kind" ]; then
+    docker inspect "${env}-control-plane" >/dev/null 2>&1
+  else
+    docker inspect "k3d-${env}-server-0" >/dev/null 2>&1
+  fi
+}
+
+# 确保 HAProxy 连接到对应网络（避免网络不可达）
+ensure_haproxy_network() {
+  local env="$1" provider="$2"
+  local n=""
+  if [ "$provider" = "kind" ]; then
+    n="kind"
+  else
+    if docker network inspect "k3d-${env}" >/dev/null 2>&1; then
+      n="k3d-${env}"
+    else
+      n="k3d-shared"
+    fi
+  fi
+  if [ -n "$n" ]; then
+    if ! docker inspect haproxy-gw 2>/dev/null | jq -e ".[0].NetworkSettings.Networks.\"$n\"" >/dev/null 2>&1; then
+      docker network connect "$n" haproxy-gw >/dev/null 2>&1 || true
+    fi
+  fi
 }
 
 is_true() {
@@ -50,23 +90,51 @@ render_backends() {
   [ -f "$CSV" ] || { echo "[render] CSV not found: $CSV" >&2; exit 1; }
   [ -f "$CFG" ] || { echo "[render] CFG not found: $CFG" >&2; exit 1; }
   tmp_be=$(mktemp)
-  while IFS=, read -r env provider node_port pf_port reg_portainer haproxy_route http_port https_port; do
+  # Generate dynamic backends from CSV (skip devops)
+  while IFS=, read -r env provider node_port pf_port reg_portainer haproxy_route http_port https_port _subnet; do
     [[ "$env" =~ ^[[:space:]]*# ]] && continue
     [ -n "$env" ] || continue
+    [ "$env" = "devops" ] && continue
     if [ -n "${haproxy_route:-}" ] && ! is_true "$haproxy_route"; then
       continue
     fi
-    ip=$(resolve_ip "$env"); port="${node_port:-30080}"
+    # 仅为实际存在的集群渲染后端
+    if ! cluster_container_exists "$env" "${provider:-k3d}"; then
+      echo "[render] skip $env ($provider): cluster container not found"
+      continue
+    fi
+    # 解析容器 IP（仅接受非空）
+    ip=$(resolve_ip "$env")
+    if [ -z "$ip" ]; then
+      echo "[render] skip $env: cannot resolve container IP"
+      continue
+    fi
+    # 额外防护：拒绝 10.0.0.0/8（常见 Service CIDR）
+    if echo "$ip" | grep -qE '^10\.'; then
+      echo "[render] skip $env: resolved to service-CIDR like IP ($ip)"
+      continue
+    fi
+    # 确保 HAProxy 连接到对应网络
+    ensure_haproxy_network "$env" "${provider:-k3d}"
+    port="${node_port:-30080}"
     printf 'backend be_%s\n  server s1 %s:%s\n' "$env" "$ip" "$port" >> "$tmp_be"
   done < <(grep -v '^\s*$' "$CSV")
 
   tmp="$CFG.tmp"
   awk -v befile="$tmp_be" '
-    BEGIN{inbe=0}
+    BEGIN{inblk=0}
     {
-      if ($0 ~ /# BEGIN DYNAMIC BACKENDS/) {print; system("cat " befile); inbe=1; next}
-      if (inbe && $0 ~ /^backend be_portainer_https/) {inbe=0}
-      if (!inbe) print
+      if ($0 ~ /# BEGIN DYNAMIC BACKENDS/) {
+        print $0;                      # print BEGIN line
+        system("cat " befile);        # inject backends (no extra indent)
+        print "# END DYNAMIC BACKENDS";   # ensure END marker exists
+        inblk=1;                       # skip until old END
+        next
+      }
+      if (inblk) {
+        if ($0 ~ /# END DYNAMIC BACKENDS/) { inblk=0; next } else { next }
+      }
+      print $0
     }
   ' "$CFG" > "$tmp"
   mv "$tmp" "$CFG"

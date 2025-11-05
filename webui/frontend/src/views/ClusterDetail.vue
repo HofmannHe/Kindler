@@ -48,9 +48,6 @@
       <!-- Cluster Status -->
       <n-card title="运行状态" v-if="status">
         <n-descriptions :column="2" bordered>
-          <n-descriptions-item label="节点状态">
-            {{ status.nodes_ready }} / {{ status.nodes_total }} Ready
-          </n-descriptions-item>
           <n-descriptions-item label="Portainer 状态">
             <n-tag :type="getStatusType(status.portainer_status)">
               {{ status.portainer_status }}

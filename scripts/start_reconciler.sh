@@ -5,6 +5,12 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 PID_FILE="/tmp/kindler_reconciler.pid"
 LOG_FILE="/tmp/kindler_reconciler.log"
 
+# 读取可选配置（如 BASE_DOMAIN, RECONCILER_CONCURRENCY 等）
+if [ -f "$ROOT_DIR/config/clusters.env" ]; then
+  . "$ROOT_DIR/config/clusters.env"
+fi
+RECONCILER_CONCURRENCY="${RECONCILER_CONCURRENCY:-3}"
+
 case "${1:-start}" in
   start)
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
@@ -13,7 +19,9 @@ case "${1:-start}" in
     fi
     
     echo "Starting Kindler Reconciler..."
-    nohup "$ROOT_DIR/scripts/reconciler.sh" loop >"$LOG_FILE" 2>&1 &
+    echo "  Concurrency: RECONCILER_CONCURRENCY=$RECONCILER_CONCURRENCY"
+    nohup env RECONCILER_CONCURRENCY="$RECONCILER_CONCURRENCY" \
+      "$ROOT_DIR/scripts/reconciler.sh" loop >"$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     echo "✓ Reconciler started (PID: $(cat $PID_FILE))"
     echo "  Log file: $LOG_FILE"
@@ -37,6 +45,7 @@ case "${1:-start}" in
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
       echo "✓ Reconciler running (PID: $(cat $PID_FILE))"
       echo "  Log file: $LOG_FILE"
+      echo "  Concurrency: RECONCILER_CONCURRENCY=$RECONCILER_CONCURRENCY"
       echo "  Last 10 lines:"
       tail -10 "$LOG_FILE" | sed 's/^/    /'
     else
@@ -54,4 +63,3 @@ case "${1:-start}" in
     exit 1
     ;;
 esac
-

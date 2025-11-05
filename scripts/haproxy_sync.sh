@@ -3,15 +3,19 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+# Allow overriding HAProxy config path for tests via HAPROXY_CFG
+CFG="${HAPROXY_CFG:-$ROOT_DIR/compose/infrastructure/haproxy.cfg}"
+
+. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
 
 usage() {
 	cat >&2 <<USAGE
 Usage: $0 [--prune]
 
 说明：
-- 从 config/environments.csv 读取环境列表与 node_port，批量调用 haproxy_route.sh add 进行同步。
-- 指定 --prune 时，会移除 haproxy.cfg 中存在但 CSV 中缺失的环境路由。
+- 优先从 SQLite(clusters) 读取业务集群与 node_port，批量调用 haproxy_route.sh add 进行同步（跳过 devops 与不存在的集群）。
+- 当 DB 不可用时回退到 CSV；指定 --prune 时，以“当前源”（DB 或 CSV）为准移除缺失环境路由。
 USAGE
 }
 
@@ -34,62 +38,84 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-csv="$ROOT_DIR/config/environments.csv"
-[ -f "$csv" ] || {
-	echo "[sync] CSV not found: $csv" >&2
-	exit 1
-}
+is_true() { case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in 1|y|yes|true|on) return 0;; *) return 1;; esac; }
 
-# read env and node_port from CSV
-mapfile -t records < <(awk -F, '$0 !~ /^\s*#/ && NF>0 {print $1","$3","$6}' "$csv")
-
-is_true() {
-	case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in
-	1 | y | yes | true | on) return 0 ;;
-	*) return 1 ;;
-	esac
-}
-
-if [ ${#records[@]} -eq 0 ]; then
-	echo "[sync] no environments found in CSV" >&2
-	exit 0
+declare -a records
+src="db"
+if db_is_available 2>/dev/null; then
+  # name,provider,node_port
+  mapfile -t records < <(sqlite_query "SELECT name, provider, COALESCE(node_port,30080) FROM clusters WHERE name!='devops' ORDER BY name;" 2>/dev/null | sed 's/|/,/g')
+else
+  src="csv"
+  csv="$ROOT_DIR/config/environments.csv"
+  [ -f "$csv" ] || { echo "[sync] CSV not found: $csv" >&2; exit 1; }
+  mapfile -t records < <(awk -F, '$0 !~ /^\s*#/ && NF>0 && $1!="devops" {print $1","$2","$3","$6}' "$csv")
 fi
 
-echo "[sync] adding/updating routes from CSV..."
+if [ ${#records[@]} -eq 0 ]; then
+  echo "[sync] no environments found from $src" >&2
+  exit 0
+fi
+
+echo "[sync] adding/updating routes from $src..."
 NO_RELOAD=1 export NO_RELOAD
 for entry in "${records[@]}"; do
-	IFS=, read -r n p flag <<<"$entry"
-	IFS=$'\n\t'
-	[ -n "$n" ] || continue
-	if [ -n "${flag:-}" ] && ! is_true "$flag"; then
-		continue
-	fi
-    p="${p:-30080}"
-    NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
+  IFS=, read -r n provider node_port extra <<<"$entry"; IFS=$'\n\t'
+  [ -n "${n:-}" ] || continue
+  # CSV 模式下若提供 haproxy_route 标志，尊重之
+  if [ "$src" = "csv" ] && [ -n "${extra:-}" ] && ! is_true "$extra"; then
+    continue
+  fi
+  # 仅对实际存在且可访问的集群生成（kubectl context）
+  ctx="$( [ "${provider:-k3d}" = "k3d" ] && echo "k3d-${n}" || echo "kind-${n}" )"
+  if ! kubectl --context "$ctx" get nodes >/dev/null 2>&1; then
+    echo "[sync] skip $n ($provider): context not available"
+    continue
+  fi
+  p="${node_port:-30080}"
+  NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
 done
 
 if [ $prune -eq 1 ]; then
-	echo "[sync] pruning routes not present in CSV..."
-	# collect existing env names from haproxy.cfg (host_ and backend be_)
-	mapfile -t exist < <(awk '/# BEGIN DYNAMIC ACL/{f=1;next} /# END DYNAMIC ACL/{f=0} f && /acl host_/ {for(i=1;i<=NF;i++){ if($i ~ /^host_/){sub("host_","",$i); print $i}} }' "$CFG" | sort -u)
-	for e in "${exist[@]}"; do
-		keep=0
-		for entry in "${records[@]}"; do
-			IFS=, read -r n _p flag <<<"$entry"
-			IFS=$'\n\t'
-			[ "$e" = "$n" ] || continue
-			if [ -n "${flag:-}" ] && ! is_true "$flag"; then
-				keep=0
-			else
-				keep=1
-			fi
-			break
-		done
-		if [ $keep -eq 0 ]; then
-			NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
-		fi
-	done
+  echo "[sync] pruning routes not present in $src..."
+  # collect existing env names from haproxy.cfg (host_ ACL markers)
+  mapfile -t exist < <(awk '/# BEGIN DYNAMIC ACL/{f=1;next} /# END DYNAMIC ACL/{f=0} f && /acl host_/ {for(i=1;i<=NF;i++){ if($i ~ /^host_/){sub("host_","",$i); print $i}} }' "$CFG" | sort -u)
+  # build allow set from current source
+  declare -A allow; allow=()
+  for entry in "${records[@]}"; do
+    IFS=, read -r n _prov _port _flag <<<"$entry"; IFS=$'\n\t'
+    [ -n "${n:-}" ] || continue
+    allow["$n"]=1
+  done
+  # also collect names referenced in dynamic USE_BACKEND block to catch dangling entries
+  mapfile -t ub_exist < <(awk '/# BEGIN DYNAMIC USE_BACKEND/{f=1;next} /# END DYNAMIC USE_BACKEND/{f=0} f && /use_backend[[:space:]]+be_/ { for(i=1;i<=NF;i++){ if($i ~ /^be_/){ sub("be_","",$i); be=$i } if($i ~ /^host_/){ sub("host_","",$i); ho=$i } } if(be==ho && be!="") print be; be=""; ho="" }' "$CFG" | sort -u)
+  # and collect names defined in dynamic BACKENDS block (actual backends present)
+  mapfile -t bk_exist < <(awk '/# BEGIN DYNAMIC BACKENDS/{f=1;next} /# END DYNAMIC BACKENDS/{f=0} f && /^backend[[:space:]]+be_/ { sub(/^backend[[:space:]]+be_/,"",$0); gsub(/[[:space:]].*$/, "", $0); print $0 }' "$CFG" | sort -u)
+  # prune based on ACL presence
+  for e in "${exist[@]}"; do
+    [ "$e" = "devops" ] && continue
+    if [ -z "${allow[$e]:-}" ]; then
+      NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
+    fi
+  done
+  # prune dangling use_backend entries even if ACL is already gone
+  for e in "${ub_exist[@]}"; do
+    [ "$e" = "devops" ] && continue
+    # remove if not allowed by current source OR backend not actually defined (dangling)
+    if [ -z "${allow[$e]:-}" ]; then
+      NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
+      continue
+    fi
+    # check backend existence
+    if ! printf '%s\n' "${bk_exist[@]}" | grep -qx -- "$e"; then
+      NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$e" || true
+    fi
+  done
 fi
 
-"$ROOT_DIR"/scripts/haproxy_render.sh >/dev/null 2>&1 || true
-echo "[sync] done (renderer applied)"
+# 单次重载（避免在循环内多次重载），测试模式或显式 NO_RELOAD 时跳过
+if [ "${NO_RELOAD:-0}" != "1" ]; then
+  docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy >/dev/null 2>&1 || \
+    docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy >/dev/null
+fi
+echo "[sync] done (routes applied from $src)"

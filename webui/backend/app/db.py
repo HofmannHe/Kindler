@@ -129,23 +129,49 @@ class Database:
             return [dict(row) for row in cursor.fetchall()]
     
     def insert_cluster(self, cluster: Dict[str, Any]) -> int:
-        """Insert new cluster"""
+        """Insert new cluster (dynamic fields; preserves state columns if omitted)
+
+        This method builds INSERT with provided fields and uses ON CONFLICT(name)
+        to update only those fields, avoiding overwriting desired_state/actual_state
+        when not explicitly provided.
+        """
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, server_ip, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                cluster['name'],
-                cluster['provider'],
-                cluster.get('subnet'),
-                cluster.get('node_port'),
-                cluster.get('pf_port'),
-                cluster.get('http_port'),
-                cluster.get('https_port'),
-                cluster.get('server_ip'),
-                cluster.get('status', 'creating')
-            ))
+
+            # Base required fields
+            fields = ["name", "provider"]
+            values = [cluster["name"], cluster["provider"]]
+
+            # Optional fields commonly provided by callers
+            optional_keys = [
+                "subnet", "node_port", "pf_port", "http_port", "https_port",
+                "server_ip", "status", "desired_state", "actual_state",
+                "last_reconciled_at", "reconcile_error"
+            ]
+            for key in optional_keys:
+                if key in cluster:
+                    fields.append(key)
+                    values.append(cluster.get(key))
+
+            placeholders = ", ".join(["?" for _ in fields])
+            columns = ", ".join(fields)
+
+            # Build ON CONFLICT update set for only provided fields (exclude name)
+            update_assignments = []
+            for col in fields:
+                if col == "name":
+                    continue
+                update_assignments.append(f"{col} = excluded.{col}")
+            # Always bump updated_at
+            update_assignments.append("updated_at = datetime('now')")
+
+            sql = f"""
+                INSERT INTO clusters ({columns})
+                VALUES ({placeholders})
+                ON CONFLICT(name) DO UPDATE SET {', '.join(update_assignments)}
+            """
+
+            cursor.execute(sql, values)
             return cursor.lastrowid
     
     def update_cluster(self, name: str, updates: Dict[str, Any]) -> bool:
@@ -312,4 +338,3 @@ def get_db() -> Database:
         db_path = os.getenv("DB_PATH", "/data/kindler-webui/kindler.db")
         _db_instance = Database(db_path)
     return _db_instance
-
