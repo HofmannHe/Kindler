@@ -11,65 +11,35 @@ spec:
       elements:
       # 自动从数据库读取（通过 scripts/sync_applicationset.sh）
       # 数据流：Database (clusters表) → Git Branch → ArgoCD Application
-      - env: dev
-        hostEnv: dev
-        branch: dev
-        clusterName: dev
+      - env: dev-a
+        hostEnv: dev-a
+        branch: dev-a
+        clusterName: dev-a
         ingressClass: traefik
-      - env: dev-kind
-        hostEnv: dev-kind
-        branch: dev-kind
-        clusterName: dev-kind
+      - env: dev-b
+        hostEnv: dev-b
+        branch: dev-b
+        clusterName: dev-b
+        ingressClass: traefik
+      - env: dev-c
+        hostEnv: dev-c
+        branch: dev-c
+        clusterName: dev-c
         ingressClass: traefik
       - env: prod
         hostEnv: prod
         branch: prod
         clusterName: prod
         ingressClass: traefik
-      - env: prod-kind
-        hostEnv: prod-kind
-        branch: prod-kind
-        clusterName: prod-kind
-        ingressClass: traefik
-      - env: test
-        hostEnv: test
-        branch: test
-        clusterName: test
-        ingressClass: traefik
-      - env: test-con1
-        hostEnv: test-con1
-        branch: test-con1
-        clusterName: test-con1
-        ingressClass: traefik
-      - env: test-con2
-        hostEnv: test-con2
-        branch: test-con2
-        clusterName: test-con2
-        ingressClass: traefik
-      - env: test1
-        hostEnv: test1
-        branch: test1
-        clusterName: test1
-        ingressClass: traefik
-      - env: test3
-        hostEnv: test3
-        branch: test3
-        clusterName: test3
-        ingressClass: traefik
-      - env: test4
-        hostEnv: test4
-        branch: test4
-        clusterName: test4
+      - env: test-lifecycle-3274962
+        hostEnv: test-lifecycle-3274962
+        branch: test-lifecycle-3274962
+        clusterName: test-lifecycle-3274962
         ingressClass: traefik
       - env: uat
         hostEnv: uat
         branch: uat
         clusterName: uat
-        ingressClass: traefik
-      - env: uat-kind
-        hostEnv: uat-kind
-        branch: uat-kind
-        clusterName: uat-kind
         ingressClass: traefik
   template:
     metadata:

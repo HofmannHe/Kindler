@@ -83,11 +83,31 @@ CREATE TABLE IF NOT EXISTS clusters (
   https_port INTEGER,
   server_ip TEXT,
   status TEXT DEFAULT 'unknown',
+  desired_state TEXT DEFAULT 'present',
+  actual_state TEXT DEFAULT 'unknown',
+  last_reconciled_at TIMESTAMP,
+  reconcile_error TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 EOF
+  else
+    # 旧表升级：按需添加缺失列（幂等）
+    _sqlite_exec "PRAGMA table_info(clusters);" >/tmp/.kindler_cols 2>/dev/null || true
+    if ! grep -q "desired_state" /tmp/.kindler_cols 2>/dev/null; then
+      _sqlite_exec "ALTER TABLE clusters ADD COLUMN desired_state TEXT DEFAULT 'present';" >/dev/null 2>&1 || true
+    fi
+    if ! grep -q "actual_state" /tmp/.kindler_cols 2>/dev/null; then
+      _sqlite_exec "ALTER TABLE clusters ADD COLUMN actual_state TEXT DEFAULT 'unknown';" >/dev/null 2>&1 || true
+    fi
+    if ! grep -q "last_reconciled_at" /tmp/.kindler_cols 2>/dev/null; then
+      _sqlite_exec "ALTER TABLE clusters ADD COLUMN last_reconciled_at TIMESTAMP;" >/dev/null 2>&1 || true
+    fi
+    if ! grep -q "reconcile_error" /tmp/.kindler_cols 2>/dev/null; then
+      _sqlite_exec "ALTER TABLE clusters ADD COLUMN reconcile_error TEXT;" >/dev/null 2>&1 || true
+    fi
+    rm -f /tmp/.kindler_cols 2>/dev/null || true
   fi
 }
 
@@ -174,22 +194,18 @@ sqlite_insert_cluster() {
     return 1
   fi
   
-  # 构建 SQL（根据是否有 subnet 和 server_ip 构建不同的插入语句）
-  local sql
+  # 组装 INSERT ... ON CONFLICT(name) DO UPDATE，避免覆盖状态字段
+  local cols vals upd
+  cols="name, provider, node_port, pf_port, http_port, https_port"
+  vals="'$name', '$provider', $node_port, $pf_port, $http_port, $https_port"
+  upd="provider=excluded.provider, node_port=excluded.node_port, pf_port=excluded.pf_port, http_port=excluded.http_port, https_port=excluded.https_port, updated_at=datetime('now')"
   if [ -n "$subnet" ]; then
-    if [ -n "$server_ip" ]; then
-      sql="INSERT OR REPLACE INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, server_ip, updated_at) VALUES ('$name', '$provider', '$subnet', $node_port, $pf_port, $http_port, $https_port, '$server_ip', datetime('now'));"
-    else
-      sql="INSERT OR REPLACE INTO clusters (name, provider, subnet, node_port, pf_port, http_port, https_port, updated_at) VALUES ('$name', '$provider', '$subnet', $node_port, $pf_port, $http_port, $https_port, datetime('now'));"
-    fi
-  else
-    if [ -n "$server_ip" ]; then
-      sql="INSERT OR REPLACE INTO clusters (name, provider, node_port, pf_port, http_port, https_port, server_ip, updated_at) VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port, '$server_ip', datetime('now'));"
-    else
-      sql="INSERT OR REPLACE INTO clusters (name, provider, node_port, pf_port, http_port, https_port, updated_at) VALUES ('$name', '$provider', $node_port, $pf_port, $http_port, $https_port, datetime('now'));"
-    fi
+    cols="$cols, subnet"; vals="$vals, '$subnet'"; upd="$upd, subnet=excluded.subnet"
   fi
-  
+  if [ -n "$server_ip" ]; then
+    cols="$cols, server_ip"; vals="$vals, '$server_ip'"; upd="$upd, server_ip=excluded.server_ip"
+  fi
+  local sql="INSERT INTO clusters ($cols) VALUES ($vals) ON CONFLICT(name) DO UPDATE SET $upd;"
   sqlite_transaction "$sql" >/dev/null
 }
 
@@ -369,4 +385,3 @@ db_next_available_port() {
 db_is_available() {
   sqlite_is_available "$@"
 }
-

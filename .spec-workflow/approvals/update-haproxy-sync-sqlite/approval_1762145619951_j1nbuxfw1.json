@@ -1,0 +1,10 @@
+{
+  "id": "approval_1762145619951_j1nbuxfw1",
+  "title": "Proposal: Switch HAProxy route sync to SQLite source-of-truth (with CSV fallback)",
+  "filePath": "openspec/changes/update-haproxy-sync-sqlite/proposal.md",
+  "type": "document",
+  "status": "pending",
+  "createdAt": "2025-11-03T04:53:39.951Z",
+  "category": "spec",
+  "categoryName": "update-haproxy-sync-sqlite"
+}

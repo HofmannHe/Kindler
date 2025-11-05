@@ -18,10 +18,33 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 LOG_FILE="${LOG_FILE:-/tmp/kindler_reconciler.log}"
 RECONCILE_INTERVAL="${RECONCILE_INTERVAL:-30}"  # 秒
+# 并发度（同一时间可并行调和的集群数）。
+# 注意：单个集群始终串行（通过集群级锁保证）；不同集群可并行。
+RECONCILER_CONCURRENCY="${RECONCILER_CONCURRENCY:-3}"
 
 log() {
   local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
   echo "[$timestamp] $*" | tee -a "$LOG_FILE"
+}
+
+# 集群级互斥锁：确保同一集群的调和动作不并发执行（跨进程安全）
+acquire_cluster_lock() {
+  local name="$1"
+  local _lock="/tmp/kindler_reconcile_${name}.lock"
+  # 使用动态FD，便于在函数退出时释放
+  exec {__lock_fd}>"${_lock}"
+  if ! flock -n "${__lock_fd}"; then
+    # 无法获取锁，说明已有调和在进行
+    echo "LOCKED:${__lock_fd}"
+    return 1
+  fi
+  echo "${__lock_fd}"
+}
+
+release_cluster_lock() {
+  local fd="$1"
+  # 释放并关闭FD
+  { flock -u "$fd" 2>/dev/null || true; exec {fd}>&- 2>/dev/null || true; } || true
 }
 
 # 获取需要调和的集群列表
@@ -169,6 +192,15 @@ reconcile_one() {
   local node_port="${5:-30080}"
   local pf_port="${6:-19000}"
   
+  # 集群级锁（同名集群只允许一个动作并行执行）
+  local lock_fd
+  if ! lock_fd=$(acquire_cluster_lock "$name"); then
+    log "[RECONCILE] ⛔ Skip $name: another action is in progress"
+    return 0
+  fi
+  # 确保函数退出时释放锁
+  trap 'release_cluster_lock "${lock_fd#LOCKED:}"' RETURN
+  
   log "[RECONCILE] Reconciling $name: desired=$desired, actual=$actual"
   
   # Case 1: 期望存在，实际不存在或失败 → 创建
@@ -228,15 +260,45 @@ reconcile_once() {
   fi
   
   local count=0
+  local running=0
+  local -a pids=()
+  local max_conc="$RECONCILER_CONCURRENCY"
+
   while IFS='|' read -r name provider desired actual node_port pf_port http_port https_port; do
     [ -z "$name" ] && continue
-    
     count=$((count + 1))
-    reconcile_one "$name" "$provider" "$desired" "$actual" "$node_port" "$pf_port"
-    
+
+    # 后台并发执行；每个集群动作内部有集群级锁
+    (
+      reconcile_one "$name" "$provider" "$desired" "$actual" "$node_port" "$pf_port"
+    ) &
+    pids+=($!)
+    running=$((running + 1))
+
+    # 控制并发度
+    if [ "$running" -ge "$max_conc" ]; then
+      # 优先使用 wait -n（bash>=5），否则等待任意一个PID
+      if wait -n 2>/dev/null; then
+        running=$((running - 1))
+      else
+        # Fallback: 等待列表中的第一个PID
+        local first_pid="${pids[0]}"
+        if [ -n "$first_pid" ]; then
+          wait "$first_pid" 2>/dev/null || true
+          # 移除已完成的PID
+          pids=("${pids[@]:1}")
+          running=$((running - 1))
+        fi
+      fi
+    fi
   done < <(echo "$clusters")
-  
-  log "[RECONCILE] Reconciled $count cluster(s)"
+
+  # 等待剩余任务完成
+  for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+
+  log "[RECONCILE] Reconciled $count cluster(s) (concurrency=$RECONCILER_CONCURRENCY)"
   log "=========================================="
   echo ""
 }
@@ -248,6 +310,7 @@ reconcile_loop() {
   log "[RECONCILE] Interval: ${RECONCILE_INTERVAL}s"
   log "[RECONCILE] Database: $SQLITE_DB"
   log "[RECONCILE] Log file: $LOG_FILE"
+  log "[RECONCILE] Concurrency: $RECONCILER_CONCURRENCY"
   log "=========================================="
   echo ""
   

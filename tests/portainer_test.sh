@@ -24,7 +24,8 @@ echo ""
 
 # 1. Portainer容器运行状态
 echo "[1/4] Portainer Container Status"
-if docker ps | grep -q "portainer-ce"; then
+# Use exact-name filter to avoid false positives and ensure robustness
+if docker ps --filter name=^/portainer-ce$ --format '{{.Names}}' | grep -qx 'portainer-ce'; then
   echo "  ✓ Portainer container is running"
   passed_tests=$((passed_tests + 1))
 else
@@ -92,4 +93,3 @@ else
   echo "Status: ✗ SOME FAILURES"
   exit 1
 fi
-

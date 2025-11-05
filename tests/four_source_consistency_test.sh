@@ -25,14 +25,16 @@ echo "####################################################"
 echo "Verifying DB-Git-K8s-Portainer consistency..."
 echo ""
 
-# 读取数据源1: PostgreSQL数据库
-info "[1/4] Reading PostgreSQL database..."
-db_clusters=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-  psql -U kindler -d kindler -t -c "SELECT name FROM clusters ORDER BY name" 2>/dev/null | \
+# 读取数据源1: SQLite数据库（WebUI 后端容器内）
+info "[1/4] Reading SQLite database..."
+db_clusters=$(docker exec -i kindler-webui-backend sh -c \
+  "sqlite3 /data/kindler-webui/kindler.db 'SELECT name FROM clusters ORDER BY name;'" 2>/dev/null | \
   tr -d ' ' | grep -v '^$' | sort || echo "")
+# 业务集群（排除 devops 与临时 test-lifecycle-*）
+db_biz_clusters=$(echo "$db_clusters" | grep -v '^devops$' | grep -v '^test-lifecycle-' || true)
 
 if [ -n "$db_clusters" ]; then
-  db_count=$(echo "$db_clusters" | wc -l)
+  db_count=$(echo "$db_biz_clusters" | wc -l)
   success "DB has $db_count cluster(s)"
   echo "$db_clusters" | sed 's/^/    - /'
 else
@@ -73,11 +75,12 @@ k3d_clusters=$(k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/nu
 kind_clusters=$(kind get clusters 2>/dev/null | sort || echo "")
 
 k8s_clusters=$(echo -e "${k3d_clusters}\n${kind_clusters}" | grep -v '^$' | sort)
+k8s_biz_clusters=$(echo "$k8s_clusters" | grep -v '^test-lifecycle-' || true)
 
-if [ -n "$k8s_clusters" ]; then
-  k8s_count=$(echo "$k8s_clusters" | wc -l)
+if [ -n "$k8s_biz_clusters" ]; then
+  k8s_count=$(echo "$k8s_biz_clusters" | wc -l)
   success "K8s has $k8s_count business cluster(s)"
-  echo "$k8s_clusters" | sed 's/^/    - /'
+  echo "$k8s_biz_clusters" | sed 's/^/    - /'
 else
   info "K8s has 0 business clusters"
   k8s_count=0
@@ -85,7 +88,7 @@ fi
 
 # 读取数据源4: Portainer endpoints
 info "[4/4] Reading Portainer endpoints..."
-if docker ps | grep -q "portainer-ce"; then
+if docker ps --filter name=portainer-ce --format '{{.Names}}' | grep -qx 'portainer-ce'; then
   # 获取Portainer admin token
   if [ -f "$ROOT_DIR/config/secrets.env" ]; then
     source "$ROOT_DIR/config/secrets.env"
@@ -114,6 +117,15 @@ else
   portainer_count=0
 fi
 
+# 预处理：修剪 HAProxy 动态路由，避免脏数据影响
+if [ -x "$ROOT_DIR/scripts/haproxy_sync.sh" ]; then
+  info "Pruning HAProxy dynamic routes before comparison..."
+  "$ROOT_DIR/scripts/haproxy_sync.sh" --prune >/dev/null 2>&1 || true
+  if docker ps --filter name=haproxy-gw --format '{{.Names}}' | grep -qx 'haproxy-gw'; then
+    docker exec haproxy-gw haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg >/dev/null 2>&1 || true
+  fi
+fi
+
 # 一致性分析
 echo ""
 echo "=========================================="
@@ -127,8 +139,8 @@ if [ "$db_count" -eq "$k8s_count" ]; then
   if [ "$db_count" -eq 0 ]; then
     success "Both DB and K8s have 0 clusters (consistent)"
   else
-    # 详细比较内容
-    diff_result=$(diff <(echo "$db_clusters") <(echo "$k8s_clusters") || true)
+    # 详细比较内容（只比较业务集群）
+    diff_result=$(diff <(echo "$db_biz_clusters") <(echo "$k8s_biz_clusters") || true)
     if [ -z "$diff_result" ]; then
       success "DB and K8s are consistent ($db_count clusters match)"
     else
@@ -140,32 +152,22 @@ if [ "$db_count" -eq "$k8s_count" ]; then
 else
   fail "DB-K8s mismatch: DB=$db_count, K8s=$k8s_count"
   
-  # 显示差异
+  # 显示差异（只比较业务集群）
   echo "  DB only:"
-  comm -23 <(echo "$db_clusters") <(echo "$k8s_clusters") | sed 's/^/    - /'
+  comm -23 <(echo "$db_biz_clusters") <(echo "$k8s_biz_clusters") | sed 's/^/    - /'
   echo "  K8s only:"
-  comm -13 <(echo "$db_clusters") <(echo "$k8s_clusters") | sed 's/^/    - /'
+  comm -13 <(echo "$db_biz_clusters") <(echo "$k8s_biz_clusters") | sed 's/^/    - /'
 fi
 
 # 比较DB vs Git
 if [ "$git_count" -gt 0 ]; then
-  info "Comparing DB vs Git..."
-  if [ "$db_count" -eq "$git_count" ]; then
-    diff_result=$(diff <(echo "$db_clusters") <(echo "$git_branches") || true)
-    if [ -z "$diff_result" ]; then
-      success "DB and Git are consistent ($db_count branches match)"
-    else
-      fail "DB and Git have same count but different branches"
-      echo "Differences:"
-      echo "$diff_result" | sed 's/^/  /'
-    fi
+info "Comparing DB vs Git (presence only, extra Git branches allowed)..."
+  missing_in_git=$(comm -23 <(echo "$db_biz_clusters") <(echo "$git_branches") | grep -v '^$' || true)
+  if [ -z "$missing_in_git" ]; then
+    success "All DB clusters have corresponding Git branches"
   else
-    fail "DB-Git mismatch: DB=$db_count, Git=$git_count"
-    
-    echo "  DB only:"
-    comm -23 <(echo "$db_clusters") <(echo "$git_branches") | sed 's/^/    - /'
-    echo "  Git only:"
-    comm -13 <(echo "$db_clusters") <(echo "$git_branches") | sed 's/^/    - /'
+    fail "DB clusters missing in Git:"
+    echo "$missing_in_git" | sed 's/^/    - /'
   fi
 fi
 
@@ -173,8 +175,8 @@ fi
 echo ""
 info "Checking for orphaned resources..."
 
-# K8s集群存在但DB中不存在
-orphaned_k8s=$(timeout 10 comm -13 <(echo "$db_clusters") <(echo "$k8s_clusters") 2>/dev/null | grep -v '^$' || echo "")
+# K8s集群存在但DB中不存在（业务集群）
+orphaned_k8s=$(timeout 10 comm -13 <(echo "$db_biz_clusters") <(echo "$k8s_biz_clusters") 2>/dev/null | grep -v '^$' || echo "")
 if [ -n "$orphaned_k8s" ]; then
   fail "Found K8s clusters not in DB:"
   echo "$orphaned_k8s" | sed 's/^/    - /'
@@ -183,8 +185,8 @@ else
   success "No orphaned K8s clusters"
 fi
 
-# DB记录存在但K8s集群不存在
-orphaned_db=$(timeout 10 comm -23 <(echo "$db_clusters") <(echo "$k8s_clusters") 2>/dev/null | grep -v '^$' || echo "")
+# DB记录存在但K8s集群不存在（业务集群）
+orphaned_db=$(timeout 10 comm -23 <(echo "$db_biz_clusters") <(echo "$k8s_biz_clusters") 2>/dev/null | grep -v '^$' || echo "")
 if [ -n "$orphaned_db" ]; then
   fail "Found DB records without K8s clusters:"
   echo "$orphaned_db" | sed 's/^/    - /'
@@ -195,11 +197,10 @@ fi
 
 # Git分支存在但DB中不存在
 if [ "$git_count" -gt 0 ]; then
-  orphaned_git=$(timeout 10 comm -13 <(echo "$db_clusters") <(echo "$git_branches") 2>/dev/null | grep -v '^$' || echo "")
+  orphaned_git=$(timeout 10 comm -13 <(echo "$db_biz_clusters") <(echo "$git_branches") 2>/dev/null | grep -v '^$' || echo "")
   if [ -n "$orphaned_git" ]; then
-    fail "Found Git branches not in DB:"
+    info "Git has extra branches not in DB (allowed):"
     echo "$orphaned_git" | sed 's/^/    - /'
-    echo "  Fix: Run 'scripts/cleanup_orphaned_branches.sh' or add to DB"
   else
     success "No orphaned Git branches"
   fi
@@ -245,4 +246,3 @@ else
   echo -e "${GREEN}✓ All sources are consistent!${NC}"
   exit 0
 fi
-

@@ -33,18 +33,18 @@ async def test_list_clusters_with_data(client: AsyncClient):
     ]
     
     with patch("app.api.clusters.db_service.list_clusters", new_callable=AsyncMock) as mock_list:
-        with patch("app.api.clusters.cluster_service.get_cluster_status", new_callable=AsyncMock) as mock_status:
-            mock_list.return_value = mock_clusters
-            mock_status.return_value = {"status": "running", "nodes_ready": 1, "nodes_total": 1}
-            
-            response = await client.get("/api/clusters")
-            assert response.status_code == 200
-            
-            data = response.json()
-            assert len(data) == 1
-            assert data[0]["name"] == "test-cluster"
-            assert data[0]["provider"] == "k3d"
-            assert data[0]["status"] == "running"
+        # API now uses declarative actual_state from DB; no kubectl/node probing
+        mock_clusters[0]["actual_state"] = "running"
+        mock_list.return_value = mock_clusters
+
+        response = await client.get("/api/clusters")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "test-cluster"
+        assert data[0]["provider"] == "k3d"
+        assert data[0]["status"] == "running"
 
 
 @pytest.mark.asyncio
@@ -111,16 +111,17 @@ async def test_get_cluster(client: AsyncClient):
     }
     
     with patch("app.api.clusters.db_service.get_cluster", new_callable=AsyncMock) as mock_get:
-        with patch("app.api.clusters.cluster_service.get_cluster_status", new_callable=AsyncMock) as mock_status:
-            mock_get.return_value = mock_cluster
-            mock_status.return_value = {"status": "running"}
-            
-            response = await client.get("/api/clusters/test-cluster")
-            assert response.status_code == 200
-            
-            data = response.json()
-            assert data["name"] == "test-cluster"
-            assert data["provider"] == "k3d"
+        # API returns actual_state/status from DB; no live node checks
+        mock_cluster["actual_state"] = "running"
+        mock_get.return_value = mock_cluster
+
+        response = await client.get("/api/clusters/test-cluster")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["name"] == "test-cluster"
+        assert data["provider"] == "k3d"
+        assert data["status"] == "running"
 
 
 @pytest.mark.asyncio
@@ -165,25 +166,20 @@ async def test_get_cluster_status(client: AsyncClient):
         "provider": "k3d"
     }
     
-    mock_status = {
-        "status": "running",
-        "nodes_ready": 1,
-        "nodes_total": 1
-    }
-    
     with patch("app.api.clusters.db_service.get_cluster", new_callable=AsyncMock) as mock_get:
-        with patch("app.api.clusters.cluster_service.get_cluster_status", new_callable=AsyncMock) as mock_get_status:
-            mock_get.return_value = mock_cluster
-            mock_get_status.return_value = mock_status
-            
-            response = await client.get("/api/clusters/test-cluster/status")
-            assert response.status_code == 200
-            
-            data = response.json()
-            assert data["name"] == "test-cluster"
-            assert data["status"] == "running"
-            assert data["nodes_ready"] == 1
-            assert data["nodes_total"] == 1
+        # Only declarative state + global services are reported; nodes_* are deprecated (0)
+        mock_cluster_with_state = dict(mock_cluster)
+        mock_cluster_with_state["actual_state"] = "running"
+        mock_get.return_value = mock_cluster_with_state
+
+        response = await client.get("/api/clusters/test-cluster/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["name"] == "test-cluster"
+        assert data["status"] == "running"
+        assert data["nodes_ready"] == 0
+        assert data["nodes_total"] == 0
 
 
 @pytest.mark.asyncio
@@ -210,4 +206,3 @@ async def test_stop_cluster(client: AsyncClient):
         
         data = response.json()
         assert "task_id" in data
-

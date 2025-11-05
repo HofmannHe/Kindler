@@ -104,7 +104,26 @@ if [ "$CLEAN_DEVOPS" = "1" ]; then
   docker rm -f haproxy-gw >/dev/null 2>&1 || true
 
   echo "[CLEAN] Removing all Portainer and infrastructure volumes..."
-  docker volume ls -q | grep -E 'portainer|infrastructure' | xargs -r docker volume rm -f 2>/dev/null || true
+  # 先删除仍占用 portainer_secrets 的临时容器（由 bootstrap 生成 htpasswd 时创建）
+  for cid in $(docker ps -aq --filter volume=portainer_secrets); do
+    docker rm -f "$cid" >/dev/null 2>&1 || true
+  done
+
+  # 1) 优先删除显式命名卷，兼容 compose 项目名前缀（如 infrastructure_portainer_data）
+  for v in \
+    portainer_data \
+    portainer_secrets \
+    infrastructure_portainer_data \
+    infrastructure_portainer_secrets; do
+    docker volume rm -f "$v" >/dev/null 2>&1 || true
+  done
+
+  # 2) 兜底：匹配所有包含 portainer 或 infrastructure 关键字的卷名称
+  docker volume ls -q | grep -E '(^|_)portainer(_|$)|(^|_)infrastructure(_|$)' | \
+    xargs -r docker volume rm -f 2>/dev/null || true
+
+  # 3) 特殊：external 卷 portainer_secrets 可能未被上面模式捕获，再显式删除一次
+  docker volume rm -f portainer_secrets >/dev/null 2>&1 || true
 else
   echo "[CLEAN] Skipping Portainer/HAProxy cleanup (use --all to clean)"
 fi
@@ -130,6 +149,18 @@ if [ -f "$CFG" ]; then
       print $0
     }
   ' "$CFG" >"$tmp" && mv "$tmp" "$CFG" || true
+
+  # 额外重置 DYNAMIC USE_BACKEND 区块，避免遗留 use_backend / host_* 引用
+  tmp2=$(mktemp)
+  awk '
+    BEGIN{in_dyn_ub=0}
+    {
+      if ($0 ~ /# BEGIN DYNAMIC USE_BACKEND/) {print $0; in_dyn_ub=1; next}
+      if (in_dyn_ub && $0 ~ /# END DYNAMIC USE_BACKEND/) {print $0; in_dyn_ub=0; next}
+      if (in_dyn_ub) {next}
+      print $0
+    }
+  ' "$CFG" >"$tmp2" && mv "$tmp2" "$CFG" || true
 fi
 
 if [ "$CLEAN_DEVOPS" = "0" ]; then
@@ -338,6 +369,40 @@ if [ "$CLEAN_DEVOPS" = "1" ] || [ "$(kind get clusters 2>/dev/null | wc -l)" -eq
 fi
 
 echo "[CLEAN] Done."
+
+if [ "$VERIFY" = "1" ]; then
+  echo "[VERIFY] Checking cleanup completeness..."
+  # Containers
+  if docker ps -a --format '{{.Names}}' | grep -Eq 'portainer-ce|haproxy-gw|kindler-webui'; then
+    echo "[VERIFY] ✗ Found running/stopped infrastructure containers"
+    exit 1
+  else
+    echo "[VERIFY] ✓ No cluster/infrastructure containers"
+  fi
+  # Volumes
+  rem_vols=$(docker volume ls -q | grep -E 'portainer|infrastructure' || true)
+  if [ -n "$rem_vols" ]; then
+    echo "[VERIFY] ✗ Found remaining volumes:"
+    echo "$rem_vols" | sed 's/^/  - /'
+    exit 1
+  else
+    echo "[VERIFY] ✓ No cluster/infrastructure volumes"
+  fi
+  # Networks
+  if docker network ls --format '{{.Name}}' | grep -Eq '^infrastructure$|^k3d|^kind$'; then
+    echo "[VERIFY] ✗ Found remaining networks"
+    exit 1
+  else
+    echo "[VERIFY] ✓ No cluster/infrastructure networks"
+  fi
+  # Kube contexts
+  if kubectl config get-contexts -o name 2>/dev/null | grep -Eq '^k3d-|^kind-'; then
+    echo "[VERIFY] ✗ Found kube contexts"
+    exit 1
+  else
+    echo "[VERIFY] ✓ No cluster contexts in kubeconfig"
+  fi
+fi
 
 # 验证清理完整性（如果指定了 --verify）
 if [ "$VERIFY" = "1" ]; then

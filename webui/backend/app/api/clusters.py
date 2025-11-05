@@ -39,7 +39,8 @@ async def list_clusters():
                 register_portainer=True,
                 haproxy_route=True,
                 register_argocd=True,
-                status=cluster.get("actual_state") or cluster.get("status") or "unknown",
+                # 统一以 actual_state 为准，避免旧的 status 字段造成误判
+                status=cluster.get("actual_state") or "unknown",
                 created_at=cluster.get("created_at"),
                 updated_at=cluster.get("updated_at"),
                 desired_state=cluster.get("desired_state"),
@@ -126,7 +127,8 @@ async def get_cluster(name: str):
             register_portainer=True,
             haproxy_route=True,
             register_argocd=True,
-            status=cluster.get("actual_state") or cluster.get("status") or "unknown",
+            # 统一以 actual_state 为准
+            status=cluster.get("actual_state") or "unknown",
             created_at=cluster.get("created_at"),
             updated_at=cluster.get("updated_at"),
             desired_state=cluster.get("desired_state"),
@@ -183,23 +185,61 @@ async def delete_cluster(name: str, background_tasks: BackgroundTasks):
 
 @router.get("/{name}/status", response_model=ClusterStatus)
 async def get_cluster_status(name: str):
-    """Get detailed cluster status"""
+    """
+    Get detailed cluster status (global services reachability only).
+
+    Design change: Do NOT query node status via kubectl from within the backend
+    container (unreliable in constrained environments). Instead, rely on:
+      - Declarative state from SQLite (actual_state)
+      - Reachability of Portainer/ArgoCD via HAProxy
+
+    Nodes metrics are deprecated and always returned as 0 to keep API compatibility
+    while the frontend no longer displays them.
+    """
     try:
         # Check if cluster exists in DB
         cluster = await db_service.get_cluster(name)
         if not cluster:
             raise HTTPException(status_code=404, detail=f"Cluster {name} not found")
-        
+
+        # Declarative cluster state from DB
+        status_overall = cluster.get("actual_state") or "unknown"
+
+        # Global service reachability (Portainer/ArgoCD via HAProxy)
+        #    Reuse simple HTTP GET with follow redirects; healthy if <500
+        import httpx
+        # Prefer configured base domain if ClusterService is available; otherwise default
+        cs = ClusterService()
+        base_domain = getattr(cs, 'base_domain', None) or "192.168.51.30.sslip.io"
+        urls = {
+            "portainer": f"http://portainer.devops.{base_domain}",
+            "argocd": f"http://argocd.devops.{base_domain}",
+        }
+        portainer_status = "unknown"
+        argocd_status = "unknown"
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=5) as client:
+                pr = await client.get(urls["portainer"], follow_redirects=True)
+                portainer_status = "online" if pr.status_code < 500 else "offline"
+        except Exception:
+            portainer_status = "offline"
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=5) as client:
+                ar = await client.get(urls["argocd"], follow_redirects=True)
+                argocd_status = "healthy" if ar.status_code < 500 else "degraded"
+        except Exception:
+            argocd_status = "degraded"
+
         return ClusterStatus(
             name=name,
-            status=cluster.get("actual_state") or cluster.get("status") or "unknown",
+            status=status_overall,
             nodes_ready=0,
             nodes_total=0,
-            portainer_status="unknown",
-            argocd_status="unknown",
+            portainer_status=portainer_status,
+            argocd_status=argocd_status,
             error_message=cluster.get("reconcile_error")
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:

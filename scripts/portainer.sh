@@ -19,8 +19,9 @@ ensure_admin_secret() {
   load_secrets
   ensure_named_volumes
   docker volume inspect portainer_secrets >/dev/null 2>&1 || docker volume create portainer_secrets >/dev/null
-  # Write PLAINTEXT password as expected by Portainer CE 2.33.x
-  docker run --rm -v portainer_secrets:/run/secrets alpine:3.20     sh -lc "umask 077; printf '%s' '"$PORTAINER_ADMIN_PASSWORD"' > /run/secrets/portainer_admin"
+  # Portainer --admin-password-file expects PLAINTEXT password (align with bootstrap.sh)
+  docker run --rm -v portainer_secrets:/run/secrets alpine:3.20 \
+    sh -lc "umask 077; printf '%s' '"$PORTAINER_ADMIN_PASSWORD"' > /run/secrets/portainer_admin"
 }
 
 
@@ -35,6 +36,16 @@ down() {
 
 status() {
   docker ps --filter name=portainer-ce
+}
+
+# Danger: reset admin by recreating data volume (dev use only)
+reset_admin() {
+  echo "[portainer] resetting admin (recreate data volume)"
+  docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" down -v portainer || true
+  docker volume rm -f portainer_data >/dev/null 2>&1 || true
+  ensure_admin_secret
+  docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d portainer
+  echo "[portainer] admin reset complete"
 }
 
 
@@ -152,9 +163,10 @@ case "${1:-}" in
   up) up ;;
   down) down ;;
   status) status ;;
+  reset-admin) reset_admin ;;
   api-login) api_login ;;
   api-base) api_base ;;
   add-endpoint) add_endpoint "$2" "$3" ;;
   del-endpoint) delete_endpoint "$2" ;;
-  *) echo "Usage: $0 {up|down|status|api-login|add-endpoint <name> <url>|del-endpoint <name>}"; exit 1 ;;
+  *) echo "Usage: $0 {up|down|status|reset-admin|api-login|add-endpoint <name> <url>|del-endpoint <name>}"; exit 1 ;;
 esac

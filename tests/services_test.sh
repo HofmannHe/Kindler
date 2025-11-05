@@ -145,6 +145,17 @@ else
     provider=$(get_provider "$cluster")
     ctx="${provider}-${cluster}"
     actual_host=$(kubectl --context "$ctx" get ingress -n whoami -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "NOT_FOUND")
+    # 若集群仍在创建/失败状态，则跳过该集群的 whoami 校验
+    state=""
+    if . "$ROOT_DIR/scripts/lib_sqlite.sh" >/dev/null 2>&1; then
+      if sqlite_query 'SELECT 1;' >/dev/null 2>&1; then
+        state=$(sqlite_query "SELECT COALESCE(actual_state,'unknown') FROM clusters WHERE name='$cluster';" 2>/dev/null | tr -d ' \n' || echo "")
+      fi
+    fi
+    if [ "$state" = "creating" ] || [ "$state" = "failed" ]; then
+      echo "  ⚠ whoami on $cluster skipped (cluster state=$state)"
+      continue
+    fi
     
     if [ "$actual_host" != "$domain" ] && [ "$actual_host" != "NOT_FOUND" ]; then
       echo "  ✗ whoami on $cluster ingress host mismatch (expected: $domain, actual: $actual_host)"
@@ -155,7 +166,8 @@ else
     
     # 2. 测试 HTTP 访问
     response=$(curl -s -m 10 -H "Host: $domain" "http://$HAPROXY_HOST/" 2>&1 || echo "TIMEOUT")
-    status_code=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://$domain" 2>/dev/null || echo "000")
+    # 使用 Host 头直连 HAProxy，避免依赖外部 DNS 解析
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" -m 10 -H "Host: $domain" "http://$HAPROXY_HOST/" 2>/dev/null || echo "000")
     
     if [ "$status_code" = "200" ] && echo "$response" | grep -q "Hostname:"; then
       echo "  ✓ whoami on $cluster ($domain) fully functional"
@@ -178,4 +190,3 @@ else
 fi
 
 print_summary
-

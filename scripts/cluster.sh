@@ -154,6 +154,8 @@ YAML
   if [ -n "$host_port" ]; then
     log INFO "Fixing kind kubeconfig server from 0.0.0.0:$host_port to 127.0.0.1:$host_port"
     kubectl config set-cluster "kind-${name}" --server="https://127.0.0.1:${host_port}" >/dev/null 2>&1 || true
+    # Avoid certificate SAN mismatch (0.0.0.0 vs 127.0.0.1)
+    kubectl config set-cluster "kind-${name}" --insecure-skip-tls-verify=true >/dev/null 2>&1 || true
   fi
 }
 

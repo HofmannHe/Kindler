@@ -11,8 +11,13 @@ echo "  自动添加业务集群 HAProxy 路由"
 echo "=========================================="
 echo ""
 
-# 从 CSV 读取所有业务集群（排除 devops）
-clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1","$2}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+# 优先从 SQLite 读取业务集群（排除 devops），回退到 CSV
+. "$ROOT_DIR/scripts/lib_sqlite.sh"
+if db_is_available 2>/dev/null; then
+  clusters=$(sqlite_query "SELECT name||','||provider||','||COALESCE(node_port,30080) FROM clusters WHERE name!='devops' ORDER BY name;" 2>/dev/null || echo "")
+else
+  clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1","$2","$3}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+fi
 
 if [ -z "$clusters" ]; then
   echo "[WARN] No business clusters found in CSV"
@@ -23,7 +28,7 @@ total=0
 success=0
 failed=0
 
-while IFS=',' read -r cluster_name provider; do
+while IFS=',' read -r cluster_name provider node_port; do
   total=$((total + 1))
   echo "[$total] Adding route for $cluster_name ($provider)..."
   
@@ -47,7 +52,7 @@ while IFS=',' read -r cluster_name provider; do
     continue
   fi
   
-  if "$ROOT_DIR/scripts/haproxy_route.sh" add "$cluster_name" --node-port 30080 2>&1 | grep -q "added\|already"; then
+  if "$ROOT_DIR/scripts/haproxy_route.sh" add "$cluster_name" --node-port "${node_port:-30080}" 2>&1 | grep -q "added\|already"; then
     echo "  ✓ Route added/exists"
     success=$((success + 1))
   else
@@ -64,6 +69,5 @@ echo "  Success: $success"
 echo "  Failed:  $failed"
 echo "=========================================="
 
-if [ $failed -gt 0 ]; then
-  exit 1
-fi
+# 在 bootstrap 阶段，此脚本仅做最佳努力的修复，不应导致流程失败
+exit 0

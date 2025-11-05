@@ -113,10 +113,26 @@ ensure_pod_running_with_preload "k3d-devops" argocd 'app.kubernetes.io/name=argo
 	echo "[WARN] ArgoCD server restart may not be complete, but continuing..."
 }
 
-# 连接 HAProxy 到 devops 网络
-echo "[DEVOP] Connecting HAProxy to devops network..."
-docker network connect k3d-devops haproxy-gw 2>/dev/null || echo "[INFO] HAProxy already connected"
-docker restart haproxy-gw
+# 连接 HAProxy 到 devops可访问的网络
+# 说明：devops 集群默认使用 k3d-shared 网络；历史脚本尝试连接 k3d-devops 会在网络不存在时导致 HAProxy 重启失败
+echo "[DEVOP] Ensuring HAProxy is attached to k3d-shared (if present)"
+if docker network inspect k3d-shared >/dev/null 2>&1; then
+  if docker inspect haproxy-gw 2>/dev/null | jq -e '.[0].NetworkSettings.Networks["k3d-shared"]' >/dev/null 2>&1; then
+    echo "[INFO] HAProxy already connected to k3d-shared"
+  else
+    docker network connect k3d-shared haproxy-gw 2>/dev/null || echo "[WARN] failed to connect haproxy-gw to k3d-shared (continuing)"
+  fi
+else
+  echo "[WARN] k3d-shared network not found; skipping"
+fi
+# 历史上连接 k3d-devops 的行为在网络不存在时会失败，这里仅在网络存在且未连接时尝试；不再强制重启
+if docker network inspect k3d-devops >/dev/null 2>&1; then
+  if docker inspect haproxy-gw 2>/dev/null | jq -e '.[0].NetworkSettings.Networks["k3d-devops"]' >/dev/null 2>&1; then
+    :
+  else
+    docker network connect k3d-devops haproxy-gw 2>/dev/null || echo "[INFO] HAProxy connect to k3d-devops skipped/failed"
+  fi
+fi
 
 # 添加 HAProxy 路由 (使用 NodePort 30800)
 echo "[DEVOP] Skipping HAProxy dynamic route for devops (management cluster has static routes)"
@@ -124,13 +140,37 @@ echo "[DEVOP] Skipping HAProxy dynamic route for devops (management cluster has 
 # 不添加动态通配路由，避免干扰特定服务路由
 
 # Ensure argocd host routing points to current devops NodePort (be_argocd)
-DEVOPS_NODE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' k3d-devops-server-0 2>/dev/null || true)
+# NOTE:
+# - A k3d server container通常连接多个网络（如 k3d-shared 和专用子网），
+#   直接使用 '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 会把多个IP无分隔拼接，
+#   导致类似 '10.101.0.4172.18.0.6' 的非法地址，引发 HAProxy 验证失败。
+# - 优先选择 k3d-shared 网络的 IP；若不存在，再回退到第一个 IP（以空格分隔后取第一个）。
+DEVOPS_NODE_IP=""
+if DEVOPS_NODE_IP=$(docker inspect -f '{{with index .NetworkSettings.Networks "k3d-shared"}}{{.IPAddress}}{{end}}' k3d-devops-server-0 2>/dev/null); then
+  :
+fi
+if [ -z "$DEVOPS_NODE_IP" ]; then
+  # 回退：以空格分隔所有IP，仅取第一个
+  DEVOPS_NODE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' k3d-devops-server-0 2>/dev/null | awk '{print $1}' || true)
+fi
 if [ -n "$DEVOPS_NODE_IP" ]; then
   CFG="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+  # Rewrite the entire be_argocd block to a single server line to avoid duplicates
   awk -v ip="$DEVOPS_NODE_IP" -v port="$ARGOCD_NODEPORT" '
-    BEGIN{ins=0}
-    {print}
-    /^backend be_argocd/ {getline; gsub(/.*/, "  server s1 " ip ":" port); print; ins=1}
+    BEGIN{inblk=0}
+    {
+      if ($0 ~ /^[[:space:]]*backend[[:space:]]+be_argocd[[:space:]]*$/) {
+        print $0;                   # backend line
+        print "  server s1 " ip ":" port;  # single server line
+        inblk=1;                    # skip old content of this backend
+        next
+      }
+      if (inblk) {
+        if ($0 ~ /^[[:space:]]*backend[[:space:]]+/) { inblk=0; print $0 } else { next }
+      } else {
+        print $0
+      }
+    }
   ' "$CFG" >"$CFG.tmp" && mv "$CFG.tmp" "$CFG"
   docker restart haproxy-gw >/dev/null 2>&1 || true
   echo "[DEVOP] be_argocd -> ${DEVOPS_NODE_IP}:${ARGOCD_NODEPORT}"

@@ -153,8 +153,47 @@ case "$provider" in
 esac
 
 echo "[CREATE] $name via $provider (node-port=$node_port, reg_portainer=$reg_portainer, haproxy=$add_haproxy)"
-if ! PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh create "$name"; then
-  echo "[CREATE] cluster '$name' already exists or create failed; continuing" >&2
+
+# 幂等性：在调用创建脚本前先检测集群是否已存在，避免误导性日志与不必要的错误
+already_exists=0
+case "$provider" in
+  k3d)
+    if k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | grep -qx "$name"; then
+      already_exists=1
+      echo "[CREATE] k3d cluster '$name' already exists, skip creation"
+    fi
+    ;;
+  kind)
+    if kind get clusters 2>/dev/null | grep -qx "$name"; then
+      already_exists=1
+      echo "[CREATE] kind cluster '$name' already exists, skip creation"
+    fi
+    ;;
+esac
+
+if [ "$already_exists" -eq 0 ]; then
+  if ! PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh create "$name"; then
+    echo "[CREATE] create command returned non-zero; checking existence..." >&2
+    # 容忍“已存在”之类的错误信息（例如并发或残留），若此时已存在则继续后续步骤
+    case "$provider" in
+      k3d)
+        if k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | grep -qx "$name"; then
+          echo "[CREATE] detected existing cluster '$name' after create attempt; continue"
+        else
+          echo "[ERROR] cluster '$name' not found after failed create; abort" >&2
+          exit 1
+        fi
+        ;;
+      kind)
+        if kind get clusters 2>/dev/null | grep -qx "$name"; then
+          echo "[CREATE] detected existing cluster '$name' after create attempt; continue"
+        else
+          echo "[ERROR] cluster '$name' not found after failed create; abort" >&2
+          exit 1
+        fi
+        ;;
+    esac
+  fi
 fi
 
 ctx_prefix=$([ "$provider" = "k3d" ] && echo k3d || echo kind)
@@ -416,4 +455,8 @@ else
   echo "    scripts/sync_clusters_to_db.sh  # (if this script exists)"
 fi
 
-echo "[SUCCESS] Cluster $name created successfully"
+if [ "$already_exists" -eq 1 ]; then
+  echo "[SUCCESS] Cluster $name already existed — configuration reconciled"
+else
+  echo "[SUCCESS] Cluster $name created successfully"
+fi

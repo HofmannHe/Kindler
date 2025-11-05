@@ -126,9 +126,55 @@ else
   done
 fi
 
-# 4. 域名规则一致性测试（新格式：不含 provider）
+# 4. Backend IP 合法性测试（宽松：仅排除 loopback/空；RFC1918 视为合法）
 echo ""
-echo "[4/5] Domain Pattern Consistency"
+echo "[4/6] Backend IP Validity"
+clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
+if [ -z "$clusters" ]; then
+  echo "  ⚠ No business clusters found"
+else
+  # Load BASE_DOMAIN for optional live check
+  if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
+  : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
+
+  for cluster in $clusters; do
+    ip=$(awk -v cluster="$cluster" '
+      BEGIN{inb=0}
+      /^backend be_'$cluster'[[:space:]]*$/ { inb=1; next }
+      inb && /^[[:space:]]+server s1/ { 
+        split($3, parts, ":"); print parts[1]; inb=0; exit 
+      }
+      /^backend / { inb=0 }
+    ' "$CFG" 2>/dev/null | tr -d ' \n')
+
+    domain="whoami.${cluster}.${BASE_DOMAIN}"
+    # If live route is healthy (HTTP 200), accept regardless of private ranges
+    http_ok=$(curl -s -o /dev/null -w "%{http_code}" -m 5 -H "Host: $domain" "http://127.0.0.1" 2>/dev/null || echo "000")
+    if [ "$http_ok" = "200" ]; then
+      echo "  ✓ $cluster backend reachable via domain ($domain)"
+      passed_tests=$((passed_tests + 1))
+      total_tests=$((total_tests + 1))
+      continue
+    fi
+
+    if [ -z "$ip" ]; then
+      echo "  ✗ $cluster backend IP not found"
+      failed_tests=$((failed_tests + 1))
+    elif echo "$ip" | grep -qE '^(127\.0\.0\.1|0\.0\.0\.0)$'; then
+      echo "  ✗ $cluster backend IP illegal (loopback/invalid): $ip"
+      failed_tests=$((failed_tests + 1))
+    else
+      # RFC1918 ranges (10/172.16-31/192.168) are acceptable for Docker networks
+      echo "  ✓ $cluster backend IP acceptable: $ip"
+      passed_tests=$((passed_tests + 1))
+    fi
+    total_tests=$((total_tests + 1))
+  done
+fi
+
+# 5. 域名规则一致性测试（新格式：不含 provider）
+echo ""
+echo "[5/6] Domain Pattern Consistency"
 clusters=$(awk -F, 'NR>1 && $1!="devops" && $0 !~ /^[[:space:]]*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" 2>/dev/null || echo "")
 
 if [ -z "$clusters" ]; then
@@ -158,9 +204,9 @@ else
   done
 fi
 
-# 5. 核心服务路由测试
+# 6. 核心服务路由测试
 echo ""
-echo "[5/5] Core Service Routes"
+echo "[6/6] Core Service Routes"
 for service in argocd portainer git haproxy_stats; do
   service_display="${service/_/ }"
   if grep -q "acl host_$service" "$CFG" 2>/dev/null; then
@@ -232,4 +278,3 @@ else
 fi
 
 print_summary
-

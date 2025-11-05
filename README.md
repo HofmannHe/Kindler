@@ -154,7 +154,8 @@ sequenceDiagram
 4. **Create everything (3 kind + 3 k3d) with timing and health checks**
    ```bash
    # Optional full clean first
-   ./scripts/clean.sh
+   # Use --all to guarantee Portainer admin reset (removes portainer_data/portainer_secrets volumes)
+   ./scripts/clean.sh --all
 
    # One-click bring-up (includes bootstrap)
    ./scripts/full_cycle.sh --concurrency 3
@@ -189,7 +190,7 @@ The create script automatically:
 - ✅ Create the Kubernetes cluster (kind/k3d based on CSV config)
 - ✅ Register to Portainer via Edge Agent
 - ✅ Register to ArgoCD with kubectl context
-- ✅ Configure HAProxy domain routing (if enabled in CSV)
+- ✅ Configure HAProxy domain routing (SQLite `clusters` as source; CSV only for bootstrap import)
 
 ### Access Your Clusters & Apps
 
@@ -730,7 +731,7 @@ backend be_prod
 docker exec haproxy-gw cat /usr/local/etc/haproxy/haproxy.cfg | grep -A 2 "acl host_"
 ```
 
-**Sync routes from CSV:**
+**Sync routes (SQLite as source; CSV fallback if DB temporarily unavailable):**
 ```bash
 ./scripts/haproxy_sync.sh         # Add missing routes
 ./scripts/haproxy_sync.sh --prune # Add missing + remove unlisted
@@ -786,6 +787,43 @@ Run smoke tests for a cluster:
 ```
 
 Test results are logged to `docs/TEST_REPORT.md`.
+
+## Operations
+
+- Portainer admin password
+  - Configure `config/secrets.env: PORTAINER_ADMIN_PASSWORD` (PLAINTEXT).
+  - `./scripts/portainer.sh up` writes it to the `portainer_secrets` volume as `portainer_admin` and starts Portainer.
+  - Rotate/reset admin: update `config/secrets.env`, then run `./scripts/portainer.sh reset-admin` (recreates data volume and re-applies the password).
+
+- Devops cluster in Portainer
+  - Devops (management) cluster is registered to Portainer via Edge Agent during `bootstrap.sh` so you can monitor ArgoCD and core add-ons from Portainer.
+  - Toggle via env: `REGISTER_DEVOPS_PORTAINER=0 ./scripts/bootstrap.sh` to skip registration.
+  - You can re-register manually at any time: `./scripts/register_edge_agent.sh devops k3d`.
+
+- HAProxy routes (DB-driven)
+  - HAProxy routes are generated from SQLite `clusters` table; CSV is only a bootstrap fallback.
+  - Sync after any cluster change: `./scripts/haproxy_sync.sh --prune` (idempotent, single reload).
+  - Dynamic sections in `compose/infrastructure/haproxy.cfg` are intentionally empty and fully managed by scripts to avoid stale entries; `setup_devops.sh` rewrites the ArgoCD backend to the current devops node IP/NodePort.
+  - Docker DNS resolver is enabled (`resolvers docker`) and backends use lazy resolution (e.g., `init-addr none`) so HAProxy does not fail on startup if container names are not yet resolvable; routes become active once backends are up.
+  - If dangling routes exist (e.g., `use_backend` referencing a missing backend), `./scripts/haproxy_sync.sh --prune` cleans them up to restore stability.
+
+- WebUI frontend healthcheck
+  - Uses `curl -sf http://localhost/` (replacing wget) to reduce false Unhealthy flaps.
+  - Access via HAProxy: `curl -I -H "Host: kindler.devops.$BASE_DOMAIN" http://$HAPROXY_HOST` should return 200.
+
+- Full clean regression
+  - From scratch end-to-end validation:
+    ```bash
+    ./scripts/clean.sh --all
+    ./scripts/bootstrap.sh
+    # Create ≥3 kind + ≥3 k3d (CSV-driven)
+    awk -F, 'NR>1 && $2=="kind" {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    awk -F, 'NR>1 && $2=="k3d"  {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    ./scripts/haproxy_sync.sh --prune
+    ./tests/regression_test.sh
+    # Optional: record smoke per env (docs/TEST_REPORT.md)
+    for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
+    ```
 
 ## Troubleshooting
 
@@ -857,4 +895,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - WebUI uses a declarative flow: it writes desired state to the SQLite DB; a background reconciler running on the host performs actual creation/registration (Portainer Edge, ArgoCD) by invoking the same `scripts/create_env.sh` used for predefined clusters.
 - Bootstrap now starts the reconciler automatically. You can manage it via:
   - `./scripts/start_reconciler.sh start|stop|status|logs`
+  - Concurrency is configurable via `RECONCILER_CONCURRENCY` (default 3). Different clusters reconcile in parallel; the same cluster is always serialized by a per-cluster lock.
 - Deletion is declarative too: `DELETE /api/clusters/{name}` sets `desired_state=absent`; the reconciler deletes the cluster and removes its DB record when finished.
+ - P2 fix: bootstrap initializes the `devops` cluster state in SQLite as `actual_state=running` (and sets `last_reconciled_at`) so that WebUI shows the management cluster correctly.
+ - Optional: export `REGISTER_DEVOPS_ARGOCD=1` before bootstrap if you want `devops` registered to ArgoCD. By default it’s off; the ApplicationSet continues to target business clusters only.

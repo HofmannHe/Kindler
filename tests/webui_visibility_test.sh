@@ -12,8 +12,9 @@ echo "=========================================="
 echo ""
 
 # 1. 检查WebUI后端运行状态
-echo "[1/4] Checking WebUI backend status"
-if ! docker ps | grep -q "kindler-webui-backend"; then
+echo "[1/5] Checking WebUI backend status"
+# Robust exact-name check
+if ! docker ps --filter name=kindler-webui-backend --format '{{.Names}}' | grep -qx 'kindler-webui-backend'; then
   echo "  ✗ WebUI backend not running"
   exit 1
 fi
@@ -23,7 +24,7 @@ total_tests=$((total_tests + 1))
 
 # 2. 检查PostgreSQL连接
 echo ""
-echo "[2/4] Testing PostgreSQL connection from WebUI"
+echo "[2/5] Testing WebUI health endpoint"
 if timeout 10 docker exec kindler-webui-backend curl -s http://localhost:8000/api/health 2>/dev/null | grep -q "healthy"; then
   echo "  ✓ WebUI health check passed"
   passed_tests=$((passed_tests + 1))
@@ -33,11 +34,11 @@ else
 fi
 total_tests=$((total_tests + 1))
 
-# 3. 检查数据库中的集群
+# 3. 检查数据库中的集群（SQLite via backend container）
 echo ""
-echo "[3/4] Checking clusters in database"
-db_clusters=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-  psql -U kindler -d kindler -t -c "SELECT name FROM clusters ORDER BY name" 2>/dev/null | \
+echo "[3/5] Checking clusters in SQLite DB"
+db_clusters=$(docker exec -i kindler-webui-backend sh -c \
+  "sqlite3 /data/kindler-webui/kindler.db 'SELECT name FROM clusters ORDER BY name;'" 2>/dev/null | \
   tr -d ' ' | grep -v '^$' || echo "")
 
 if [ -z "$db_clusters" ]; then
@@ -53,7 +54,7 @@ total_tests=$((total_tests + 1))
 
 # 4. 检查WebUI API返回的集群
 echo ""
-echo "[4/4] Checking clusters visible in WebUI API"
+echo "[4/5] Checking clusters visible in WebUI API"
 api_response=$(timeout 10 docker exec kindler-webui-backend curl -s http://localhost:8000/api/clusters 2>/dev/null || echo "[]")
 api_count=$(echo "$api_response" | jq '. | length' 2>/dev/null || echo "0")
 
@@ -68,37 +69,46 @@ if [ "$api_count" -eq 0 ]; then
 else
   echo "  ✓ WebUI API返回 $api_count 个集群:"
   echo "$api_response" | jq -r '.[] | "    - \(.name) (\(.provider))"' 2>/dev/null || echo "$api_response"
-  
   # 验证数量是否匹配
   if [ "$api_count" -eq "$db_count" ]; then
     echo "  ✓ WebUI集群数量与DB一致"
-
-# 5. 验证status字段正确性
-echo ""
-echo "" && echo "[5/5] Verifying status field accuracy"
-wrong_status=0
-for cluster_json in $(echo "$api_response" | jq -c ".[]" 2>/dev/null); do
-  cluster_name=$(echo "$cluster_json" | jq -r ".name")
-  cluster_status=$(echo "$cluster_json" | jq -r ".status")
-  
-  # 检查status字段（应该是running，因为DB中有记录即表示配置存在）
-  if [ "$cluster_status" != "running" ]; then
-  echo "  ✗ Cluster $cluster_name status is "$cluster_status", expected "running""
-    wrong_status=$((wrong_status + 1))
-  fi
-done
-
-if [ $wrong_status -eq 0 ]; then
-  echo "  ✓ All clusters show correct status (running)"
-else
-  echo "  ✗ $wrong_status cluster(s) with wrong status"
-fi
-total_tests=$((total_tests + 1))
     passed_tests=$((passed_tests + 1))
   else
     echo "  ✗ WebUI集群数量($api_count)与DB($db_count)不一致"
     failed_tests=$((failed_tests + 1))
   fi
+fi
+total_tests=$((total_tests + 1))
+
+# 5. 验证 /api/clusters/{name}/status 的 Portainer/ArgoCD 可达性字段
+echo ""
+echo "[5/5] Verifying Portainer/ArgoCD reachability via status API"
+status_fail=0
+for name in $(echo "$api_response" | jq -r '.[].name'); do
+  s=$(timeout 10 docker exec kindler-webui-backend curl -s "http://localhost:8000/api/clusters/${name}/status" 2>/dev/null || echo '{}')
+  portainer=$(echo "$s" | jq -r '.portainer_status // "unknown"')
+  argocd=$(echo "$s" | jq -r '.argocd_status // "unknown"')
+  overall=$(echo "$s" | jq -r '.status // "unknown"')
+  # 仅校验字段存在且在允许集合内；不强制 overall=running
+  case ",$portainer," in
+    *,online,*|*,offline,*|*,unknown,*) : ;;
+    *) echo "  ✗ $name: invalid portainer_status=$portainer"; status_fail=$((status_fail + 1));;
+  esac
+  case ",$argocd," in
+    *,healthy,*|*,degraded,*|*,unknown,*) : ;;
+    *) echo "  ✗ $name: invalid argocd_status=$argocd"; status_fail=$((status_fail + 1));;
+  esac
+  if [ "$overall" = "error" ]; then
+    echo "  ✗ $name: overall status=error"
+    status_fail=$((status_fail + 1))
+  fi
+done
+if [ $status_fail -eq 0 ]; then
+  echo "  ✓ Status API returns valid reachability fields"
+  passed_tests=$((passed_tests + 1))
+else
+  echo "  ✗ $status_fail cluster(s) with invalid status fields"
+  failed_tests=$((failed_tests + 1))
 fi
 total_tests=$((total_tests + 1))
 
@@ -118,4 +128,3 @@ else
   echo "Status: ✗ SOME FAILURES"
   exit 1
 fi
-

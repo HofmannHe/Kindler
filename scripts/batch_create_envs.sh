@@ -60,6 +60,9 @@ mkdir -p "$LOG_DIR"
 echo "[BATCH] Starting parallel cluster creation (max $MAX_PARALLEL concurrent jobs)..."
 echo "[BATCH] Logs will be stored in: $LOG_DIR"
 
+# Avoid per-cluster HAProxy reloads during parallel creation; we will sync once at the end
+export NO_RELOAD=1
+
 # 读取环境列表并启动并行创建
 pids=()
 envs=()
@@ -137,19 +140,21 @@ if [ -f "$LOG_DIR/summary.log" ]; then
 	echo "Failed:  $failed"
 	echo ""
 
-	if [ "$failed" -gt 0 ]; then
-		echo "Failed environments:"
-		grep '^✗' "$LOG_DIR/summary.log" | sed 's/^/  /'
-		echo ""
-		echo "Check logs in $LOG_DIR for details"
-		exit 1
-	else
-		echo "All environments created successfully! ✓"
-		rm -f "$LOG_DIR/summary.log"
-		exit 0
-	fi
+    if [ "$failed" -gt 0 ]; then
+        echo "Failed environments:"
+        grep '^✗' "$LOG_DIR/summary.log" | sed 's/^/  /'
+        echo ""
+        echo "Check logs in $LOG_DIR for details"
+        exit 1
+    else
+        echo "All environments created successfully! ✓"
+        # 单次同步 HAProxy 动态路由并执行一次重载
+        echo "[BATCH] Syncing HAProxy routes from DB and pruning stale entries..."
+        "$ROOT_DIR/scripts/haproxy_sync.sh" --prune || true
+        rm -f "$LOG_DIR/summary.log"
+        exit 0
+    fi
 else
 	echo "No environments were created"
 	exit 0
 fi
-

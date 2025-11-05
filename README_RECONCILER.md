@@ -59,6 +59,18 @@ cd /home/cloud/github/hofmannhe/kindler
 
 两种方式最终都调用相同的 create_env.sh，保证一致性。
 
+## 并发与锁
+
+- 默认并发度：`RECONCILER_CONCURRENCY=3`
+- 配置方式：环境变量（`start_reconciler.sh` 或 systemd 中设置）
+  - 示例：`RECONCILER_CONCURRENCY=3 ./scripts/reconciler.sh loop`
+- 保障机制：
+  - 集群级互斥锁：同名集群的调和动作串行（锁文件：`/tmp/kindler_reconcile_<name>.lock`）
+  - 数据库锁：SQLite 访问使用全局文件锁，锁粒度仅覆盖单次读写（很短），不会成为并发瓶颈
+  - HAProxy 路由：内部自带全局锁，避免并发写配置导致损坏
+
+说明：并发度提高可显著缩短多集群同时创建的总耗时；若宿主机资源紧张，可适当调小该值。
+
 ## 状态说明
 
 ### desired_state（期望状态）
@@ -195,4 +207,3 @@ sudo systemctl start kindler-reconciler
 ## 总结
 
 Reconciler 实现了声明式集群管理，让 WebUI 创建集群与脚本创建（预置集群）完全一致，稳定可靠。
-
