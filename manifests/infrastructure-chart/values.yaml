@@ -1,0 +1,39 @@
+environment:
+  name: ""
+  provider: ""
+  clusterName: ""
+
+traefik:
+  enabled: true
+  image:
+    repository: traefik
+    tag: v2.10
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    nodePort: 30080
+  args:
+    - --providers.kubernetesIngress=true
+    - --providers.kubernetesIngress.ingressClass=traefik
+    - --entrypoints.web.address=:80
+    - --api.insecure=true
+    - --api.dashboard=true
+    - --ping=true
+    - --ping.entryPoint=web
+    - --log.level=INFO
+
+portainer:
+  enabled: true
+  image:
+    repository: portainer/agent
+    tag: latest
+    pullPolicy: IfNotPresent
+  edge:
+    id: ""
+    key: ""
+    insecurePoll: true
+  # Portainer server configuration
+  server:
+    url: "http://172.17.0.2:9000"
+    username: "admin"
+    password: "AdminAdmin87654321"

@@ -3,6 +3,26 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+. "$ROOT_DIR/scripts/lib.sh"
+
+# 从 Portainer Edge Agent Secret 读取凭证
+get_portainer_credentials() {
+  local cluster_name="$1"
+  local provider="$2"
+  local context_name
+  if [[ "$provider" == "k3d" ]]; then
+    context_name="k3d-${cluster_name}"
+  else
+    context_name="kind-${cluster_name}"
+  fi
+
+  local edge_id="" edge_key=""
+  if kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge &>/dev/null; then
+    edge_id=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-id}' 2>/dev/null | base64 -d || echo "")
+    edge_key=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-key}' 2>/dev/null | base64 -d || echo "")
+  fi
+  echo "$edge_id|$edge_key"
+}
 
 register_cluster_kubectl() {
   local cluster_name="$1"
@@ -23,18 +43,36 @@ register_cluster_kubectl() {
     return 1
   fi
 
+  # 读取 Portainer 凭证（如果没有则使用空字符串）
+  local credentials=$(get_portainer_credentials "$cluster_name" "$provider")
+  local edge_id=$(echo "$credentials" | cut -d'|' -f1)
+  local edge_key=$(echo "$credentials" | cut -d'|' -f2)
+  
+  # 确保 annotations 始终存在（即使为空）
+  if [[ -z "$edge_id" ]]; then edge_id=""; fi
+  if [[ -z "$edge_key" ]]; then edge_key=""; fi
+
   # 获取集群 API server 地址（使用容器内网 IP 以支持跨集群连接）
   local api_server
   if [[ "$provider" == "k3d" ]]; then
-    # k3d: 使用容器内网 IP（共享网络 k3d-shared）
+    # k3d: 使用容器内网 IP（从集群独立网络获取）
     local container_name="k3d-${cluster_name}-server-0"
-    local container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container_name" 2>/dev/null | head -1)
+    local network_name="k3d-${cluster_name}"
+    
+    # 优先从集群的独立网络获取 IP
+    local container_ip=$(docker inspect "$container_name" --format "{{with index .NetworkSettings.Networks \"$network_name\"}}{{.IPAddress}}{{end}}" 2>/dev/null || true)
+    
+    # 如果没有独立网络，回退到获取第一个网络的 IP
+    if [[ -z "$container_ip" ]]; then
+      container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container_name" 2>/dev/null | head -1)
+    fi
+    
     if [[ -z "$container_ip" ]]; then
       echo "[ERROR] Failed to get container IP for $container_name"
       return 1
     fi
     api_server="https://${container_ip}:6443"
-    echo "[INFO] Using container IP for API server: $api_server"
+    echo "[INFO] Using container IP for API server: $api_server (from network: $network_name)"
   else
     # kind: 直接使用宿主机可达的 0.0.0.0:<port> 发布端口，改写为 https://$HAPROXY_HOST:<port>
     # 这样在 k3d(devops) 集群中的 ArgoCD Pod 也能访问到宿主机 IP 上的该端口
@@ -126,10 +164,21 @@ EOF
     return 1
   fi
 
-  # 创建 ArgoCD cluster secret
-  echo "[INFO] Creating ArgoCD cluster secret..."
+  # 创建 ArgoCD cluster secret with labels and annotations
+  echo "[INFO] Creating ArgoCD cluster secret with metadata..."
   insecure=false
   if [[ "$provider" != "k3d" ]]; then insecure=true; fi
+
+  # 构建 labels 和 annotations
+  local cluster_type="business"
+  if [[ "$cluster_name" == "devops" ]]; then
+    cluster_type="management"
+  fi
+
+  # 始终添加 annotations（即使为空），以便 ApplicationSet 可以解析
+  local annotations="
+    portainer-edge-id: \"$edge_id\"
+    portainer-edge-key: \"$edge_key\""
 
   if [[ "$provider" == "k3d" ]]; then
     cat <<EOF | kubectl --context k3d-devops apply -f -
@@ -140,6 +189,10 @@ metadata:
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
+    env: ${cluster_name}
+    provider: ${provider}
+    type: ${cluster_type}
+  annotations:${annotations}
 type: Opaque
 stringData:
   name: ${cluster_name}
@@ -162,6 +215,10 @@ metadata:
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
+    env: ${cluster_name}
+    provider: ${provider}
+    type: ${cluster_type}
+  annotations:${annotations}
 type: Opaque
 stringData:
   name: ${cluster_name}
@@ -176,7 +233,10 @@ stringData:
 EOF
   fi
 
-  echo "[SUCCESS] Cluster ${cluster_name} registered to ArgoCD"
+  echo "[SUCCESS] Cluster ${cluster_name} registered to ArgoCD with labels: env=${cluster_name}, provider=${provider}, type=${cluster_type}"
+  if [[ -n "$edge_id" ]]; then
+    echo "[INFO] Portainer credentials added as annotations"
+  fi
   echo "[INFO] Verify with: kubectl --context k3d-devops get secrets -n argocd -l argocd.argoproj.io/secret-type=cluster"
 }
 

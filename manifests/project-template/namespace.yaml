@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: PROJECT_NAMESPACE_PLACEHOLDER
+  labels:
+    project: PROJECT_NAME_PLACEHOLDER
+    team: PROJECT_TEAM_PLACEHOLDER
+    environment: PROJECT_ENV_PLACEHOLDER
+    managed-by: kindler
+    created-at: PROJECT_CREATED_AT_PLACEHOLDER
+  annotations:
+    kindler.io/project-description: PROJECT_DESCRIPTION_PLACEHOLDER
+    kindler.io/cpu-limit: PROJECT_CPU_LIMIT_PLACEHOLDER
+    kindler.io/memory-limit: PROJECT_MEMORY_LIMIT_PLACEHOLDER

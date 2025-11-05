@@ -1,0 +1,66 @@
+######################################################
+# Cluster Lifecycle Tests
+######################################################
+==========================================
+Create/Delete Lifecycle Validation
+==========================================
+
+[1/4] Creating Test Cluster: test-lifecycle-2340946
+  ✓ Cluster creation completed
+
+[2/4] Verifying Resources Created
+  ✓ K8s cluster exists
+  ✓ DB record exists
+  ✓ Git branch exists
+  ⚠ ArgoCD cluster secret not found (may not be registered yet)
+  Checking cluster health...
+      ✓ All nodes ready
+      ✓ CoreDNS ready: 1 replicas
+
+[3/4] Deleting Test Cluster: test-lifecycle-2340946
+  ✓ Cluster deletion completed
+  Pruning HAProxy dynamic routes post-deletion...
+  Waiting 30s for async cleanup to complete...
+
+[4/4] Verifying Resources Cleaned Up
+  ✓ K8s cluster removed
+  ✓ DB record removed
+  ✓ Git branch removed
+
+
+==========================================
+Test Summary
+==========================================
+Total:  10
+Passed: 9
+Failed: 0
+Status: ✓ ALL PASS
+
+[POST] Pruning HAProxy dynamic routes (safety)
+
+========================================
+Extended Database Validation Tests
+==========================================
+
+[EXTENDED-1] test_devops_cluster_in_db
+  ✓ devops cluster found in database
+  ✓ devops cluster configuration correct
+[EXTENDED-2] test_db_record_matches_config (cluster=devops)
+  ⚠ server_ip is empty for devops (acceptable)
+  ✓ All fields match (provider=k3d, node_port=30800, server_ip=<empty>)
+
+==========================================
+Extended Tests Summary
+==========================================
+Total: 2
+Passed: 2
+Failed: 0
+
+==========================================
+Final Summary (Including Extended Tests)
+==========================================
+Total: 12
+Passed: 11
+Failed: 0
+
+✓ All tests passed

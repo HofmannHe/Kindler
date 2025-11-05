@@ -1,0 +1,16 @@
+apiVersion: v2
+name: infrastructure
+version: 1.0.0
+description: 集群基础设施（Edge Agent + Traefik）
+type: application
+
+dependencies:
+- name: edge-agent
+  version: 1.0.0
+  repository: file://./charts/edge-agent
+  condition: edgeAgent.enabled
+- name: traefik
+  version: 1.0.0
+  repository: file://./charts/traefik
+  condition: traefik.enabled
+

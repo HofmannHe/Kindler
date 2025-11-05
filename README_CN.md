@@ -16,6 +16,9 @@
 - 📦 **自动注册**: 自动将集群注册到 Portainer 和 ArgoCD
 - 🔒 **生产就绪**: 支持 TLS 和自动重定向
 - 🔄 **统一 Ingress（NodePort）**：无论 k3d 还是 kind，均通过 NodePort 暴露入口，应用无需感知差异
+- 🏢 **多项目管理**: 支持多个项目，提供命名空间隔离、资源配额和项目级路由
+- 🔐 **项目隔离**: 每个项目运行在独立的命名空间中，配备 ResourceQuota 和 NetworkPolicy
+- 🌐 **项目级路由**: 支持项目特定域名模式，如 `<service>.<project>.<env>.<BASE_DOMAIN>`
 
 ## 架构
 
@@ -110,6 +113,12 @@ sequenceDiagram
 
 ## 快速开始
 
+> 必做三步（回退/重装后建议先执行）
+> 1) `./scripts/haproxy_sync.sh --prune`
+> 2) `./scripts/setup_devops.sh`
+> 3) `./scripts/sync_applicationset.sh`
+
+
 ### 前置要求
 
 - Docker Engine (20.10+)
@@ -157,10 +166,21 @@ sequenceDiagram
    - 部署 ArgoCD (GitOps 引擎)
    - 校验 `config/git.env` 中配置的外部 Git 仓库
 
+### 声明式集群管理
+
+- WebUI 采用声明式：仅写入 SQLite 数据库中的期望状态；由宿主机上的 Reconciler 调用与预置集群相同的 `scripts/create_env.sh` 完成实际创建与 Portainer/ArgoCD 注册。
+- `bootstrap.sh` 会自动启动 Reconciler，可通过以下命令管理：
+  - `./scripts/start_reconciler.sh start|stop|status|logs`
+  - 并发度可调：设置 `RECONCILER_CONCURRENCY`（默认 3），用于同时并行调和多个集群；同名集群始终串行（集群级锁保障）
+- 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
+ - P2 修复：bootstrap 会在 SQLite 中初始化 `devops` 集群的 `actual_state=running`（并记录 `last_reconciled_at`），确保 WebUI 正确显示管理集群状态。
+ - 可选：如需在 `devops` 上部署业务，可在 bootstrap 前导出 `REGISTER_DEVOPS_ARGOCD=1`，系统将把 `devops` 注册到 ArgoCD（默认不注册；ApplicationSet 仍仅匹配业务集群）。
+
 4. **一键拉起（含计时/健康检查，建议）**
    ```bash
    # 可选：先全量清理
-   ./scripts/clean.sh
+   # 建议使用 --all 确保重置 Portainer 管理员（会清理 portainer_data/portainer_secrets 卷）
+   ./scripts/clean.sh --all
 
    # 一键全流程（含 bootstrap + 批量创建 CSV 环境）
    ./scripts/full_cycle.sh --concurrency 3
@@ -206,7 +226,7 @@ for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n 
 - ✅ 创建 Kubernetes 集群 (根据 CSV 配置选择 kind/k3d)
 - ✅ 通过 Edge Agent 注册到 Portainer
 - ✅ 使用 kubectl context 注册到 ArgoCD
-- ✅ 配置 HAProxy 域名路由 (如果在 CSV 中启用)
+- ✅ 配置 HAProxy 域名路由（运行期以 SQLite `clusters` 为准；CSV 仅在 bootstrap 导入）
 
 ### 访问集群与应用
 
@@ -424,7 +444,7 @@ sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
 修改 `clusters.env` 后的最小操作（手动路径）
 ```bash
 # 1) 同步 HAProxy 路由
-./scripts/haproxy_sync.sh --prune
+./scripts/haproxy_sync.sh --prune   # SQLite 为源，DB 不可用时临时回退 CSV
 
 # 2) 更新 devops 集群的 ArgoCD Ingress（按 BASE_DOMAIN 重建）
 ./scripts/setup_devops.sh
@@ -508,8 +528,17 @@ HAPROXY_HOST=192.168.51.30           # HAProxy 主机 IP
 ```
 
 **域名格式**：`<service>.<env>.<BASE_DOMAIN>`
-- 管理服务：`portainer.devops.192.168.51.30.sslip.io`
-- 业务应用：`whoami.dev.192.168.51.30.sslip.io`
+
+- **管理服务**（devops 环境）：
+  - Portainer: `portainer.devops.$BASE_DOMAIN` (如 `portainer.devops.192.168.51.30.sslip.io`)
+  - ArgoCD: `argocd.devops.$BASE_DOMAIN`
+  - HAProxy 统计: `haproxy.devops.$BASE_DOMAIN/stat`
+  - Git 服务: `git.devops.$BASE_DOMAIN`
+  - **Web UI (Kindler)**: `kindler.devops.$BASE_DOMAIN` ⚠️ **重要：Web UI 使用 "kindler" 不是 "webui"**
+
+- **业务服务**（集群相关）：
+  - 示例 whoami 应用: `whoami.<集群名称>.$BASE_DOMAIN` (如 `whoami.dev.192.168.51.30.sslip.io`)
+  - 使用完整集群名（包括 provider 后缀如 `-k3d` 或 `-kind`）
 
 **纯内网环境配置**：
 ```bash
@@ -517,6 +546,82 @@ BASE_DOMAIN=local           # 使用本地域名
 HAPROXY_HOST=192.168.51.30  # 内网 IP
 ```
 需配合 `/etc/hosts` 或内网 DNS 使用。
+
+## 多项目管理
+
+Kindler 支持多项目管理，允许在同一个基础设施上运行多个独立的项目，并提供适当的隔离。
+
+### 项目管理命令
+
+#### 创建项目
+```bash
+./scripts/project_manage.sh create \
+  --project demo-app \
+  --env dev-k3d \
+  --team backend \
+  --cpu-limit 2 \
+  --memory-limit 4Gi \
+  --description "演示应用"
+```
+
+#### 列出项目
+```bash
+# 列出所有项目
+./scripts/project_manage.sh list
+
+# 列出指定环境的项目
+./scripts/project_manage.sh list --env dev-k3d
+```
+
+#### 查看项目详情
+```bash
+./scripts/project_manage.sh show --project demo-app --env dev-k3d
+```
+
+#### 删除项目
+```bash
+./scripts/project_manage.sh delete --project demo-app --env dev-k3d
+```
+
+### 项目级 HAProxy 路由
+
+#### 添加项目路由
+```bash
+./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
+```
+
+#### 移除项目路由
+```bash
+./scripts/haproxy_project_route.sh remove demo-app --env dev-k3d
+```
+
+### ArgoCD 项目管理
+
+#### 创建 AppProject
+```bash
+./scripts/argocd_project.sh create \
+  --project demo-app \
+  --repo https://github.com/example/demo-app.git \
+  --namespace project-demo-app
+```
+
+#### 添加应用
+```bash
+./scripts/argocd_project.sh add-app \
+  --project demo-app \
+  --app whoami \
+  --path deploy/ \
+  --env dev-k3d
+```
+
+### 项目隔离特性
+
+- **命名空间隔离**: 每个项目运行在独立的 Kubernetes 命名空间中
+- **资源配额**: 每个项目的 CPU 和内存限制
+- **网络策略**: 控制项目间的网络访问
+- **项目级域名**: 支持 `<service>.<project>.<env>.<BASE_DOMAIN>` 模式
+
+详细文档请参考 [PROJECT_MANAGEMENT.md](./docs/PROJECT_MANAGEMENT.md)。
 
 ## 管理命令
 
@@ -625,6 +730,43 @@ curl -I http://${HAPROXY_HOST}
 curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
 # 预期: HTTP/1.1 200 OK (或后端服务响应)
 ```
+
+## 运维操作
+
+- Portainer 管理员密码
+  - 在 `config/secrets.env` 配置 `PORTAINER_ADMIN_PASSWORD`（明文）。
+  - 运行 `./scripts/portainer.sh up` 会把密码写入命名卷 `portainer_secrets:/run/secrets/portainer_admin` 并启动 Portainer。
+  - 轮换/重置管理员密码：更新 `config/secrets.env` 后执行 `./scripts/portainer.sh reset-admin`（会重建数据卷并重新应用密码）。
+
+- 在 Portainer 中查看 devops 集群
+  - `bootstrap.sh` 会以 Edge Agent 方式把 devops（管理）集群注册到 Portainer，便于从 Portainer 观察 ArgoCD 等核心组件。
+  - 可通过环境变量关闭：`REGISTER_DEVOPS_PORTAINER=0 ./scripts/bootstrap.sh`（跳过注册）。
+  - 随时手动注册：`./scripts/register_edge_agent.sh devops k3d`。
+
+- HAProxy 路由（数据库驱动）
+  - 运行期以 SQLite 数据库 `clusters` 表为唯一真实来源；CSV 仅在 bootstrap 时导入（DB 临时不可用时回退）。
+  - 集群新增/删除后执行 `./scripts/haproxy_sync.sh --prune` 同步（幂等、单次 reload）。
+  - `compose/infrastructure/haproxy.cfg` 中的动态区块默认留空，由脚本完全管理以避免陈旧条目；`setup_devops.sh` 会将 ArgoCD backend 自动重写为当前 devops 节点 IP/NodePort。
+  - 已启用 Docker DNS 解析器（`resolvers docker`）与后端懒解析（如 `init-addr none`），启动时若后端容器名暂不可解析不会导致 HAProxy 重启；后端就绪后自动生效。
+  - 若出现异常路由（如 `use_backend` 指向不存在的 backend），执行 `./scripts/haproxy_sync.sh --prune` 可自动清理悬挂条目并恢复稳定。
+
+- WebUI 健康检查
+  - WebUI 前端健康检查使用 `curl -sf http://localhost/`（替换原先的 wget），减少不必要的 Unhealthy 抖动。
+  - 访问 WebUI：`curl -I -H "Host: kindler.devops.$BASE_DOMAIN" http://$HAPROXY_HOST` 预期 200。
+
+- 全量回归（从零开始）
+  - 完整校验流程：
+  ```bash
+  ./scripts/clean.sh --all
+  ./scripts/bootstrap.sh
+    # 至少创建 ≥3 个 kind 与 ≥3 个 k3d（从 CSV 读取）
+    awk -F, 'NR>1 && $2=="kind" {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    awk -F, 'NR>1 && $2=="k3d"  {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
+    ./scripts/haproxy_sync.sh --prune
+    ./tests/regression_test.sh
+    # 可选：为每个环境记录冒烟报告（docs/TEST_REPORT.md）
+    for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
+  ```
 
 ## 高级用法
 
@@ -859,82 +1001,6 @@ agents: 2
 测试结果记录在 `docs/TEST_REPORT.md` 中。
 
 ## 故障排除
-
-### 回退/恢复后出现 404 或 503 的自愈流程
-
-场景：回退配置文件（如 haproxy.cfg）或重装基础组件后，ArgoCD/应用访问出现 404/503。
-
-推荐步骤（按顺序执行）：
-
-1) 清理并重建 HAProxy 动态路由（移除失效后端）
-   ```bash
-   ./scripts/haproxy_sync.sh --prune
-   ```
-
-2) 修复 devops 集群的 ArgoCD 回源与域名路由（会更新 haproxy 的 be_argocd 指向当前 devops 节点 IP:NodePort）
-   ```bash
-   ./scripts/setup_devops.sh
-   ```
-
-3) 重新生成并应用 ApplicationSet（分支名=环境名，确保 Ingress 按 host 生成）
-   ```bash
-   ./scripts/sync_applicationset.sh
-   ```
-
-4) 让 ArgoCD 能跨集群访问 kind（重要）
-   - 脚本已将 kind 的 API server 统一改写为 `https://$HAPROXY_HOST:<hostPort>` 的可达地址。
-   - 重新注册 kind 集群：
-     ```bash
-     ./scripts/argocd_register_kubectl.sh register dev kind
-     ./scripts/argocd_register_kubectl.sh register uat kind
-     ./scripts/argocd_register_kubectl.sh register prod kind
-     ```
-
-5) 预热镜像并重启关键 Pod（避免 ImagePullBackOff/ErrImageNeverPull）
-   - 为所有集群导入镜像（按需）：
-     ```bash
-     docker pull traefik:v2.10 traefik/whoami:v1.10.2
-     # kind：将镜像导入到 control-plane 的 containerd
-     docker save traefik:v2.10 | docker exec -i dev-control-plane ctr -n k8s.io images import -
-     docker save traefik/whoami:v1.10.2 | docker exec -i dev-control-plane ctr -n k8s.io images import -
-     # k3d：使用 k3d image import 导入到集群
-     k3d image import traefik:v2.10 -c dev-k3d
-     k3d image import traefik/whoami:v1.10.2 -c dev-k3d
-     ```
-   - 重启各集群的 traefik 和 whoami Pod：
-     ```bash
-     kubectl --context kind-dev -n traefik  delete pod -l app=traefik --force --grace-period=0
-     kubectl --context kind-dev -n default delete pod -l app.kubernetes.io/name=whoami --force --grace-period=0
-     # 其它 env 类似（uat/prod 以及 *-k3d）
-     ```
-
-6) 确保 HAProxy 后端指向正确 NodePort（统一 NodePort=30080）
-   ```bash
-   ./scripts/haproxy_route.sh add dev  --node-port 30080
-   ./scripts/haproxy_route.sh add uat  --node-port 30080
-   ./scripts/haproxy_route.sh add prod --node-port 30080
-   ./scripts/haproxy_route.sh add dev-k3d  --node-port 30080
-   ./scripts/haproxy_route.sh add uat-k3d  --node-port 30080
-   ./scripts/haproxy_route.sh add prod-k3d --node-port 30080
-   ```
-
-7) 验证（预期均为 200 或应用输出）
-   ```bash
-   BASE=192.168.51.30
-   curl -I https://portainer.devops.$BASE.sslip.io
-   curl -I http://argocd.devops.$BASE.sslip.io/
-   curl -I -H 'Host: whoami.dev.$BASE.sslip.io'     http://$BASE
-   curl -I -H 'Host: whoami.uat.$BASE.sslip.io'     http://$BASE
-   curl -I -H 'Host: whoami.prod.$BASE.sslip.io'    http://$BASE
-   curl -I -H 'Host: whoami.devk3d.$BASE.sslip.io'  http://$BASE
-   curl -I -H 'Host: whoami.uatk3d.$BASE.sslip.io'  http://$BASE
-   curl -I -H 'Host: whoami.prodk3d.$BASE.sslip.io' http://$BASE
-   ```
-
-常见原因：
-- 回退覆盖了 haproxy.cfg 中的动态 be_argocd/后端 IP → 需运行 `setup_devops.sh` 重写。
-- k3d/镜像拉取受限 → 需本地导入镜像并重启 Pod。
-- kind 的 API 通过 `host.k3d.internal` 不可解析 → 现已改为 `https://$HAPROXY_HOST:<port>`，请按第4步重新注册。
 
 ### Portainer Edge Agent 无法连接
 

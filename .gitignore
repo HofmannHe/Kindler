@@ -31,3 +31,40 @@ config/secrets.env
 
 # Local git worktrees (development branches)
 worktrees/
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Web UI 测试产物
+webui/.coverage
+webui/htmlcov/
+webui/.benchmarks/
+.coverage
+htmlcov/
+
+# Node.js
+webui/frontend/node_modules/
+webui/frontend/dist/
+node_modules/
+
+# Playwright MCP
+.playwright-mcp/
+
+# 临时状态文档和报告
+*_STATUS*.md
+*_REPORT.md
+FINAL_STATUS_REPORT.md
+COMPREHENSIVE_FIX_PLAN.md
+FIX_SUMMARY.md
+
+# 临时测试文件
+tests/*.html
+tests/diagnose_*.sh
+tests/quick_*.sh
+
+# ArgoCD ApplicationSet with credentials (use templates instead)
+manifests/argocd/*applicationset*.yaml
