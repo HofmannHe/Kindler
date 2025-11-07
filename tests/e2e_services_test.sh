@@ -15,7 +15,7 @@ BASE_DOMAIN="${BASE_DOMAIN:-192.168.51.30.sslip.io}"
 echo "######################################################"
 echo "# E2E Services Accessibility Test"
 echo "######################################################"
-echo "==========================================}"
+echo "=========================================="
 echo "End-to-End Service Access Tests"
 echo "=========================================="
 echo ""
@@ -140,8 +140,10 @@ else
     echo "  [2.x] whoami.$cluster ($cluster)"
     
     # 1. 先验证 ingress 实际配置
-    # 根据集群名后缀判断provider: 包含"-kind"后缀的是kind集群，否则是k3d集群
-    if echo "$cluster" | grep -q "\-kind$"; then
+    # 从 CSV 读取 provider，而不是通过名称猜测
+    provider=$(awk -F, -v n="$cluster" 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $2; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | tr -d ' 
+')
+    if [ "$provider" = "kind" ]; then
       ctx_prefix="kind"
     else
       ctx_prefix="k3d"
@@ -258,11 +260,8 @@ if [ -n "$TOKEN" ]; then
     -H "Authorization: Bearer $TOKEN" 2>/dev/null)
   
   for cluster in $clusters; do
-    # Portainer 中 kind 集群名称去掉了连字符（如 dev-kind -> devkind）
+    # Portainer endpoint 名称与集群名一致（保留连字符）
     portainer_name="$cluster"
-    if echo "$cluster" | grep -q -- "-kind$"; then
-      portainer_name=$(echo "$cluster" | sed 's/-kind$/kind/')
-    fi
     
     # 查找对应的 endpoint
     endpoint_status=$(echo "$endpoints_response" | jq -r ".[] | select(.Name == \"$portainer_name\") | .Status" 2>/dev/null)
