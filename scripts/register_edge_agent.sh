@@ -86,7 +86,7 @@ if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
 fi
 
 # 构造 Edge Environment 名称
-EP_NAME=$(echo "$CLUSTER_NAME" | sed 's/-//g') # 移除连字符，例如 dev-k3d -> devk3d
+EP_NAME="$CLUSTER_NAME" # 保留原始集群名（含连字符）
 
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 

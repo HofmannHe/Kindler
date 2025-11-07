@@ -147,6 +147,18 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - 尽量使用镜像摘要固定基镜像；避免在生产路径使用 `latest`。
 - 配置以环境变量为主，避免硬编码；记录必需变量。
 
+### Push Protection 与凭据管理（强制）
+- 严禁在仓库任何文件中硬编码凭据（token/密码/EdgeKey 等），包括但不限于：ApplicationSet、Helm values、Git `repoURL` 的内嵌账号密码。
+- ApplicationSet 不入库保存含凭据版本：运行时由 `scripts/sync_applicationset.sh` 生成并应用，仓库仅保留模板或完全不纳入版本控制（`.gitignore` 已忽略 `manifests/argocd/*applicationset*.yaml`）。
+- ArgoCD 仓库认证使用 Kubernetes Secret 或 ArgoCD `repository.credentials`，以及本地 `config/git.env`/`config/secrets.env`（这些文件不提交到 Git）。
+- 如历史提交包含敏感信息，必须在本地使用 `git filter-repo`（或等价工具）彻底清洗后再推送，禁止允许被标记为泄露的提交进入远端历史。
+- 提交策略：从远端 `origin/main` 新建干净分支，Cherry-pick 安全变更，避免带入历史脏数据触发 Push Protection。
+- 本地与 CI 建议开启密钥扫描（如 `git secrets`/`gitleaks`）和预推送钩子；被拦截时优先移除敏感内容，不要强制放行。
+
+### 运行时生成物与调试（最小变更）
+- 运行时生成的 YAML（含可能敏感的运行态值）仅用于 `kubectl apply`，不提交回仓库。
+- 调试与验证优先走 HAProxy + Host 头访问，减少对外部 DNS 的依赖与漂移；所有凭据经环境变量或 Secret 注入，不写入配置文件。
+
 ## Agent 专用说明
 - 域名命名统一遵循 `[service].[env].[BASE_DOMAIN]` 规则；系统保留集群使用 `devops` 作为 env，例如 `portainer.devops.192.168.51.30.sslip.io`、`haproxy.devops.192.168.51.30.sslip.io/stat`、`argocd.devops.192.168.51.30.sslip.io`、`whoami.devk3d.192.168.51.30.sslip.io`。
 - 每次修改后必须验证：至少使用 curl（必要时配合浏览器/MCP 浏览器）验证基础环境与域名路由；并运行 `scripts/smoke.sh <env>` 记录到 `docs/TEST_REPORT.md`（强制要求）。
