@@ -30,7 +30,7 @@
    - `setup_devops.sh`: 移除错误的 devops 路由调用
    - `haproxy.cfg`: 清理静态配置模板
    - `bootstrap.sh`: 自动调用 fix_haproxy_routes.sh
-   - `fix_haproxy_routes.sh`: 新增，自动添加业务集群路由
+   - `tools/fix_haproxy_routes.sh`: 新增，自动添加业务集群路由
 
 ---
 
@@ -140,7 +140,7 @@
 
 3. **bootstrap.sh**
    - ❌ 之前：不自动添加业务集群路由
-   - ✅ 现在：自动调用 `fix_haproxy_routes.sh`
+- ✅ 现在：自动调用 `tools/fix_haproxy_routes.sh`
 
 4. **错误处理**
    - ❌ 之前：`|| true` 掩盖所有错误
@@ -293,5 +293,4 @@
 **报告生成时间**: 2025-10-19 16:20  
 **报告版本**: v3.0 (Final)  
 **状态**: ✅ 生产就绪
-
 

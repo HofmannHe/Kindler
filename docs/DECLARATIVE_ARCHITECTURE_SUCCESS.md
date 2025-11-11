@@ -65,10 +65,10 @@ WebUI (容器) → 写入数据库（desired_state='present'）
 ./scripts/reconciler.sh loop
 
 # 使用管理脚本
-./scripts/start_reconciler.sh start   # 启动后台服务
-./scripts/start_reconciler.sh stop    # 停止
-./scripts/start_reconciler.sh status  # 查看状态
-./scripts/start_reconciler.sh logs    # 查看日志
+./tools/start_reconciler.sh start   # 启动后台服务
+./tools/start_reconciler.sh stop    # 停止
+./tools/start_reconciler.sh status  # 查看状态
+./tools/start_reconciler.sh logs    # 查看日志
 ```
 
 ### 3. WebUI API 改为声明式 ✅
@@ -83,7 +83,7 @@ WebUI (容器) → 写入数据库（desired_state='present'）
 
 ### 4. 管理脚本 ✅
 
-**文件**：`scripts/start_reconciler.sh`
+**文件**：`tools/start_reconciler.sh`
 
 **功能**：
 - 启动/停止/查看 Reconciler 状态
@@ -146,7 +146,7 @@ unknown → creating → failed (查看 reconcile_error)
 
 **方式 1：后台服务**（推荐）
 ```bash
-./scripts/start_reconciler.sh start
+./tools/start_reconciler.sh start
 ```
 
 **方式 2：cron 任务**
@@ -211,4 +211,3 @@ sudo systemctl start kindler-reconciler
 ✅ **完全符合 GitOps 理念**
 
 这个架构从根本上解决了 WebUI 容器化执行的问题，提供了可靠、稳定、可维护的集群创建功能。
-

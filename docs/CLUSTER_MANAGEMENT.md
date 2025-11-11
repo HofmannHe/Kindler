@@ -153,10 +153,10 @@
 
 ```bash
 # 停止集群（保留配置）
-./scripts/stop_env.sh <cluster_name>
+./scripts/cluster.sh stop <cluster_name>
 
 # 启动已停止的集群
-./scripts/start_env.sh <cluster_name>
+./scripts/cluster.sh start <cluster_name>
 ```
 
 **注意**: 停止集群会释放资源，但保留配置。启动后需要重新注册到 Portainer 和 ArgoCD。
@@ -214,7 +214,7 @@ curl -k https://whoami.kind.dev.192.168.51.30.sslip.io
 
 ```bash
 # 一次性迁移所有 CSV 配置到 PostgreSQL
-./scripts/migrate_csv_to_db.sh
+./tools/db/migrate_csv_to_db.sh
 ```
 
 **注意**: 迁移后会自动备份 CSV 文件为 `config/environments.csv.bak`
@@ -466,5 +466,4 @@ kubectl --context k3d-devops -n argocd get pods >> /tmp/debug.log
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 架构设计
 - [REGRESSION_TEST.md](REGRESSION_TEST.md) - 回归测试流程
 - [README_CN.md](../README_CN.md) - 项目介绍
-
 

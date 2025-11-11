@@ -141,7 +141,7 @@
 ### 应该删除的文件
 
 1. scripts/cleanup_nonexistent_clusters.sh
-2. scripts/create_predefined_clusters.sh（可选保留，但不自动执行）
+2. tools/legacy/create_predefined_clusters.sh（可选保留，但不自动执行）
 3. 各种测试报告和分析文档（cleanup 后重新生成）
 
 ## 核心教训
@@ -163,4 +163,3 @@
 - 权限修改必须谨慎
 
 我为造成的混乱深表歉意。
-

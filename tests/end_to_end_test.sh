@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 TEST_REPORT="/tmp/e2e_test_report.txt"
 FAILED_TESTS=0
@@ -348,4 +348,3 @@ else
   echo "日志文件: /tmp/e2e_*.log"
   exit 1
 fi
-

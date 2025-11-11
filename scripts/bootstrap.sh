@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Bring up the base devops stack (HAProxy, Portainer, WebUI, ArgoCD) and prepare shared networks/images.
+# Usage: scripts/bootstrap.sh
+# See also: scripts/clean.sh, scripts/portainer.sh, tools/setup/setup_devops.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
@@ -70,7 +73,7 @@ main() {
 	)
 	for img in "${imgs[@]}"; do
 	  (
-	    . "$ROOT_DIR/scripts/lib.sh"
+	    . "$ROOT_DIR/scripts/lib/lib.sh"
 	    if has_image "$img"; then echo "  [=] cached: $img"; exit 0; fi
 	    if prefetch_image "$img"; then echo "  [+] $img"; exit 0; fi
 	    echo "  [!] failed prefetch: $img" >&2
@@ -88,7 +91,7 @@ main() {
 	echo "[BOOTSTRAP] Portainer is ready"
 
 	echo "[BOOTSTRAP] Adding local Docker endpoint to Portainer..."
-	if ! "$ROOT_DIR/scripts/portainer_add_local.sh"; then
+	if ! "$ROOT_DIR/scripts/portainer.sh" add-local; then
 		echo "[WARN] Failed to add local Docker endpoint to Portainer (non-fatal)"
 	fi
 
@@ -113,8 +116,8 @@ main() {
 			fi
 		done
 		
-		echo "[BOOTSTRAP] Installing ArgoCD in devops cluster..."
-		"$ROOT_DIR/scripts/setup_devops.sh" || {
+    echo "[BOOTSTRAP] Installing ArgoCD in devops cluster..."
+    "$ROOT_DIR/tools/setup/setup_devops.sh" || {
 			echo "[ERROR] Failed to install ArgoCD"
 			exit 1
 		}
@@ -122,8 +125,8 @@ main() {
 		echo "[BOOTSTRAP] devops cluster already exists"
 		# 检查 ArgoCD 是否已安装
 		if ! kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
-			echo "[BOOTSTRAP] Installing ArgoCD in existing devops cluster..."
-			"$ROOT_DIR/scripts/setup_devops.sh" || {
+      echo "[BOOTSTRAP] Installing ArgoCD in existing devops cluster..."
+      "$ROOT_DIR/tools/setup/setup_devops.sh" || {
 				echo "[ERROR] Failed to install ArgoCD"
 				exit 1
 			}
@@ -132,26 +135,26 @@ main() {
 		fi
 	fi
 
-	echo "[BOOTSTRAP] Validate external Git configuration"
-	"$ROOT_DIR/scripts/setup_git.sh"
+  echo "[BOOTSTRAP] Validate external Git configuration"
+  "$ROOT_DIR/tools/setup/setup_git.sh"
 
-	echo "[BOOTSTRAP] Initialize external Git devops branch"
-	"$ROOT_DIR/scripts/init_git_devops.sh"
+    echo "[BOOTSTRAP] Initialize external Git devops branch"
+    "$ROOT_DIR/tools/git/init_git_devops.sh"
 
-	echo "[BOOTSTRAP] Setup devops cluster storage support"
-	"$ROOT_DIR/scripts/setup_devops_storage.sh"
+  echo "[BOOTSTRAP] Setup devops cluster storage support"
+  "$ROOT_DIR/tools/setup/setup_devops_storage.sh"
 
-	echo "[BOOTSTRAP] Register external Git repository to ArgoCD"
-	"$ROOT_DIR/scripts/register_git_to_argocd.sh" devops
+  echo "[BOOTSTRAP] Register external Git repository to ArgoCD"
+  "$ROOT_DIR/tools/setup/register_git_to_argocd.sh" devops
 	
-	echo "[BOOTSTRAP] Sync Git branches from database"
-	if [ -f "$ROOT_DIR/scripts/sync_git_from_db.sh" ]; then
-		"$ROOT_DIR/scripts/sync_git_from_db.sh" 2>&1 | sed 's/^/  /' || echo "  [WARN] Git sync failed (can be done manually later)"
-	fi
+    echo "[BOOTSTRAP] Sync Git branches from database"
+    if [ -f "$ROOT_DIR/tools/git/sync_git_from_db.sh" ]; then
+      "$ROOT_DIR/tools/git/sync_git_from_db.sh" 2>&1 | sed 's/^/  /' || echo "  [WARN] Git sync failed (can be done manually later)"
+    fi
 	
 	echo "[BOOTSTRAP] Fix HAProxy routes for business clusters"
-	if [ -f "$ROOT_DIR/scripts/fix_haproxy_routes.sh" ]; then
-		"$ROOT_DIR/scripts/fix_haproxy_routes.sh" 2>&1 | sed 's/^/  /'
+	if [ -f "$ROOT_DIR/tools/fix_haproxy_routes.sh" ]; then
+		"$ROOT_DIR/tools/fix_haproxy_routes.sh" 2>&1 | sed 's/^/  /'
 	fi
 
 	echo "[BOOTSTRAP] Start WebUI services"
@@ -226,7 +229,7 @@ print('CSV data imported successfully')
             : "${REGISTER_DEVOPS_PORTAINER:=1}"
             if [ "$REGISTER_DEVOPS_PORTAINER" = "1" ]; then
               echo "[BOOTSTRAP] Register devops cluster to Portainer (Edge Agent)"
-              "$ROOT_DIR/scripts/register_edge_agent.sh" devops k3d 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to register devops to Portainer"
+              "$ROOT_DIR/tools/setup/register_edge_agent.sh" devops k3d 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to register devops to Portainer"
             else
               echo "[BOOTSTRAP] Skipping Portainer registration for devops (REGISTER_DEVOPS_PORTAINER=0)"
             fi
@@ -238,7 +241,7 @@ print('CSV data imported successfully')
 		fi
 
 	echo "[BOOTSTRAP] Start Kindler Reconciler (declarative controller)"
-	"$ROOT_DIR/scripts/start_reconciler.sh" start 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to start reconciler (you can start it later)"
+	"$ROOT_DIR/tools/start_reconciler.sh" start 2>&1 | sed 's/^/  /' || echo "  [WARN] Failed to start reconciler (you can start it later)"
 
 	echo "[READY]"
 	portainer_url="https://portainer.devops.${BASE_DOMAIN}"

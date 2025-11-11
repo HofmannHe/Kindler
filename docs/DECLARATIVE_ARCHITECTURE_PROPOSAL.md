@@ -323,7 +323,7 @@ services:
    - 只是多了状态字段
 
 3. **预置集群流程不变**
-   - `create_predefined_clusters.sh` 仍然可用
+   - `tools/legacy/create_predefined_clusters.sh` 仍然可用
    - 或者改为写入数据库，由 reconciler 创建
 
 ---
@@ -425,4 +425,3 @@ services:
 **成功率**：高（因为 reconciler 在主机运行，与预置集群完全一致）
 
 您觉得这个方案如何？
-

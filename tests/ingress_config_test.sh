@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 # 加载配置
 load_env
@@ -118,5 +118,4 @@ echo ""
 print_summary
 
 exit $failed_tests
-
 

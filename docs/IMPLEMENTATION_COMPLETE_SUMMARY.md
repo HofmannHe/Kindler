@@ -56,7 +56,7 @@
 4. ✅ `scripts/cleanup_orphaned_clusters.sh` (120行) - 清理孤立 K8s 集群
 5. ✅ `scripts/create_git_branch.sh` (220行) - 单集群 Git 分支创建
 6. ✅ `scripts/delete_git_branch.sh` (50行) - 单集群 Git 分支删除
-7. ✅ `scripts/fix_haproxy_routes.sh` (45行) - 自动添加业务集群路由
+7. ✅ `tools/fix_haproxy_routes.sh` (45行) - 自动添加业务集群路由
 
 ### 🔧 脚本自动化改进 (100%)
 
@@ -77,7 +77,7 @@
    - **自动调用 fix_haproxy_routes.sh 添加业务集群路由**
    - 确保 DB-Git 初始一致
 
-4. ✅ `scripts/setup_devops.sh`
+4. ✅ `tools/setup/setup_devops.sh`
    - **移除错误的 devops 动态路由调用**
    - 避免通配 ACL 干扰静态路由
    - 注释说明 devops 使用静态路由
@@ -297,12 +297,12 @@ Bootstrap (100% 自动化)
 
 ### 脚本 (12个)
 - [x] check_consistency.sh（新增）
-- [x] sync_git_from_db.sh（新增）
+- [x] tools/git/sync_git_from_db.sh（新增）
 - [x] cleanup_orphaned_branches.sh（新增）
 - [x] cleanup_orphaned_clusters.sh（新增）
-- [x] create_git_branch.sh（新增）
-- [x] delete_git_branch.sh（新增）
-- [x] fix_haproxy_routes.sh（新增）
+- [x] tools/git/create_git_branch.sh（新增）
+- [x] tools/git/delete_git_branch.sh（新增）
+- [x] fix_haproxy_routes.sh（新增，现位于 tools/）
 - [x] create_env.sh（更新）
 - [x] delete_env.sh（更新）
 - [x] bootstrap.sh（更新）
@@ -330,7 +330,7 @@ scripts/create_env.sh -n dev -p kind
 scripts/create_env.sh -n dev-k3d -p k3d
 
 # 3. 检查状态
-scripts/list_env.sh
+scripts/cluster.sh list
 scripts/check_consistency.sh
 
 # 4. 运行测试
@@ -344,14 +344,14 @@ tests/run_tests.sh all
 scripts/check_consistency.sh
 
 # 同步修复
-scripts/sync_git_from_db.sh
+tools/git/sync_git_from_db.sh
 
 # 清理孤立资源
-scripts/cleanup_orphaned_branches.sh
-scripts/cleanup_orphaned_clusters.sh
+tools/maintenance/cleanup_orphaned_branches.sh
+tools/maintenance/cleanup_orphaned_clusters.sh
 
 # 修复路由
-scripts/fix_haproxy_routes.sh
+tools/fix_haproxy_routes.sh
 ```
 
 ---
@@ -424,5 +424,3 @@ scripts/fix_haproxy_routes.sh
 **项目版本**: v2.0  
 **状态**: ✅ **生产就绪**  
 **自动化程度**: 🌟🌟🌟🌟🌟 100%
-
-

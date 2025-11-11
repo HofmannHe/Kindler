@@ -296,7 +296,7 @@ echo $POSTGRES_PASSWORD
 
 ### 数据不一致
 
-**症状**: Web UI 显示的集群列表与 `scripts/list_env.sh` 不一致
+**症状**: Web UI 显示的集群列表与 `scripts/cluster.sh list` 不一致
 
 **可能原因**:
 1. Web UI 使用 SQLite (fallback)
@@ -466,4 +466,3 @@ Web UI PostgreSQL 集成测试
 **文档版本**: v1.0  
 **最后更新**: 2025-10-21  
 **维护者**: AI Assistant
-

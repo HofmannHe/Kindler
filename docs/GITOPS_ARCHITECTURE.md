@@ -4,6 +4,17 @@
 
 本项目实现了基于 ArgoCD 的 GitOps 架构，实现应用和基础设施的声明式管理。
 
+### 仓库区分（重要）
+
+- Kindler 仓库（本仓库）：脚本与基础设施代码，不适用“生效/归档分支”约定。
+- GitOps 仓库（应用仓库）：ArgoCD 同步的目标仓库，必须执行“生效/归档分支”策略。
+
+生效/归档分支策略（针对 GitOps 仓库）：
+- 生效分支（Active）= SQLite `clusters` 表中的业务集群集合（排除 `devops`），分支名与环境名一致。
+- 归档分支（Archive）= 不在数据库集合中的历史分支，迁移至 `archive/<env>-<YYYYMMDD-HHMMSS>` 并删除原活跃分支。
+- 受保护分支：`main master develop release devops`（可通过 `GIT_RESERVED_BRANCHES` 配置）。
+- 同步工具：`tools/git/sync_git_from_db.sh`（支持 DRY_RUN），`scripts/create_env.sh` 仅在分支创建成功后才进行 ApplicationSet 同步。
+
 ## 当前实施状态
 
 ### ✅ 已实施：方案 A - 应用层 GitOps
@@ -510,4 +521,3 @@ kubectl --context k3d-devops logs -n argocd -l app.kubernetes.io/name=argocd-app
 **文档版本**: 1.0
 **最后更新**: 2025-10-15
 **作者**: Kindler GitOps Team
-

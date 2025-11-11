@@ -7,6 +7,7 @@ from ..models.cluster import ClusterCreate, ClusterInfo, ClusterStatus, ClusterU
 from ..models.task import TaskCreate
 from ..services.db_service import DBService
 from ..services.cluster_service import ClusterService
+from ..services.reconcile_service import reconciler
 from ..services.task_manager import task_manager
 from ..websocket.manager import ws_manager
 
@@ -94,6 +95,13 @@ async def create_cluster(cluster: ClusterCreate, background_tasks: BackgroundTas
         
         logger.info(f"Cluster creation declared: {cluster.name} ({cluster.provider})")
         logger.info(f"Reconciler will create the cluster on host (same as predefined clusters)")
+
+        # Schedule a debounced global reconcile so that batch operations converge in one pass
+        try:
+            await reconciler.schedule(reason=f"create:{cluster.name}")
+        except Exception as _:
+            # non-fatal
+            logger.warning("Failed to schedule reconcile after create for %s", cluster.name)
         
         return TaskCreate(
             task_id=f"reconcile-{cluster.name}",  # Reconciler task
@@ -168,6 +176,12 @@ async def delete_cluster(name: str, background_tasks: BackgroundTasks):
             # clear previous error to avoid confusion for new action
             "reconcile_error": None,
         })
+
+        # Schedule a debounced global reconcile to converge deletions alongside other changes
+        try:
+            await reconciler.schedule(reason=f"delete:{name}")
+        except Exception as _:
+            logger.warning("Failed to schedule reconcile after delete for %s", name)
 
         # Return a reconcile task stub (WebSocket can still track generic progress if needed)
         return TaskCreate(

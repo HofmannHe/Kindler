@@ -61,7 +61,7 @@ client: Connected (Latency 496.548µs)
   portainerEdgeKey: "aHR0cDovLzEwLjEwMC4wLjc6OTAwMHwxMC4xMDAuMC43OjgwMDB8Q3djNlUxaHVpRmdRdSthaWJzUm1mbUVBUnpHMnQwK1FEbkt2b2cvbWNjZz18Mw"  # 注意：不含 ==
 ```
 
-### 2. 更新 `scripts/register_edge_agent.sh`
+### 2. 更新 `tools/setup/register_edge_agent.sh`
 
 **直接使用 Portainer API 返回的 Edge Key，不做任何处理：**
 
@@ -109,10 +109,9 @@ kubectl --context k3d-dev-k3d logs -n portainer-edge deployment/portainer-edge-a
 ## 相关文件
 
 - `manifests/argocd/infrastructure-applicationset.yaml`
-- `scripts/register_edge_agent.sh`
+- `tools/setup/register_edge_agent.sh`
 - `docs/REGRESSION_TEST.md`
 
 ## 修复时间
 
 2025-10-14
-

@@ -41,7 +41,7 @@
   - 后端使用 Portainer 固定 IP (10.100.255.101:9000)
 
 ### 2. 脚本修改
-- `scripts/register_edge_agent.sh`: 
+- `tools/setup/register_edge_agent.sh`: 
   - 使用 `HAPROXY_HOST` 代替 `HAPROXY_FIXED_IP`
   - Edge Agent 通过宿主机 IP 访问 HAProxy
 - `scripts/bootstrap.sh`:

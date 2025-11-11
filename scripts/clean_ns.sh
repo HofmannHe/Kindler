@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 usage(){ echo "Usage: KINDLER_NS=<ns> $0 [--from-csv] [env1 [env2 ...]]" >&2; exit 1; }
 [ -n "${KINDLER_NS:-}" ] || { echo "KINDLER_NS is required to avoid touching master resources" >&2; exit 2; }
 from_csv=0
@@ -28,7 +28,7 @@ for env in "${envs[@]}"; do
   eff="$(effective_name "$env")"
   echo "[NS-CLEAN] env=$env eff=$eff provider=$provider"
   "$ROOT_DIR"/scripts/haproxy_route.sh remove "$env" || true
-  "$ROOT_DIR"/scripts/argocd_register_kubectl.sh unregister "$env" "$provider" || true
+  "$ROOT_DIR"/scripts/argocd_register.sh unregister "$env" "$provider" || true
   ep_name="$(echo "$eff" | tr -d '-')"
   "$ROOT_DIR"/scripts/portainer.sh del-endpoint "$ep_name" >/dev/null 2>&1 || true
   PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh delete "$env" || true

@@ -45,7 +45,7 @@ cd /home/cloud/github/hofmannhe/kindler
 
 ```bash
 cd /home/cloud/github/hofmannhe/kindler
-./scripts/create_predefined_clusters.sh
+./tools/legacy/create_predefined_clusters.sh
 ```
 
 这会创建 `config/environments.csv` 中定义的所有预置集群（dev, uat, prod 等）
@@ -94,4 +94,3 @@ WebUI 适合用于：
 **当前建议**: 使用脚本创建集群，稳定可靠，与预置集群创建方式完全一致。
 
 WebUI 专注于查看和监控功能，创建操作留给经过充分验证的脚本系统。
-

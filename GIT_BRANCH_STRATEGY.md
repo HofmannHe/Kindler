@@ -464,7 +464,7 @@ scripts/create_env.sh -n dev -p kind
 # 手动：删除保留的 test-api-* 分支
 scripts/delete_env.sh -n test-api-k3d-12345 -p k3d
 # 或
-scripts/cleanup_orphaned_branches.sh
+tools/maintenance/cleanup_orphaned_branches.sh
 ```
 
 ---
@@ -501,8 +501,8 @@ scripts/check_consistency.sh
 - **实现脚本**:
   - `scripts/delete_env.sh` - 包含分支删除逻辑
   - `scripts/restore_cluster_config.sh` - 恢复集群配置
-  - `scripts/cleanup_orphaned_branches.sh` - 清理孤立分支
-  - `scripts/fix_applicationset.sh` - 修复 ApplicationSet
+  - `tools/maintenance/cleanup_orphaned_branches.sh` - 清理孤立分支
+  - `tools/fix_applicationset.sh` - 修复 ApplicationSet
 
 - **配置文件**:
   - `config/environments.csv` - 预置集群配置
@@ -511,4 +511,3 @@ scripts/check_consistency.sh
 - **相关文档**:
   - `ARCHITECTURE.md` - 整体架构说明
   - `TEST_FAILURE_DIAGNOSIS.md` - 测试诊断报告
-

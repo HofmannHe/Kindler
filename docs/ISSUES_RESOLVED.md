@@ -55,7 +55,7 @@ tail -f /tmp/kindler_reconciler.log
 **方式3: 集群列表**
 ```bash
 kubectl config get-contexts
-./scripts/list_env.sh
+./scripts/cluster.sh list
 ```
 
 **方式4: WebUI（待修复状态显示）**
@@ -128,7 +128,7 @@ k3d-test1  ✅ 运行中
 
 1. **启动 Reconciler**（如果未运行）:
    ```bash
-   ./scripts/start_reconciler.sh start
+   ./tools/start_reconciler.sh start
    ```
 
 2. **在 WebUI 中创建集群**:
@@ -138,7 +138,7 @@ k3d-test1  ✅ 运行中
 
 3. **查看创建进度**:
    ```bash
-   ./scripts/start_reconciler.sh logs
+   ./tools/start_reconciler.sh logs
    # 或
    tail -f /tmp/kindler_reconciler.log
    ```
@@ -160,4 +160,3 @@ k3d-test1  ✅ 运行中
 ✅ **系统运行正常**
 
 **SQLite 迁移和声明式架构实施成功！**
-

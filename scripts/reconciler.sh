@@ -13,8 +13,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 LOG_FILE="${LOG_FILE:-/tmp/kindler_reconciler.log}"
 RECONCILE_INTERVAL="${RECONCILE_INTERVAL:-30}"  # 秒

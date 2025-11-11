@@ -5,8 +5,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 echo "=========================================="
 echo "  一致性检查 (DB / Git / K8s)"
@@ -110,9 +110,9 @@ if [ "$inconsistencies" -gt 0 ]; then
   echo "  Found $inconsistencies inconsistencies"
   echo ""
   echo "  Suggested fixes:"
-  echo "    - Sync Git from DB: scripts/sync_git_from_db.sh"
-  echo "    - Clean orphaned Git branches: scripts/cleanup_orphaned_branches.sh"
-  echo "    - Clean orphaned K8s clusters: scripts/cleanup_orphaned_clusters.sh"
+  echo "    - Sync Git from DB: tools/git/sync_git_from_db.sh"
+  echo "    - Clean orphaned Git branches: tools/maintenance/cleanup_orphaned_branches.sh"
+  echo "    - Clean orphaned K8s clusters: tools/maintenance/cleanup_orphaned_clusters.sh"
   exit 1
 else
   echo "  ✓ No action needed"
@@ -122,5 +122,3 @@ else
   echo "=========================================="
   exit 0
 fi
-
-

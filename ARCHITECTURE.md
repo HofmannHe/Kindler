@@ -33,7 +33,7 @@ PostgreSQL Pod (devops cluster)
   └─ Service: postgresql-nodeport (NodePort 30432)
       └─ HAProxy TCP Proxy (Port 5432)
           ├─ WebUI Backend
-          ├─ Host API Server (scripts/host_api_server.py)
+          ├─ Host API Server (tools/dev/host_api_server.py)
           └─ Test Scripts
 ```
 
@@ -111,7 +111,7 @@ Environment Variables:
 
 **Purpose**: Bridge between WebUI backend and shell scripts
 
-**Location**: `scripts/host_api_server.py`
+**Location**: `tools/dev/host_api_server.py`
 
 **Database Access**: Same as WebUI (via HAProxy)
 
@@ -355,4 +355,3 @@ All tests are designed to be idempotent and require zero manual intervention:
 - [Database Schema](scripts/init_db.sh)
 - [Bootstrap Script](scripts/bootstrap.sh)
 - [Test Framework](tests/README.md)
-

@@ -26,7 +26,7 @@ PostgreSQL Pod (devops cluster)
   └─ Service: postgresql-nodeport (NodePort 30432)
       └─ HAProxy TCP Proxy (Port 5432)
           ├─ WebUI Backend
-          ├─ Host API Server (scripts/host_api_server.py)
+          ├─ Host API Server (tools/dev/host_api_server.py)
           └─ Test Scripts
 ```
 
@@ -440,4 +440,3 @@ git log --oneline --grep="架构优化\|ARCHITECTURE\|PostgreSQL"
 4. 测试更加可靠
 
 **下一步**: 等待完整回归测试完成，验证所有修复和幂等性 ✓
-
