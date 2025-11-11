@@ -62,7 +62,7 @@
 ### 声明式架构（已实现但未启用）
 
 1. scripts/reconciler.sh - Reconciler 逻辑
-2. scripts/start_reconciler.sh - 管理脚本
+2. tools/start_reconciler.sh - 管理脚本
 3. webui/backend/app/api/clusters.py - 声明式 API
 4. webui/backend/app/db.py - 添加状态字段
 
@@ -82,7 +82,7 @@
 ### 查看集群
 
 ```bash
-./scripts/list_env.sh
+./scripts/cluster.sh list
 ```
 
 ---
@@ -95,7 +95,7 @@
 
 ```bash
 # 启动 Reconciler
-./scripts/start_reconciler.sh start
+./tools/start_reconciler.sh start
 
 # WebUI 创建集群时：
 # 1. WebUI 写入数据库（声明期望）
@@ -145,4 +145,3 @@
 ⏳ **等待 ArgoCD 同步和 whoami 部署**
 
 **建议等待 5-10 分钟让 ArgoCD 完成同步，然后验证所有功能。**
-

@@ -35,7 +35,7 @@ EOF
 bash tests/test_db_insert.sh  # 失败：server_ip 列不存在
 
 # Step 3: 修复代码（添加 server_ip 列）
-# 修改 scripts/init_database.sh
+# 修改 tools/db/init_database.sh
 
 # Step 4: 重新测试（绿灯）
 bash tests/test_db_insert.sh  # 成功
@@ -446,7 +446,7 @@ echo "  Error Details: ERROR:  column \"server_ip\" does not exist"
 echo "  Fix Suggestion: Add server_ip column to clusters table in init_database.sh"
 echo "  Debug Commands:"
 echo "    1. kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'"
-echo "    2. cat scripts/init_database.sh | grep -A 10 'CREATE TABLE clusters'"
+echo "    2. cat tools/db/init_database.sh | grep -A 10 'CREATE TABLE clusters'"
 echo "    3. grep 'server_ip' scripts/lib_db.sh"
 echo "  Related:"
 echo "    - AGENTS.md#案例-5：数据库表结构不一致"
@@ -886,6 +886,5 @@ tests/run_tests.sh all > /tmp/test_report_$(date +%s).log 2>&1
 **最后更新**：2025-10-24  
 **维护者**：项目团队  
 **反馈**：如有问题或建议，请提交 Issue
-
 
 

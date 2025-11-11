@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 # 从容器中读取当前配置
 CFG="/tmp/haproxy-test-cfg-$$.txt"

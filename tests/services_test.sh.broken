@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 . "$ROOT_DIR/tests/lib_verify.sh" 2>/dev/null || true  # 加载验证库（如果存在）
 
 # 加载配置
@@ -118,4 +118,3 @@ else
 fi
 
 print_summary
-

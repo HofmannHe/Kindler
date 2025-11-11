@@ -6,6 +6,11 @@
 
 [中文文档](./README_CN.md) | [English](./README.md)
 
+## 脚本总览
+
+- 参见 `scripts/README.md` 获取分类的入口脚本、库脚本与弃用包装说明。
+- 关键命令：`bootstrap.sh`、`cluster.sh`（create/delete/import/status/start/stop/list）、`create_env.sh`、`delete_env.sh`、`haproxy_route.sh`、`haproxy_sync.sh`、`reconcile.sh`、`portainer.sh`、`argocd_register.sh`、`smoke.sh`。批量工具已迁移至 `tools/maintenance/`。
+
 ## 特性
 
 - 🚀 **统一网关**: 通过 HAProxy 为所有服务提供单一入口点
@@ -115,7 +120,7 @@ sequenceDiagram
 
 > 必做三步（回退/重装后建议先执行）
 > 1) `./scripts/haproxy_sync.sh --prune`
-> 2) `./scripts/setup_devops.sh`
+> 2) `./tools/setup/setup_devops.sh`
 > 3) `./scripts/sync_applicationset.sh`
 
 
@@ -170,7 +175,7 @@ sequenceDiagram
 
 - WebUI 采用声明式：仅写入 SQLite 数据库中的期望状态；由宿主机上的 Reconciler 调用与预置集群相同的 `scripts/create_env.sh` 完成实际创建与 Portainer/ArgoCD 注册。
 - `bootstrap.sh` 会自动启动 Reconciler，可通过以下命令管理：
-  - `./scripts/start_reconciler.sh start|stop|status|logs`
+  - `./tools/start_reconciler.sh start|stop|status|logs`
   - 并发度可调：设置 `RECONCILER_CONCURRENCY`（默认 3），用于同时并行调和多个集群；同名集群始终串行（集群级锁保障）
 - 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
  - P2 修复：bootstrap 会在 SQLite 中初始化 `devops` 集群的 `actual_state=running`（并记录 `last_reconciled_at`），确保 WebUI 正确显示管理集群状态。
@@ -215,8 +220,8 @@ sequenceDiagram
 for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n "$env"; done
 
 # 停止/启动（保留配置）
-./scripts/stop_env.sh -n dev
-./scripts/start_env.sh -n dev
+./scripts/cluster.sh stop dev
+./scripts/cluster.sh start dev
 
 # 永久删除（连带 CSV/Portainer/ArgoCD/HAProxy 清理）
 ./scripts/delete_env.sh -n dev
@@ -333,6 +338,22 @@ curl http://whoami.prod.192.168.51.30.sslip.io
 
 > 📖 **详细文档**: [GitOps 工作流完整指南](./docs/GITOPS_WORKFLOW.md)
 
+### 并发创建与最终收敛
+
+- `scripts/create_env.sh` 支持不同环境的并发创建，并具备幂等性。
+- 并发安全：
+  - HAProxy 路由写入内置文件锁；`haproxy_sync.sh` 增加全局锁，确保仅一次重载。
+  - ApplicationSet 生成使用锁避免并发写覆盖。
+  - GitOps 推送/归档采用全局锁串行化，避免远端竞争。
+- 批量创建最佳实践：并发创建完成后执行一次最终收敛：
+  ```bash
+  ./scripts/reconcile.sh   # Git 分支 → ApplicationSet → HAProxy（prune + 单次重载）
+  ```
+
+仓库范围澄清：
+- Kindler 仓库（本仓库）：仅包含基础设施与脚本；不引入“生效/归档分支”。
+- GitOps 仓库（外部仓库，配置于 `config/git.env`）：必须执行“生效（= SQLite clusters 除 devops）/归档（archive/<env>-<timestamp>）”策略；由 `tools/git/sync_git_from_db.sh` 强制实施。
+
 ## 项目结构
 
 ```
@@ -349,8 +370,7 @@ kindler/
 ├── scripts/           # 管理脚本
 │   ├── bootstrap.sh        # 初始化基础设施
 │   ├── create_env.sh       # 创建业务集群
-│   ├── stop_env.sh         # 停止集群（保留配置）
-│   ├── start_env.sh        # 启动已停止的集群
+│   ├── cluster.sh          # 集群生命周期调度（create/start/stop/list/...）
 │   ├── delete_env.sh       # 永久删除集群（含 CSV 配置）
 │   ├── clean.sh            # 清理所有资源
 │   └── haproxy_sync.sh     # 同步 HAProxy 路由
@@ -438,7 +458,7 @@ git branch -D feature/x   # 可选，若分支已合并且不再需要
 ```bash
 # 为默认网卡临时增加别名并切换到 192.168.51.35
 # (ip 别名需要 root；如无权限可去掉 --add-alias)
-sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+sudo ./tools/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
 ```
 
 修改 `clusters.env` 后的最小操作（手动路径）
@@ -447,7 +467,7 @@ sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
 ./scripts/haproxy_sync.sh --prune   # SQLite 为源，DB 不可用时临时回退 CSV
 
 # 2) 更新 devops 集群的 ArgoCD Ingress（按 BASE_DOMAIN 重建）
-./scripts/setup_devops.sh
+./tools/setup/setup_devops.sh
 
 # 3) 重新生成业务集群 ApplicationSet（更新 Ingress host）
 ./scripts/sync_applicationset.sh
@@ -555,7 +575,7 @@ Kindler 支持多项目管理，允许在同一个基础设施上运行多个独
 
 #### 创建项目
 ```bash
-./scripts/project_manage.sh create \
+./tools/project_manage.sh create \
   --project demo-app \
   --env dev-k3d \
   --team backend \
@@ -567,39 +587,39 @@ Kindler 支持多项目管理，允许在同一个基础设施上运行多个独
 #### 列出项目
 ```bash
 # 列出所有项目
-./scripts/project_manage.sh list
+./tools/project_manage.sh list
 
 # 列出指定环境的项目
-./scripts/project_manage.sh list --env dev-k3d
+./tools/project_manage.sh list --env dev-k3d
 ```
 
 #### 查看项目详情
 ```bash
-./scripts/project_manage.sh show --project demo-app --env dev-k3d
+./tools/project_manage.sh show --project demo-app --env dev-k3d
 ```
 
 #### 删除项目
 ```bash
-./scripts/project_manage.sh delete --project demo-app --env dev-k3d
+./tools/project_manage.sh delete --project demo-app --env dev-k3d
 ```
 
 ### 项目级 HAProxy 路由
 
 #### 添加项目路由
 ```bash
-./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
+./tools/legacy/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
 ```
 
 #### 移除项目路由
 ```bash
-./scripts/haproxy_project_route.sh remove demo-app --env dev-k3d
+./tools/legacy/haproxy_project_route.sh remove demo-app --env dev-k3d
 ```
 
 ### ArgoCD 项目管理
 
 #### 创建 AppProject
 ```bash
-./scripts/argocd_project.sh create \
+./tools/argocd_project.sh create \
   --project demo-app \
   --repo https://github.com/example/demo-app.git \
   --namespace project-demo-app
@@ -607,7 +627,7 @@ Kindler 支持多项目管理，允许在同一个基础设施上运行多个独
 
 #### 添加应用
 ```bash
-./scripts/argocd_project.sh add-app \
+./tools/argocd_project.sh add-app \
   --project demo-app \
   --app whoami \
   --path deploy/ \
@@ -639,10 +659,10 @@ Kindler 支持多项目管理，允许在同一个基础设施上运行多个独
 #### 停止/启动环境（保留配置）
 ```bash
 # 停止集群（保留 CSV 配置和 kubeconfig，释放资源）
-./scripts/stop_env.sh -n dev
+./scripts/cluster.sh stop dev
 
 # 重启已停止的集群
-./scripts/start_env.sh -n dev
+./scripts/cluster.sh start dev
 ```
 
 > **用途**: 临时停止集群以节省资源，后续可快速恢复。适合开发时暂时不需要的环境。
@@ -671,8 +691,8 @@ Kindler 支持多项目管理，允许在同一个基础设施上运行多个独
 
 | 操作 | 集群运行 | CSV 配置 | Portainer | ArgoCD | 用途 |
 |------|----------|----------|-----------|--------|------|
-| **stop_env.sh** | ❌ 停止 | ✅ 保留 | ✅ 保留 | ✅ 保留 | 临时释放资源 |
-| **start_env.sh** | ✅ 启动 | ✅ 使用 | ✅ 继续 | ✅ 继续 | 恢复已停止集群 |
+| **cluster.sh stop** | ❌ 停止 | ✅ 保留 | ✅ 保留 | ✅ 保留 | 临时释放资源 |
+| **cluster.sh start** | ✅ 启动 | ✅ 使用 | ✅ 继续 | ✅ 继续 | 恢复已停止集群 |
 | **delete_env.sh** | ❌ 删除 | ❌ 删除 | ❌ 注销 | ❌ 注销 | 永久移除环境 |
 
 ### HAProxy 路由管理
@@ -741,7 +761,7 @@ curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
 - 在 Portainer 中查看 devops 集群
   - `bootstrap.sh` 会以 Edge Agent 方式把 devops（管理）集群注册到 Portainer，便于从 Portainer 观察 ArgoCD 等核心组件。
   - 可通过环境变量关闭：`REGISTER_DEVOPS_PORTAINER=0 ./scripts/bootstrap.sh`（跳过注册）。
-  - 随时手动注册：`./scripts/register_edge_agent.sh devops k3d`。
+  - 随时手动注册：`./tools/setup/register_edge_agent.sh devops k3d`。
 
 - HAProxy 路由（数据库驱动）
   - 运行期以 SQLite 数据库 `clusters` 表为唯一真实来源；CSV 仅在 bootstrap 时导入（DB 临时不可用时回退）。
@@ -1065,3 +1085,10 @@ agents: 2
 - 📚 文档: [docs/](./docs/)
 - 🐛 问题反馈: [GitHub Issues](https://github.com/hofmannhe/kindler/issues)
 - 💬 讨论: [GitHub Discussions](https://github.com/hofmannhe/kindler/discussions)
+### Git 仓库区分
+
+- Kindler 仓库（本仓库）：包含脚本、基础设施、文档，不适用“生效/归档分支”策略。
+- GitOps 仓库（应用仓库）：ArgoCD 同步所使用的仓库，必须遵循分支策略：
+  - 生效分支 = SQLite `clusters` 表中的业务集群集合（排除 `devops`），分支名与环境名一致。
+  - 归档分支 = 不在数据库集合中的历史分支，迁移到 `archive/<env>-<时间戳>` 并删除原活跃分支。
+  - 工具：`tools/git/sync_git_from_db.sh`（支持 `DRY_RUN=1` 预览）；`scripts/create_env.sh` 仅在分支创建成功后才同步 ApplicationSet（严格 GitOps）。

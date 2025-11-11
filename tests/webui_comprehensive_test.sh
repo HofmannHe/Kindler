@@ -7,7 +7,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 . "$ROOT_DIR/scripts/lib_db.sh"
 
 # 测试配置
@@ -618,4 +618,3 @@ main() {
 }
 
 main "$@"
-

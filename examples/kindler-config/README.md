@@ -32,7 +32,7 @@ git push origin env/myenv
 
 ```bash
 # 自动创建分支并生成配置
-bash scripts/init_env_branch.sh -n myenv -p k3d \
+bash tools/git/init_env_branch.sh -n myenv -p k3d \
   --http-port 19100 --https-port 19200 \
   --subnet 10.104.0.0/16
 ```
@@ -96,5 +96,4 @@ bash scripts/create_env.sh -n myenv -p k3d \
 - [配置文件规范](../../docs/KINDLER_CONFIG_SPEC.md)
 - [Git 分支策略](../../docs/GIT_BRANCHING_STRATEGY.md)
 - [网络架构](../../docs/NETWORK_ARCHITECTURE.md)
-
 

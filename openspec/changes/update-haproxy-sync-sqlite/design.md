@@ -1,5 +1,5 @@
 ## Context
-- 现状：`scripts/haproxy_sync.sh` 与 `scripts/fix_haproxy_routes.sh` 主要依赖 `config/environments.csv` 读取环境列表与端口，`haproxy_route.sh` 在个别字段（provider）已支持 DB 优先，但 subnet/http_port 等仍走 CSV。
+- 现状：`scripts/haproxy_sync.sh` 与 `tools/fix_haproxy_routes.sh` 主要依赖 `config/environments.csv` 读取环境列表与端口，`haproxy_route.sh` 在个别字段（provider）已支持 DB 优先，但 subnet/http_port 等仍走 CSV。
 - 目标规范：运行期以 SQLite `/data/kindler-webui/kindler.db` 的 `clusters` 表为唯一真实数据源；CSV 仅在 `bootstrap.sh` 初始化导入，运行期不再作为主源。
 - 约束：
   - devops 为管理集群，不生成业务路由；
@@ -37,4 +37,3 @@
 ## Open Questions
 - 是否需要在 `clusters` 表增加显式的 `haproxy_route_enabled` 布尔字段？当前按“存在且可访问的业务集群=需路由”的默认策略处理。
 - `http_port` 在当前架构下仅用于极端回退路径，是否可以后续完全移除？
-

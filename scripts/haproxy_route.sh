@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Manage environment-level HAProxy routes (<service>.<env>.<BASE_DOMAIN>) with idempotent add/remove.
+# Usage: scripts/haproxy_route.sh {add|remove} <env-name> [--node-port <port>]
+# See also: scripts/haproxy_sync.sh, scripts/create_env.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 # 需要从 SQLite 数据库获取 provider 等信息
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 # Allow overriding HAProxy config path for tests via HAPROXY_CFG
 CFG="${HAPROXY_CFG:-$ROOT_DIR/compose/infrastructure/haproxy.cfg}"
 DCMD=(docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml")

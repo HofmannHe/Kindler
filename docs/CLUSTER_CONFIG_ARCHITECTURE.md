@@ -132,13 +132,13 @@ scripts/check_consistency.sh
 ✓ K8s: 6 clusters running
 ✗ Inconsistency found:
   - Cluster 'test' in DB but Git branch missing
-  Suggested fix: scripts/sync_git_from_db.sh
+  Suggested fix: tools/git/sync_git_from_db.sh
 ```
 
 ### 同步修复
 
 ```bash
-scripts/sync_git_from_db.sh
+tools/git/sync_git_from_db.sh
 ```
 
 **作用**: 根据 DB 记录重建所有 Git 分支
@@ -202,8 +202,8 @@ PostgreSQL (Source of Truth)
 **工具**:
 - `check_consistency.sh`: 一致性检查
 - `sync_git_from_db.sh`: 同步修复
-- `cleanup_orphaned_branches.sh`: 清理孤立分支
-- `cleanup_orphaned_clusters.sh`: 清理孤立集群
+- `tools/maintenance/cleanup_orphaned_branches.sh`: 清理孤立分支
+- `tools/maintenance/cleanup_orphaned_clusters.sh`: 清理孤立集群
 
 ---
 
@@ -395,5 +395,3 @@ PostgreSQL (Source of Truth)
 - [诊断与维护工具](../AGENTS.md#诊断与维护工具)
 - [回归测试标准](../AGENTS.md#回归测试标准)
 - [E2E 服务测试报告](E2E_TEST_VALIDATION_REPORT.md)
-
-

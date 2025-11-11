@@ -259,12 +259,10 @@ class ClusterService:
         """
         logger.info(f"Starting cluster: {name}")
         
-        # Build arguments for start_env.sh
-        args = [name]
-        
-        # Execute start script
+        # Execute start via canonical cluster.sh entrypoint
+        args = ["start", name]
         success = await self._run_script(
-            "start_env.sh",
+            "cluster.sh",
             args,
             name,
             "start",
@@ -295,12 +293,10 @@ class ClusterService:
         """
         logger.info(f"Stopping cluster: {name}")
         
-        # Build arguments for stop_env.sh
-        args = [name]
-        
-        # Execute stop script
+        # Execute stop via canonical cluster.sh entrypoint
+        args = ["stop", name]
         success = await self._run_script(
-            "stop_env.sh",
+            "cluster.sh",
             args,
             name,
             "stop",

@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 echo "=========================================="
 echo "Cluster State Tests"
@@ -109,4 +109,3 @@ for cluster in $all_clusters; do
 done
 
 print_summary
-

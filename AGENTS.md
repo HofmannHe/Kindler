@@ -88,8 +88,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 #### 业务集群
 - **创建**: `create_env.sh -n <name> -p kind|k3d` - 自动注册到 Portainer（Edge Agent）和 ArgoCD
 - **删除**: `delete_env.sh <name>` - 自动反注册，清理所有相关资源
-- **停止**: `stop_env.sh <name>` - 停止集群但保留配置（临时释放资源）
-- **启动**: `start_env.sh <name>` - 启动已停止的集群
+- **停止**: `cluster.sh stop <name>` - 停止集群但保留配置（临时释放资源）
+- **启动**: `cluster.sh start <name>` - 启动已停止的集群
 
 #### 完整清理
 - `clean.sh`: 清理所有业务集群，保留 devops 集群
@@ -227,14 +227,45 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - **禁止使用 `kubectl apply` 直接部署应用**（ArgoCD 安装除外）
 - **配置变更必须通过 Git 提交触发**
 
+### Git 仓库与分支策略（严格执行）
+
+- 仓库区分：
+  - `kindler` 仓库（本仓库）：脚本、基础设施与规范。无“归档/生效分支”概念。
+  - GitOps 仓库（应用部署仓库）：用于 ArgoCD 同步 whoami 等应用，必须遵循“生效/归档”分支策略。
+- 生效分支（Active）：
+  - 集合严格等于 SQLite `clusters` 表的业务集群集合（排除 `devops`）。
+  - 分支命名：`<env>`，与数据库环境名一一对应。
+  - ApplicationSet 使用 `targetRevision: <env>` 指向对应分支。
+- 归档分支（Archive）：
+  - 不在数据库集合中的历史分支，迁移到 `archive/<env>-<YYYYMMDD-HHMMSS>`，并删除原活跃分支。
+  - 受保护分支跳过：`main master develop release devops`（可通过 `GIT_RESERVED_BRANCHES` 扩展）。
+- 执行工具：
+  - `tools/git/sync_git_from_db.sh`：
+    - 为数据库内的每个集群创建/更新活跃分支。
+    - 归档多余的活跃分支并删除原分支。
+    - 校验“活跃分支集合 == 数据库集合”。支持 `DRY_RUN=1` 预览。
+  - `scripts/create_env.sh`：仅在 Git 分支创建成功时才触发 ApplicationSet 同步，确保严格 GitOps。
+
 ### 合规检查
 - 所有应用部署必须有对应的 ArgoCD Application 或 ApplicationSet
 - 应用配置存储在外部 Git 仓库（`config/git.env` 配置）
 - 使用 `scripts/check_gitops_compliance.sh` 检查合规性
 
 ### 例外情况
-- ArgoCD 本身的安装和配置（通过 `scripts/setup_devops.sh`）
+- ArgoCD 本身的安装和配置（通过 `tools/setup/setup_devops.sh`）
 - 临时调试用途（需在调试完成后清理）
+
+## 并发创建支持（强制要求）
+
+- 目标：支持对不同业务环境的并发创建与删除，同时保证一致性与幂等性。
+- 全局约束与实现：
+  - HAProxy 路由写入：`scripts/haproxy_route.sh` 已实现全局文件锁；`scripts/haproxy_sync.sh` 增加同步级锁，确保一次性重载。
+  - ApplicationSet 生成：`scripts/sync_applicationset.sh` 加锁，避免并发写入同时落盘。
+  - GitOps 操作：`tools/git/create_git_branch.sh` 与 `tools/git/sync_git_from_db.sh` 在 push/归档阶段串行化，避免远端竞争。
+  - SQLite：所有写操作使用 `flock` 和事务，确保端口/子网分配的原子性与记录幂等性。
+- 批量创建最佳实践：
+  - 在并发执行 `scripts/create_env.sh -n <env>` 完成后，统一执行一次：`scripts/reconcile.sh`（顺序：Git 分支同步 → ApplicationSet 同步 → HAProxy 同步并 prune）。
+  - 该脚本具备幂等性，可多次运行；推荐在 CI 或本地批量脚本末尾调用。
 
 ## 数据存储规范
 

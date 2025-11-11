@@ -40,8 +40,8 @@
 
 **改动文件**：
 - `scripts/lib.sh` - `ensure_pod_running_with_preload()`
-- `scripts/setup_devops.sh`
-- `scripts/register_edge_agent.sh`
+- `tools/setup/setup_devops.sh`
+- `tools/setup/register_edge_agent.sh`
 - `scripts/create_env.sh`
 
 **改进内容**：
@@ -248,4 +248,3 @@ docker network ls | grep k3d
 - [测试脚本](../scripts/test_full_cycle.sh)
 - [网络配置](../config/environments.csv)
 - [HAProxy 配置](../compose/infrastructure/haproxy.cfg)
-

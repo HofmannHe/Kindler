@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/tests/lib.sh"
-source "$ROOT_DIR/scripts/lib_sqlite.sh"
+source "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 source "$ROOT_DIR/tests/lib_verify.sh" 2>/dev/null || true
 
 echo "######################################################"

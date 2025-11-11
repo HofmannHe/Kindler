@@ -3,13 +3,14 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 : "${BASE_DOMAIN:=192.168.51.30.sslip.io}"
 
 CONFIG_FILE="$ROOT_DIR/config/git.env"
+LOCK_FILE="${APPSET_SYNC_LOCK:-/tmp/applicationset_sync.lock}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
   log "❌ 未找到配置文件 $CONFIG_FILE (请复制 config/git.env.example 并填写)"
@@ -34,6 +35,11 @@ get_branch_for_env() { echo "$1"; }
 
 # 从数据库读取集群列表并生成 ApplicationSet
 generate_applicationset() {
+  # acquire process-level lock to avoid concurrent file writes/applies
+  if command -v flock >/dev/null 2>&1; then
+    exec 203>"$LOCK_FILE"
+    flock -x 203
+  fi
   log "从数据库读取集群列表并生成 ApplicationSet..."
 
   # 检查数据库可用性
@@ -155,6 +161,7 @@ EOF
   log "  数据源：Database (clusters表，排除 devops)"
   log "  集群数量：$cluster_count"
   log "  数据流：Database → Git Branch → ArgoCD Application"
+  # release lock after file generation; apply step below is quick, but we keep the lock
 }
 
 # 应用 ApplicationSet 到 ArgoCD
@@ -168,10 +175,19 @@ apply_applicationset() {
 
   kubectl --context k3d-devops apply -f "$APPSET_FILE" >/dev/null 2>&1 || {
     log "⚠️  应用 ApplicationSet 失败（devops 集群可能未就绪）"
+    # ensure we release lock even on failure
+    if command -v flock >/dev/null 2>&1; then
+      flock -u 203 2>/dev/null || true
+      exec 203>&- 2>/dev/null || true
+    fi
     return 0
   }
 
   log "✓ ApplicationSet 已应用到 ArgoCD"
+  if command -v flock >/dev/null 2>&1; then
+    flock -u 203 2>/dev/null || true
+    exec 203>&- 2>/dev/null || true
+  fi
 }
 
 main() {

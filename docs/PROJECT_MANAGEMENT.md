@@ -23,7 +23,7 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 创建项目
 ```bash
-./scripts/project_manage.sh create \
+./tools/project_manage.sh create \
   --project <project-name> \
   --env <environment> \
   --team <team-name> \
@@ -34,7 +34,7 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 **示例**：
 ```bash
-./scripts/project_manage.sh create \
+./tools/project_manage.sh create \
   --project demo-app \
   --env dev-k3d \
   --team backend \
@@ -45,21 +45,21 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 查看项目
 ```bash
-./scripts/project_manage.sh show --project <project-name> --env <environment>
+./tools/project_manage.sh show --project <project-name> --env <environment>
 ```
 
 ### 列出项目
 ```bash
 # 列出所有项目
-./scripts/project_manage.sh list
+./tools/project_manage.sh list
 
 # 列出指定环境的项目
-./scripts/project_manage.sh list --env dev-k3d
+./tools/project_manage.sh list --env dev-k3d
 ```
 
 ### 更新项目
 ```bash
-./scripts/project_manage.sh update \
+./tools/project_manage.sh update \
   --project <project-name> \
   --cpu-limit <new-cpu-limit> \
   --memory-limit <new-memory-limit> \
@@ -68,12 +68,12 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 删除项目
 ```bash
-./scripts/project_manage.sh delete --project <project-name> --env <environment>
+./tools/project_manage.sh delete --project <project-name> --env <environment>
 ```
 
 ### 生成项目 kubeconfig
 ```bash
-./scripts/project_manage.sh kubeconfig \
+./tools/project_manage.sh kubeconfig \
   --project <project-name> \
   --env <environment> \
   --output <output-file>
@@ -83,17 +83,17 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 添加项目路由
 ```bash
-./scripts/haproxy_project_route.sh add <project-name> --env <environment> [--node-port <port>]
+./tools/legacy/haproxy_project_route.sh add <project-name> --env <environment> [--node-port <port>]
 ```
 
 **示例**：
 ```bash
-./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
+./tools/legacy/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
 ```
 
 ### 移除项目路由
 ```bash
-./scripts/haproxy_project_route.sh remove <project-name> --env <environment>
+./tools/legacy/haproxy_project_route.sh remove <project-name> --env <environment>
 ```
 
 ### 域名模式
@@ -105,7 +105,7 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 创建 AppProject
 ```bash
-./scripts/argocd_project.sh create \
+./tools/argocd_project.sh create \
   --project <project-name> \
   --repo <git-repo-url> \
   --namespace <project-namespace>
@@ -113,7 +113,7 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 添加应用
 ```bash
-./scripts/argocd_project.sh add-app \
+./tools/argocd_project.sh add-app \
   --project <project-name> \
   --app <app-name> \
   --path <path-in-repo> \
@@ -122,7 +122,7 @@ demo-app,dev-k3d,project-demo-app,backend,2,4Gi,demo-app.dev-k3d.192.168.51.35.s
 
 ### 删除 AppProject
 ```bash
-./scripts/argocd_project.sh delete --project <project-name>
+./tools/argocd_project.sh delete --project <project-name>
 ```
 
 ## 项目模板
@@ -216,7 +216,7 @@ spec:
 
 ### 1. 创建项目
 ```bash
-./scripts/project_manage.sh create \
+./tools/project_manage.sh create \
   --project demo-app \
   --env dev-k3d \
   --team backend \
@@ -227,17 +227,17 @@ spec:
 
 ### 2. 查看项目
 ```bash
-./scripts/project_manage.sh show --project demo-app --env dev-k3d
+./tools/project_manage.sh show --project demo-app --env dev-k3d
 ```
 
 ### 3. 添加 HAProxy 路由
 ```bash
-./scripts/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
+./tools/legacy/haproxy_project_route.sh add demo-app --env dev-k3d --node-port 30080
 ```
 
 ### 4. 创建 ArgoCD AppProject
 ```bash
-./scripts/argocd_project.sh create \
+./tools/argocd_project.sh create \
   --project demo-app \
   --repo https://github.com/example/demo-app.git \
   --namespace project-demo-app
@@ -245,7 +245,7 @@ spec:
 
 ### 5. 部署应用
 ```bash
-./scripts/argocd_project.sh add-app \
+./tools/argocd_project.sh add-app \
   --project demo-app \
   --app whoami \
   --path deploy/ \
@@ -259,7 +259,7 @@ curl -H 'Host: whoami.demo-app.dev-k3d.192.168.51.35.sslip.io' http://192.168.51
 
 ### 7. 生成项目 kubeconfig
 ```bash
-./scripts/project_manage.sh kubeconfig \
+./tools/project_manage.sh kubeconfig \
   --project demo-app \
   --env dev-k3d \
   --output ~/.kube/demo-app-dev-k3d.yaml
@@ -267,7 +267,7 @@ curl -H 'Host: whoami.demo-app.dev-k3d.192.168.51.35.sslip.io' http://192.168.51
 
 ### 8. 清理项目
 ```bash
-./scripts/project_manage.sh delete --project demo-app --env dev-k3d
+./tools/project_manage.sh delete --project demo-app --env dev-k3d
 ```
 
 ## 故障排除

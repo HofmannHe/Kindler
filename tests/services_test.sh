@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/tests/lib.sh"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 # 加载配置
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
@@ -147,7 +147,7 @@ else
     actual_host=$(kubectl --context "$ctx" get ingress -n whoami -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "NOT_FOUND")
     # 若集群仍在创建/失败状态，则跳过该集群的 whoami 校验
     state=""
-    if . "$ROOT_DIR/scripts/lib_sqlite.sh" >/dev/null 2>&1; then
+    if . "$ROOT_DIR/scripts/lib/lib_sqlite.sh" >/dev/null 2>&1; then
       if sqlite_query 'SELECT 1;' >/dev/null 2>&1; then
         state=$(sqlite_query "SELECT COALESCE(actual_state,'unknown') FROM clusters WHERE name='$cluster';" 2>/dev/null | tr -d ' \n' || echo "")
       fi

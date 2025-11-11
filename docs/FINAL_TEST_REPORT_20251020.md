@@ -215,7 +215,7 @@ kubectl delete namespace test --timeout=30s || force_clean_finalizers
 - ✅ `scripts/sync_applicationset.sh`: 生成逻辑使用完整集群名
 
 ### 辅助脚本
-- ✅ `scripts/fix_git_branches.sh`: 创建（用于批量修复 Git 分支配置）
+- ✅ `tools/fix_git_branches.sh`: 创建（用于批量修复 Git 分支配置）
 
 ---
 
@@ -355,4 +355,3 @@ whoami-prod-k3d    Progressing/Healthy
 **报告生成时间**: 2025-10-20 14:35 CST  
 **报告作者**: Kindler Automation System  
 **审核状态**: ✅ 核心功能验收通过
-

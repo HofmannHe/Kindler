@@ -42,8 +42,8 @@
 ## 性能与资源
 - kind/k3d 在开发机资源有限：建议按需只拉起所需集群，或先建 dev 验证通过再扩展 uat/prod。
 - 镜像预热：
-  - `scripts/prefetch_images.sh <manifest> <cluster>` 将清单内 image 预拉并导入节点（解决离线/限网环境镜像拉取失败问题）。
-  - 例如：`scripts/prefetch_images.sh manifests/traefik/traefik.yaml dev`
+  - `tools/maintenance/prefetch_images.sh <manifest> <cluster>` 将清单内 image 预拉并导入节点（解决离线/限网环境镜像拉取失败问题）。
+  - 例如：`tools/maintenance/prefetch_images.sh manifests/traefik/traefik.yaml dev`
 
 ## 故障排查
 - Portainer 301/200 不通：

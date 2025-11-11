@@ -165,7 +165,7 @@ kubectl --context <ctx> delete pod <pod-name> -n <namespace>
 
 基于这些教训，以下脚本已更新：
 
-1. ✅ `scripts/setup_devops_storage.sh`：修正 busybox 镜像名称
+1. ✅ `tools/setup/setup_devops_storage.sh`：修正 busybox 镜像名称
 2. ✅ `scripts/deploy_postgresql_gitops.sh`：添加 PostgreSQL 镜像预拉取
 3. ✅ `scripts/bootstrap.sh`：集成存储设置和 PostgreSQL 部署
 
@@ -189,5 +189,4 @@ kubectl --context <ctx> delete pod <pod-name> -n <namespace>
 2. **自动镜像发现**：从 manifests 自动提取所需镜像
 3. **镜像预热脚本**：bootstrap 前批量导入所有镜像
 4. **更好的错误提示**：在脚本中添加镜像检查和清晰的错误信息
-
 

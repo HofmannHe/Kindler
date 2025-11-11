@@ -17,17 +17,17 @@
 ### 🛠️ 诊断维护工具 (6个脚本)
 
 - ✅ scripts/check_consistency.sh - DB-Git-K8s 一致性检查
-- ✅ scripts/sync_git_from_db.sh - 根据 DB 重建 Git 分支
-- ✅ scripts/cleanup_orphaned_branches.sh - 清理孤立 Git 分支
-- ✅ scripts/cleanup_orphaned_clusters.sh - 清理孤立 K8s 集群
-- ✅ scripts/create_git_branch.sh - 单集群 Git 分支创建
-- ✅ scripts/delete_git_branch.sh - 单集群 Git 分支删除
+- ✅ tools/git/sync_git_from_db.sh - 根据 DB 重建 Git 分支
+- ✅ tools/maintenance/cleanup_orphaned_branches.sh - 清理孤立 Git 分支
+- ✅ tools/maintenance/cleanup_orphaned_clusters.sh - 清理孤立 K8s 集群
+- ✅ tools/git/create_git_branch.sh - 单集群 Git 分支创建
+- ✅ tools/git/delete_git_branch.sh - 单集群 Git 分支删除
 
 ### 🔧 脚本集成 (3个更新)
 
 - ✅ scripts/create_env.sh - 集成 Git 分支创建
 - ✅ scripts/delete_env.sh - 集成 Git 分支删除
-- ✅ scripts/bootstrap.sh - 调用 sync_git_from_db.sh
+- ✅ scripts/bootstrap.sh - 调用 tools/git/sync_git_from_db.sh
 
 ### 🧪 测试用例 (2个新增 + 1个更新)
 
@@ -53,13 +53,13 @@ less AGENTS.md  # 第 206 行开始查看集群配置管理
 ### 检查状态
 ```bash
 scripts/check_consistency.sh  # 一致性检查
-scripts/list_env.sh           # 环境列表
+scripts/cluster.sh list       # 环境列表
 ```
 
 ### 修复不一致
 ```bash
 scripts/sync_git_from_db.sh            # 同步 Git 分支
-scripts/cleanup_orphaned_branches.sh   # 清理孤立分支
+tools/maintenance/cleanup_orphaned_branches.sh   # 清理孤立分支
 ```
 
 ### 运行测试

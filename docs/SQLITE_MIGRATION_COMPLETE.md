@@ -22,15 +22,15 @@
 **修改的脚本** (13个):
 1. `scripts/create_env.sh`
 2. `scripts/delete_env.sh`
-3. `scripts/list_env.sh`
+3. `scripts/cluster.sh list`
 4. `scripts/bootstrap.sh`
-5. `scripts/init_database.sh`
+5. `tools/db/init_database.sh`
 6. `scripts/sync_applicationset.sh`
 7. `scripts/sync_git_from_db.sh`
-8. `scripts/migrate_csv_to_db.sh`
+8. `tools/db/migrate_csv_to_db.sh`
 9. `scripts/check_consistency.sh`
-10. `scripts/cleanup_orphaned_clusters.sh`
-11. `scripts/cleanup_orphaned_branches.sh`
+10. `tools/maintenance/cleanup_orphaned_clusters.sh`
+11. `tools/maintenance/cleanup_orphaned_branches.sh`
 12. `scripts/haproxy_sync.sh`
 13. `scripts/lib.sh`（间接使用）
 
@@ -129,7 +129,7 @@
 
 ### 工具脚本（可选保留）
 
-1. ✅ `scripts/create_predefined_clusters.sh` - 批量创建预置集群（手动使用）
+1. ✅ `tools/legacy/create_predefined_clusters.sh` - 批量创建预置集群（手动使用）
 2. ✅ `scripts/test_sqlite_migration.sh` - SQLite 功能测试
 3. ✅ `scripts/test_data_consistency.sh` - 数据一致性测试
 4. ✅ `scripts/regression_test.sh` - 回归测试脚本
@@ -159,13 +159,13 @@
 scripts/create_env.sh -n <name> -p k3d
 
 # 批量创建预置集群
-scripts/create_predefined_clusters.sh
+tools/legacy/create_predefined_clusters.sh
 ```
 
 ### 查看集群列表
 
 ```bash
-scripts/list_env.sh
+scripts/cluster.sh list
 ```
 
 ### 数据库操作
@@ -221,4 +221,3 @@ sqlite_cluster_exists "dev"
 ---
 
 **迁移已成功完成。系统运行正常，建议提交为稳定版本。**
-

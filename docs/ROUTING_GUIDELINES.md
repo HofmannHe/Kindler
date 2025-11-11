@@ -35,7 +35,7 @@
 
 - `be_git` 固定转发到本地 GitLab 容器：`gitlab:6080`。
 - `config/git.env` 允许通过 `BASE_DOMAIN` 动态渲染 `git.devops.$BASE_DOMAIN`。
-- `scripts/setup_git.sh` 在无法直接访问域名时，回退使用 `127.0.0.1 + Host` 头访问 HAProxy。
+- `tools/setup/setup_git.sh` 在无法直接访问域名时，回退使用 `127.0.0.1 + Host` 头访问 HAProxy。
 - 若仍无法初始化仓库，请在 GitLab 中预先创建目标仓库，并确保凭证有效（见 `config/git.env`）。
 
 ## 变更前自检清单
@@ -45,4 +45,3 @@
 - [ ] `portainer.devops.$BASE_DOMAIN` 返回 301/200
 - [ ] `argocd.devops.$BASE_DOMAIN` 返回 200（或预期状态）
 - [ ] 业务域名（如 `whoami.<env>.$BASE_DOMAIN`）返回 200 或 404（未部署时），不可误指向 ArgoCD
-

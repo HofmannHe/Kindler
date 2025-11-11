@@ -48,15 +48,15 @@
 2. **修改**（13个脚本）:
    - `scripts/create_env.sh`
    - `scripts/delete_env.sh`
-   - `scripts/list_env.sh`
+   - `scripts/cluster.sh list`
    - `scripts/bootstrap.sh`
-   - `scripts/init_database.sh`
+   - `tools/db/init_database.sh`
    - `scripts/sync_applicationset.sh`
-   - `scripts/sync_git_from_db.sh`
-   - `scripts/migrate_csv_to_db.sh`
+   - `tools/git/sync_git_from_db.sh`
+   - `tools/db/migrate_csv_to_db.sh`
    - `scripts/check_consistency.sh`
-   - `scripts/cleanup_orphaned_clusters.sh`
-   - `scripts/cleanup_orphaned_branches.sh`
+- `tools/maintenance/cleanup_orphaned_clusters.sh`
+- `tools/maintenance/cleanup_orphaned_branches.sh`
    - `scripts/haproxy_sync.sh`
    - `scripts/lib.sh`
 
@@ -72,7 +72,7 @@
 ### 声明式架构文件（新增）
 
 1. `scripts/reconciler.sh` - Reconciler 核心逻辑
-2. `scripts/start_reconciler.sh` - Reconciler 管理脚本
+2. `tools/start_reconciler.sh` - Reconciler 管理脚本
 3. `webui/backend/app/api/clusters.py` - 声明式 API
 
 ### 文档（4个）
@@ -152,10 +152,10 @@ WebUI (容器) → 数据库 (desired_state)
 ### 管理 Reconciler
 
 ```bash
-./scripts/start_reconciler.sh start   # 启动
-./scripts/start_reconciler.sh status  # 查看状态
-./scripts/start_reconciler.sh logs    # 查看日志
-./scripts/start_reconciler.sh stop    # 停止
+./tools/start_reconciler.sh start   # 启动
+./tools/start_reconciler.sh status  # 查看状态
+./tools/start_reconciler.sh logs    # 查看日志
+./tools/start_reconciler.sh stop    # 停止
 ```
 
 ---
