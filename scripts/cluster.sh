@@ -3,12 +3,14 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-# shellcheck source=lib.sh
-. "$ROOT_DIR/scripts/lib.sh"
+# shellcheck source=lib/lib.sh
+. "$ROOT_DIR/scripts/lib/lib.sh"
+# shellcheck source=lib/lib_sqlite.sh
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() {
   cat <<EOF
-Usage: $0 <create|delete|import|status> <env> [args]
+Usage: $0 <create|delete|import|status|start|stop|list> <env> [args]
 
 env: dev|uat|prod
 
@@ -17,6 +19,9 @@ Subcommands:
   delete <env>            Delete cluster for env
   import <env> <image>    Import local image into cluster
   status <env>            Show nodes for cluster context
+  start <env>             Start an existing cluster
+  stop <env>              Stop an existing cluster (preserve config)
+  list                    List configured environments (DB first, CSV fallback)
 
 Environment:
   DRY_RUN=1  Print commands instead of executing
@@ -98,6 +103,8 @@ create_k3d() {
     if [ -n "$actual_port" ]; then
       log INFO "Fixing API server address from 0.0.0.0:$actual_port to 127.0.0.1:$actual_port"
       kubectl config set-cluster "$cluster_name" --server="https://127.0.0.1:$actual_port" >/dev/null 2>&1 || true
+      # Avoid certificate SAN mismatch when using 127.0.0.1
+      kubectl config set-cluster "$cluster_name" --insecure-skip-tls-verify=true >/dev/null 2>&1 || true
       break
     fi
     sleep 1
@@ -166,16 +173,18 @@ import_kind() { local name="$1" image="$2"; need_cmd kind || return 0; run "kind
 main() {
   load_env
   local cmd="${1:-}" env="${2:-}" arg3="${3:-}"
-  if [ -z "$cmd" ] || [ -z "$env" ]; then usage; exit 1; fi
+  if [ -z "$cmd" ]; then usage; exit 1; fi
 
   local provider name ports http_port https_port
-  provider="$(provider_for "$env")"
-  name="$(ctx_name "$env")"
-  # read ports with space separator regardless of global IFS
-  local _ports
-  _ports="$(ports_for "$env")"
-  IFS=' ' read -r http_port https_port <<< "${_ports}"
-  IFS=$'\n\t'
+  if [ -n "${env:-}" ]; then
+    provider="$(provider_for "$env")"
+    name="$(ctx_name "$env")"
+    # read ports with space separator regardless of global IFS
+    local _ports
+    _ports="$(ports_for "$env")"
+    IFS=' ' read -r http_port https_port <<< "${_ports}"
+    IFS=$'\n\t'
+  fi
 
   case "$cmd" in
     create)
@@ -198,6 +207,47 @@ main() {
       fi
       run "kubectl config use-context ${ctx} >/dev/null 2>&1 || true"
       run "kubectl --context ${ctx} get nodes"
+      ;;
+    start)
+      [ -n "${env:-}" ] || { usage; exit 1; }
+      if [ "$provider" = "k3d" ]; then
+        run "k3d cluster start ${name}"
+      else
+        # kind: start control-plane container(s)
+        local ctn
+        for ctn in $(docker ps -aq --filter "name=${name}-control-plane"); do
+          run "docker start ${ctn} >/dev/null"
+        done
+      fi
+      ;;
+    stop)
+      [ -n "${env:-}" ] || { usage; exit 1; }
+      if [ "$provider" = "k3d" ]; then
+        run "k3d cluster stop ${name}"
+      else
+        local ctn
+        for ctn in $(docker ps -q --filter "name=${name}-control-plane"); do
+          run "docker stop ${ctn} >/dev/null || true"
+        done
+      fi
+      ;;
+    list)
+      # Prefer SQLite database
+      if db_is_available 2>/dev/null; then
+        echo "NAME            PROVIDER  SUBNET             NODE_PORT PF_PORT  HTTP_PORT  HTTPS_PORT"
+        echo "-------------------------------------------------------------------------------------"
+        db_list_clusters 2>/dev/null | while IFS='|' read -r n prov subnet node_port pf_port hp hs; do
+          [ -z "$subnet" ] && subnet="N/A"
+          printf "%-15s %-9s %-18s %-9s %-7s %-10s %-11s\n" "$n" "$prov" "$subnet" "$node_port" "$pf_port" "$hp" "$hs"
+        done
+      else
+        # Fallback to CSV
+        local csv="$ROOT_DIR/config/environments.csv"
+        [ -f "$csv" ] || { echo "[ERROR] CSV not found: $csv" >&2; exit 1; }
+        echo "NAME            PROVIDER  SUBNET             NODE_PORT PF_PORT  HTTP_PORT  HTTPS_PORT"
+        echo "-------------------------------------------------------------------------------------"
+        awk -F, '$0 !~ /^[[:space:]]*#/ && NF>0 && NR>1 {gsub(/^ +| +$/,"",$1);gsub(/^ +| +$/,"",$2);gsub(/^ +| +$/,"",$9);gsub(/^ +| +$/,"",$3);gsub(/^ +| +$/,"",$4);gsub(/^ +| +$/,"",$7);gsub(/^ +| +$/,"",$8); s=($9==""||$9=="N/A")?"N/A":$9; printf "%-15s %-9s %-18s %-9s %-7s %-10s %-11s\n", $1,$2,s,$3,$4,$7,$8}' "$csv"
+      fi
       ;;
     *) usage; exit 1 ;;
   esac

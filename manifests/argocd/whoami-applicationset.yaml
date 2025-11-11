@@ -11,6 +11,11 @@ spec:
       elements:
       # 自动从数据库读取（通过 scripts/sync_applicationset.sh）
       # 数据流：Database (clusters表) → Git Branch → ArgoCD Application
+      - env: dev
+        hostEnv: dev
+        branch: dev
+        clusterName: dev
+        ingressClass: traefik
       - env: dev-a
         hostEnv: dev-a
         branch: dev-a
@@ -30,11 +35,6 @@ spec:
         hostEnv: prod
         branch: prod
         clusterName: prod
-        ingressClass: traefik
-      - env: test-lifecycle-3274962
-        hostEnv: test-lifecycle-3274962
-        branch: test-lifecycle-3274962
-        clusterName: test-lifecycle-3274962
         ingressClass: traefik
       - env: uat
         hostEnv: uat

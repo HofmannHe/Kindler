@@ -10,6 +10,5 @@
 
 ## Impact
 - 受影响能力：HAProxy 路由同步（routing）；GitOps 文档；测试脚本。
-- 受影响代码：`scripts/haproxy_sync.sh`、`scripts/fix_haproxy_routes.sh`、`scripts/haproxy_route.sh`、`tests/04_haproxy_cfg.bats`、`tests/haproxy_test.sh` 等。
+- 受影响代码：`scripts/haproxy_sync.sh`、`tools/fix_haproxy_routes.sh`、`scripts/haproxy_route.sh`、`tests/04_haproxy_cfg.bats`、`tests/haproxy_test.sh` 等。
 - 兼容性：默认兼容（DB 不可用时回退 CSV）；建议在 bootstrap 完成后始终具备 DB。
-

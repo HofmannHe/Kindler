@@ -48,7 +48,7 @@ test_db_table_schema() {
   Context:
     - table: clusters
     - database: kindler
-  Fix Suggestion: Add server_ip column in scripts/init_database.sh
+  Fix Suggestion: Add server_ip column in tools/db/init_database.sh
   Debug Command: kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'
   Related: AGENTS.md#案例-5
 EOF
@@ -481,6 +481,5 @@ EOF
 
 # 执行主函数
 main "$@"
-
 
 

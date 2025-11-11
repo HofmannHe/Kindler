@@ -52,7 +52,7 @@ scripts/bootstrap.sh
 ### 3. 预置集群创建 ✅
 
 ```bash
-scripts/create_predefined_clusters.sh
+tools/legacy/create_predefined_clusters.sh
 ```
 
 - dev, uat, prod 已存在，跳过重复创建
@@ -162,4 +162,3 @@ scripts/haproxy_route.sh remove devops
 ⏳ **等待 ArgoCD 同步 whoami 应用**
 
 建议等待 5-10 分钟让 ArgoCD 完成同步部署。
-

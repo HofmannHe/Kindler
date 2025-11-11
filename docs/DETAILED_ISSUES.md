@@ -25,7 +25,7 @@
 - Portainer HTTPS 超时
 
 **修复方案**:
-- 修复 be_argocd 的地址来源：scripts/setup_devops.sh 不再使用多网卡无分隔拼接（range 无分隔问题），改为优先选定网络（k3d-shared）并回退到“以空格分隔 + 取第一项”。
+- 修复 be_argocd 的地址来源：tools/setup/setup_devops.sh 不再使用多网卡无分隔拼接（range 无分隔问题），改为优先选定网络（k3d-shared）并回退到“以空格分隔 + 取第一项”。
 - 修复所有动态渲染路径避免相同问题：scripts/haproxy_route.sh 与 scripts/haproxy_render.sh 统一采用“指定网络 + 空格分隔回退”的解析逻辑。
 - 将默认 haproxy.cfg 中 be_argocd 的 server 行改为安全占位符（127.0.0.1:30800），由 setup_devops.sh 引导时重写为实际 NodePort 地址，避免配置验证 ALERT。
 

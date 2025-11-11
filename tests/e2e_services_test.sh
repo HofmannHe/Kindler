@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/tests/lib.sh"
-source "$ROOT_DIR/scripts/lib.sh"
+source "$ROOT_DIR/scripts/lib/lib.sh"
 
 # 加载配置
 load_env
@@ -403,4 +403,3 @@ echo ""
 print_summary
 
 exit $failed_tests
-

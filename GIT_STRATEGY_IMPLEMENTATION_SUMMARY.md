@@ -103,7 +103,7 @@ local expected_clusters=$(awk -F',' 'NR>1 && $0 !~ /^[[:space:]]*#/ && NF>0 {pri
 
 ### 3. 新增脚本
 
-#### `scripts/fix_applicationset.sh`
+#### `tools/fix_applicationset.sh`
 
 **功能**: 根据数据库中的集群列表自动修复 ApplicationSet 配置
 
@@ -371,7 +371,7 @@ delete_git_branch_with_archive() {
 **待实施**:
 - `scripts/restore_cluster_config.sh` - 从归档恢复配置
 - `scripts/cleanup_old_archives.sh` - 清理过期归档
-- `scripts/cleanup_orphaned_branches.sh` - 清理孤立分支
+  - `tools/maintenance/cleanup_orphaned_branches.sh` - 清理孤立分支
 
 ### 3. Git 服务器配置
 
@@ -418,4 +418,3 @@ protected_branches:
 **完成时间**: 2025-10-27  
 **影响范围**: 配置、测试、文档、脚本  
 **破坏性变更**: ✅ 已删除 dev-kind, uat-kind, prod-kind 集群
-

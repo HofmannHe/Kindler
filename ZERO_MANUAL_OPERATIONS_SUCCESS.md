@@ -40,7 +40,7 @@
 
 **修复（方案A）**：
 ```bash
-# scripts/register_git_to_argocd.sh
+# tools/setup/register_git_to_argocd.sh
 deploy_applicationset() {
   # 改为调用动态生成脚本
   "$ROOT_DIR/scripts/sync_applicationset.sh"
@@ -371,4 +371,3 @@ kind get clusters | grep "test-" || echo "✓ 无孤立 kind test-* 集群"
 **测试环境**: Ubuntu 22.04, Docker 24.0, k3d v5.6, kind v0.20  
 **总测试时间**: ~8小时（4轮调试）  
 **最终测试时间**: 114秒（一次性通过）
-

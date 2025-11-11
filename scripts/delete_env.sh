@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Delete a business cluster and clean HAProxy/Portainer/ArgoCD/Git registrations.
+# Usage: scripts/delete_env.sh -n <name> [-p kind|k3d]
+# See also: scripts/create_env.sh, scripts/haproxy_route.sh, scripts/argocd_register.sh, scripts/portainer.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() { echo "Usage: $0 -n <name> [-p kind|k3d]" >&2; exit 1; }
 
@@ -43,16 +46,16 @@ echo "[DELETE] Unregistering cluster from ArgoCD..."
 
 # 删除 Git 分支
 echo "[DELETE] Removing Git branch for $name..."
-if [ -f "$ROOT_DIR/scripts/delete_git_branch.sh" ]; then
-  if "$ROOT_DIR/scripts/delete_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
+if [ -f "$ROOT_DIR/tools/git/delete_git_branch.sh" ]; then
+  if "$ROOT_DIR/tools/git/delete_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
     echo "[DELETE] ✓ Git branch removed"
   else
     echo "[WARN] Git branch deletion failed (will continue)"
     echo "[WARN] You can manually delete it with:"
-    echo "       scripts/delete_git_branch.sh $name"
+    echo "       tools/git/delete_git_branch.sh $name"
   fi
 else
-  echo "[WARN] delete_git_branch.sh not found, skipping Git branch deletion"
+  echo "[WARN] tools/git/delete_git_branch.sh not found, skipping Git branch deletion"
 fi
 
 # 从数据库中删除集群记录（优先）

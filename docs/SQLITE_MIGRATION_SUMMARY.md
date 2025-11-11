@@ -21,15 +21,15 @@
 
 - ✅ `scripts/create_env.sh` - 使用 `lib_sqlite.sh`
 - ✅ `scripts/delete_env.sh` - 使用 `lib_sqlite.sh`
-- ✅ `scripts/list_env.sh` - 使用 `lib_sqlite.sh`
+- ✅ `scripts/cluster.sh list` - 使用 `lib_sqlite.sh`
 - ✅ `scripts/bootstrap.sh` - 移除 PostgreSQL 部署，添加 CSV 导入
-- ✅ `scripts/init_database.sh` - 改为初始化 SQLite
+- ✅ `tools/db/init_database.sh` - 改为初始化 SQLite
 - ✅ `scripts/sync_applicationset.sh` - 使用 `lib_sqlite.sh`
-- ✅ `scripts/sync_git_from_db.sh` - 使用 `lib_sqlite.sh`
-- ✅ `scripts/migrate_csv_to_db.sh` - 使用 `lib_sqlite.sh`
+- ✅ `tools/git/sync_git_from_db.sh` - 使用 `lib_sqlite.sh`
+- ✅ `tools/db/migrate_csv_to_db.sh` - 使用 `lib_sqlite.sh`
 - ✅ `scripts/check_consistency.sh` - 使用 `lib_sqlite.sh`
-- ✅ `scripts/cleanup_orphaned_clusters.sh` - 使用 `lib_sqlite.sh`
-- ✅ `scripts/cleanup_orphaned_branches.sh` - 使用 `lib_sqlite.sh`
+- ✅ `tools/maintenance/cleanup_orphaned_clusters.sh` - 使用 `lib_sqlite.sh`
+- ✅ `tools/maintenance/cleanup_orphaned_branches.sh` - 使用 `lib_sqlite.sh`
 - ✅ `scripts/lib.sh` - 保持兼容性（通过兼容函数）
 
 ### 3. 更新 WebUI 后端
@@ -102,7 +102,7 @@ scripts/bootstrap.sh
 scripts/create_env.sh -n test-k3d -p k3d
 
 # 4. 验证数据
-scripts/list_env.sh
+scripts/cluster.sh list
 ```
 
 ### 验证点
@@ -136,7 +136,7 @@ scripts/create_env.sh -n dev -p k3d
 
 从 SQLite 读取（不再读取 CSV）：
 ```bash
-scripts/list_env.sh
+scripts/cluster.sh list
 ```
 
 ### WebUI 访问
@@ -175,4 +175,3 @@ WebUI 与脚本共享同一个 SQLite 数据库：
 ✅ 文档已更新
 
 系统已准备好进行完整的集成测试和生产使用。
-

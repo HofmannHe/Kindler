@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Reconcile HAProxy routes from SQLite (preferred) or CSV with optional pruning.
+# Usage: scripts/haproxy_sync.sh [--prune]
+# See also: scripts/haproxy_route.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+# Global lock to serialize full sync/reload cycles (route writes already lock per-call)
+LOCK_FILE="${HAPROXY_SYNC_LOCK:-/tmp/haproxy_sync.lock}"
 # Allow overriding HAProxy config path for tests via HAPROXY_CFG
 CFG="${HAPROXY_CFG:-$ROOT_DIR/compose/infrastructure/haproxy.cfg}"
 
-. "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() {
 	cat >&2 <<USAGE
@@ -39,6 +44,33 @@ while [ $# -gt 0 ]; do
 done
 
 is_true() { case "$(echo "${1:-}" | tr 'A-Z' 'a-z')" in 1|y|yes|true|on) return 0;; *) return 1;; esac; }
+
+acquire_lock() {
+  if command -v flock >/dev/null 2>&1; then
+    exec 201>"$LOCK_FILE"
+    flock -x 201
+  else
+    # mkdir fallback
+    local waited=0
+    while ! mkdir "${LOCK_FILE}.dir" 2>/dev/null; do
+      sleep 0.1
+      waited=$((waited+1))
+      [ $waited -gt 300 ] && break
+    done
+  fi
+}
+
+release_lock() {
+  if command -v flock >/dev/null 2>&1; then
+    flock -u 201 2>/dev/null || true
+    exec 201>&- 2>/dev/null || true
+  else
+    rm -rf "${LOCK_FILE}.dir" 2>/dev/null || true
+  fi
+}
+
+acquire_lock
+trap 'release_lock' EXIT
 
 declare -a records
 src="db"

@@ -6,6 +6,11 @@
 
 [中文文档](./README_CN.md) | [English](./README.md)
 
+## Scripts Overview
+
+- See `scripts/README.md` for categorized entrypoints, libraries, and deprecated wrappers.
+- Key commands: `bootstrap.sh`, `cluster.sh` (create/delete/import/status/start/stop/list), `create_env.sh`, `delete_env.sh`, `haproxy_route.sh`, `haproxy_sync.sh`, `reconcile.sh`, `portainer.sh`, `argocd_register.sh`, `smoke.sh`. Batch tools moved under `tools/maintenance/`.
+
 ## Features
 
 - 🚀 **Unified Gateway**: Single entry point via HAProxy for all services
@@ -112,7 +117,7 @@ sequenceDiagram
 
 > Must-do Trilogy (after rollback/reinstall)
 > 1) `./scripts/haproxy_sync.sh --prune`
-> 2) `./scripts/setup_devops.sh`
+> 2) `./tools/setup/setup_devops.sh`
 > 3) `./scripts/sync_applicationset.sh`
 
 
@@ -179,8 +184,8 @@ Create clusters defined in `config/environments.csv`:
 for env in dev uat prod dev-k3d uat-k3d prod-k3d; do ./scripts/create_env.sh -n "$env"; done
 
 # Stop/Start
-./scripts/stop_env.sh -n dev
-./scripts/start_env.sh -n dev
+./scripts/cluster.sh stop dev
+./scripts/cluster.sh start dev
 
 # Permanently delete (also prunes CSV/Portainer/ArgoCD/HAProxy)
 ./scripts/delete_env.sh -n dev
@@ -273,6 +278,22 @@ curl http://whoami.prod.192.168.51.30.sslip.io
 
 > 📖 **Detailed Documentation**: [Complete GitOps Workflow Guide](./docs/GITOPS_WORKFLOW.md)
 
+### Concurrent Creation & Final Convergence
+
+- You can run `scripts/create_env.sh` concurrently for different environments. It is idempotent.
+- Concurrency safety:
+  - HAProxy route edits are protected by file locks; final `haproxy_sync.sh` now uses a global lock for single reload.
+  - ApplicationSet generation is guarded by a lock to avoid concurrent writes.
+  - GitOps push/archiving operations are serialized to avoid remote update races.
+- Best practice for batch creation: run a single reconciliation step after all parallel creates finish:
+  ```bash
+  ./scripts/reconcile.sh   # Git branches -> ApplicationSet -> HAProxy (prune + single reload)
+  ```
+
+Repository scope clarification:
+- This repository (Kindler) hosts infra and scripts only; it does NOT use active/archive branches.
+- The external GitOps repository MUST implement Active (= SQLite clusters except `devops`) vs Archive (`archive/<env>-<timestamp>`) branches. This is enforced by `tools/git/sync_git_from_db.sh`.
+
 ## Project Structure
 
 ```
@@ -289,8 +310,7 @@ kindler/
 ├── scripts/           # Management scripts
 │   ├── bootstrap.sh        # Initialize infrastructure
 │   ├── create_env.sh       # Create business cluster
-│   ├── stop_env.sh         # Stop cluster (preserve config)
-│   ├── start_env.sh        # Start stopped cluster
+│   ├── cluster.sh          # Cluster lifecycle dispatcher (create/start/stop/list/...)
 │   ├── delete_env.sh       # Permanently delete cluster (incl. CSV config)
 │   ├── clean.sh            # Clean all resources
 │   └── haproxy_sync.sh     # Sync HAProxy routes
@@ -381,10 +401,10 @@ All services follow the pattern `<service>.<env>.$BASE_DOMAIN`:
 #### Stop/Start Environment (Preserve Configuration)
 ```bash
 # Stop cluster (preserve CSV config and kubeconfig, free resources)
-./scripts/stop_env.sh -n dev
+./scripts/cluster.sh stop dev
 
 # Restart stopped cluster
-./scripts/start_env.sh -n dev
+./scripts/cluster.sh start dev
 ```
 
 > **Use Case**: Temporarily stop clusters to save resources, can quickly resume later. Ideal for dev environments not currently needed.
@@ -413,8 +433,8 @@ All services follow the pattern `<service>.<env>.$BASE_DOMAIN`:
 
 | Operation | Cluster Running | CSV Config | Portainer | ArgoCD | Purpose |
 |-----------|----------------|------------|-----------|--------|---------|
-| **stop_env.sh** | ❌ Stopped | ✅ Kept | ✅ Kept | ✅ Kept | Temporarily free resources |
-| **start_env.sh** | ✅ Running | ✅ Used | ✅ Resume | ✅ Resume | Restart stopped cluster |
+| **cluster.sh stop** | ❌ Stopped | ✅ Kept | ✅ Kept | ✅ Kept | Temporarily free resources |
+| **cluster.sh start** | ✅ Running | ✅ Used | ✅ Resume | ✅ Resume | Restart stopped cluster |
 | **delete_env.sh** | ❌ Deleted | ❌ Deleted | ❌ Unregistered | ❌ Unregistered | Permanently remove environment |
 
 ### HAProxy Route Management
@@ -494,7 +514,7 @@ Option C — One‑click script
 ```bash
 # Add a temporary alias to your default NIC and reconfigure to 192.168.51.35
 # (ip alias requires root; omit --add-alias if not permitted)
-sudo ./scripts/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
+sudo ./tools/reconfigure_host.sh --host-ip 192.168.51.35 --sslip --add-alias
 ```
 
 After editing `clusters.env`, refresh components
@@ -503,7 +523,7 @@ After editing `clusters.env`, refresh components
 ./scripts/haproxy_sync.sh --prune
 
 # 2) Update devops ArgoCD Ingress
-./scripts/setup_devops.sh
+./tools/setup/setup_devops.sh
 
 # 3) Regenerate ApplicationSet for business clusters
 ./scripts/sync_applicationset.sh
@@ -798,7 +818,7 @@ Test results are logged to `docs/TEST_REPORT.md`.
 - Devops cluster in Portainer
   - Devops (management) cluster is registered to Portainer via Edge Agent during `bootstrap.sh` so you can monitor ArgoCD and core add-ons from Portainer.
   - Toggle via env: `REGISTER_DEVOPS_PORTAINER=0 ./scripts/bootstrap.sh` to skip registration.
-  - You can re-register manually at any time: `./scripts/register_edge_agent.sh devops k3d`.
+  - You can re-register manually at any time: `./tools/setup/register_edge_agent.sh devops k3d`.
 
 - HAProxy routes (DB-driven)
   - HAProxy routes are generated from SQLite `clusters` table; CSV is only a bootstrap fallback.
@@ -894,8 +914,15 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 - WebUI uses a declarative flow: it writes desired state to the SQLite DB; a background reconciler running on the host performs actual creation/registration (Portainer Edge, ArgoCD) by invoking the same `scripts/create_env.sh` used for predefined clusters.
 - Bootstrap now starts the reconciler automatically. You can manage it via:
-  - `./scripts/start_reconciler.sh start|stop|status|logs`
+  - `./tools/start_reconciler.sh start|stop|status|logs`
   - Concurrency is configurable via `RECONCILER_CONCURRENCY` (default 3). Different clusters reconcile in parallel; the same cluster is always serialized by a per-cluster lock.
 - Deletion is declarative too: `DELETE /api/clusters/{name}` sets `desired_state=absent`; the reconciler deletes the cluster and removes its DB record when finished.
  - P2 fix: bootstrap initializes the `devops` cluster state in SQLite as `actual_state=running` (and sets `last_reconciled_at`) so that WebUI shows the management cluster correctly.
  - Optional: export `REGISTER_DEVOPS_ARGOCD=1` before bootstrap if you want `devops` registered to ArgoCD. By default it’s off; the ApplicationSet continues to target business clusters only.
+### Git Repositories
+
+- Kindler repo (this repository): scripts, infra, docs. No active/archive branch policy.
+- GitOps repo (applications): used by ArgoCD to deploy apps. Must follow branch policy:
+  - Active branches = business clusters in SQLite `clusters` (exclude `devops`), branch name equals env.
+  - Archived branches = non‑active historical branches, moved to `archive/<env>-<timestamp>` and deleted from active.
+  - Tools: `tools/git/sync_git_from_db.sh` (supports `DRY_RUN=1`), `scripts/create_env.sh` only syncs ApplicationSet after branch creation succeeds.

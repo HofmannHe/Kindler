@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Minimal validation of HAProxy routes and Portainer endpoints; appends a report to docs/TEST_REPORT.md.
+# Usage: scripts/smoke.sh <env> [service]
+# See also: scripts/haproxy_route.sh, scripts/portainer.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 
 if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
 : "${HAPROXY_HOST:=127.0.0.1}"
@@ -13,8 +16,9 @@ if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . 
 
 env_name="${1:-dev}"
 service_name="${2:-whoami}"
-# 使用 host_label 确保在 KINDLER_NS 下追加命名空间后缀（如 devns）
-host_env_label="$(host_label "$env_name")"
+# 采用与 haproxy_route.sh 一致的域名规则：<service>.<env>.$BASE_DOMAIN
+# 注意：不再使用 host_label()，以免 KINDLER_NS 后缀导致域名不匹配
+host_env_label="$env_name"
 host_fqdn="${service_name}.${host_env_label}.${BASE_DOMAIN}"
 report="$ROOT_DIR/docs/TEST_REPORT.md"
 ts="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -46,6 +50,8 @@ if [ "$HAPROXY_HTTP_PORT" != "80" ]; then
 	service_http_url="${service_http_url}:$HAPROXY_HTTP_PORT"
 fi
 
+status_portainer_http=""; status_portainer_https=""; status_ingress=""
+
 if [ "${DRY_RUN:-}" = "1" ]; then
   echo "\n- Portainer HTTP (${HAPROXY_HTTP_PORT})" >>"$report"
   echo "  (dry-run) skipped curl" >>"$report"
@@ -55,11 +61,14 @@ if [ "${DRY_RUN:-}" = "1" ]; then
   echo "  (dry-run) skipped curl" >>"$report"
 else
   echo "\n- Portainer HTTP (${HAPROXY_HTTP_PORT})" >>"$report"
-  { curl -sI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+  status_portainer_http=$( { curl -sI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_http_url" | head -n1 || true; } | awk '{print $2}' )
+  printf "  HTTP/1.x %s\n" "${status_portainer_http:-NA}" >>"$report"
   echo "\n- Portainer HTTPS (${HAPROXY_HTTPS_PORT})" >>"$report"
-  { curl -skI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_https_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+  status_portainer_https=$( { curl -skI -H "Host: portainer.devops.$BASE_DOMAIN" "$portainer_https_url" | head -n1 || true; } | awk '{print $2}' )
+  printf "  HTTPS %s\n" "${status_portainer_https:-NA}" >>"$report"
   echo "\n- Ingress Host ($host_fqdn via ${HAPROXY_HTTP_PORT})" >>"$report"
-  { curl -sI -H "Host: $host_fqdn" "$service_http_url" | head -n1 || true; } | sed 's/^/  /' >>"$report"
+  status_ingress=$( { curl -sI -H "Host: $host_fqdn" "$service_http_url" | head -n1 || true; } | awk '{print $2}' )
+  printf "  HTTP/1.x %s\n" "${status_ingress:-NA}" >>"$report"
 fi
 
 echo "
@@ -75,4 +84,16 @@ else
 fi
 
 echo "\n---\n" >>"$report"
+
+# 简要结果输出（附加到 stdout 便于回归判读）
+if [ -n "${status_portainer_http:-}" ] || [ -n "${status_portainer_https:-}" ] || [ -n "${status_ingress:-}" ]; then
+  ok_http=0; ok_https=0; ok_ing=0
+  # Portainer HTTP 301/302 视为通过（HTTP→HTTPS 跳转）
+  if [ "${status_portainer_http:-}" = "301" ] || [ "${status_portainer_http:-}" = "302" ]; then ok_http=1; fi
+  # Portainer HTTPS 200 视为通过
+  if [ "${status_portainer_https:-}" = "200" ]; then ok_https=1; fi
+  # Ingress 200 视为通过
+  if [ "${status_ingress:-}" = "200" ]; then ok_ing=1; fi
+  echo "[smoke] result env=$env_name http=$ok_http https=$ok_https ingress=$ok_ing (codes: ${status_portainer_http:-NA},${status_portainer_https:-NA},${status_ingress:-NA})"
+fi
 echo "[smoke] report written to $report"

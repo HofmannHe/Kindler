@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Manage Portainer CE (compose up/down) and call simple API helpers (auth, endpoints CRUD).
+# Usage: scripts/portainer.sh up|down|api-login|add-endpoint|del-endpoint [...]
+# See also: tools/setup/register_edge_agent.sh, scripts/create_env.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
@@ -159,6 +162,46 @@ delete_endpoint() {
   echo "[portainer] endpoint deleted: $name (#$eid)"
 }
 
+# Add local Docker endpoint (unix:///var/run/docker.sock) by connecting directly
+# to the Portainer container's HTTP port on the infrastructure network. This
+# mirrors legacy scripts/portainer_add_local.sh behavior.
+add_local_endpoint() {
+  load_secrets
+  : "${PORTAINER_HTTP_PORT:=9000}"
+  # Discover Portainer container IP on 'infrastructure' network
+  local ip
+  ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' portainer-ce 2>/dev/null || true)
+  if [ -z "$ip" ]; then
+    echo "[portainer] cannot determine container IP on 'infrastructure' network" >&2
+    return 1
+  fi
+  local url="http://${ip}:${PORTAINER_HTTP_PORT}"
+  # Authenticate (plaintext admin password via env/secret)
+  local token
+  token=$(curl -sk -X POST "$url/api/auth" -H 'Content-Type: application/json' \
+    -d '{"username":"admin","password":"'"${PORTAINER_ADMIN_PASSWORD}"'"}' | sed -n 's/.*"jwt":"\([^"]*\)".*/\1/p')
+  if [ -z "$token" ]; then
+    echo "[portainer] auth failed against $url" >&2
+    return 2
+  fi
+  # If endpoint exists, exit success
+  if curl -sk -H "Authorization: Bearer $token" "$url/api/endpoints" | grep -q '"Name":"dockerhost"'; then
+    echo "[portainer] endpoint exists: dockerhost"
+    return 0
+  fi
+  # Create endpoint: EndpointCreationType=1 (Local), URL=unix:///var/run/docker.sock
+  local code
+  code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST "$url/api/endpoints" \
+    -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d 'Name=dockerhost&EndpointCreationType=1&URL=unix:///var/run/docker.sock&GroupID=1')
+  if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
+    echo "[portainer] add-local failed (HTTP $code)" >&2
+    return 3
+  fi
+  echo "[portainer] local Docker endpoint created: dockerhost"
+}
+
 case "${1:-}" in
   up) up ;;
   down) down ;;
@@ -167,6 +210,7 @@ case "${1:-}" in
   api-login) api_login ;;
   api-base) api_base ;;
   add-endpoint) add_endpoint "$2" "$3" ;;
+  add-local) add_local_endpoint ;;
   del-endpoint) delete_endpoint "$2" ;;
-  *) echo "Usage: $0 {up|down|status|reset-admin|api-login|add-endpoint <name> <url>|del-endpoint <name>}"; exit 1 ;;
+  *) echo "Usage: $0 {up|down|status|reset-admin|api-login|add-endpoint <name> <url>|add-local|del-endpoint <name>}"; exit 1 ;;
 esac

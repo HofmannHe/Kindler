@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Create a business cluster (kind|k3d), ensure Traefik, add HAProxy route, and register with Portainer/ArgoCD as requested.
+# Usage: scripts/create_env.sh -n <name> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] \
+#        [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route] \
+#        [--register-argocd|--no-register-argocd] [--pf-host <addr>]
+# See also: scripts/delete_env.sh, scripts/haproxy_route.sh, scripts/argocd_register.sh, scripts/portainer.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-. "$ROOT_DIR/scripts/lib.sh"
-. "$ROOT_DIR/scripts/lib_sqlite.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() {
   cat >&2 <<USAGE
@@ -202,7 +207,7 @@ ctx="$ctx_prefix-$name"
 # 预加载关键系统镜像到 k3d 集群（必须在任何 pod 部署前）
 if [ "$provider" = "k3d" ]; then
   echo "[K3D] Preloading critical system and Traefik images to avoid network pull failures..."
-  . "$ROOT_DIR/scripts/lib.sh"
+  . "$ROOT_DIR/scripts/lib/lib.sh"
   
   # 基础设施镜像（pause, coredns）
   prefetch_image rancher/mirrored-pause:3.6 || echo "[WARN] Failed to prefetch pause image"
@@ -225,7 +230,7 @@ if [ "$provider" = "k3d" ]; then
 fi
 
 # Ensure Traefik (NodePort ingress) on all clusters (idempotent, fast path)
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 if [ "$provider" = "kind" ]; then
   preload_image_to_cluster kind "$name" "traefik:v2.10" || true
   preload_image_to_cluster kind "$name" "traefik/whoami:v1.10.2" || true
@@ -245,7 +250,7 @@ if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
 fi
 if [ "$need_apply_traefik" -eq 1 ]; then
   echo "[TRAEFIK] install/update..."
-  "$ROOT_DIR"/scripts/traefik.sh install "$ctx" --nodeport "$node_port" || true
+  "$ROOT_DIR"/scripts/lib/traefik.sh install "$ctx" --nodeport "$node_port" || true
 fi
 
 # 连接 devops 集群到业务集群网络（k3d 独立子网）
@@ -262,10 +267,12 @@ fi
 # Add HAProxy route (domain-based; default to node_port)
 if [ $add_haproxy -eq 1 ]; then
   echo "[HAPROXY] Adding route for cluster $name..."
-  if ! "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port"; then
+  # 为避免在批量创建时因临时不一致导致 HAProxy reload 失败，先禁用即时重载
+  NO_RELOAD=1 \
+  "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || {
     echo "[ERROR] Failed to add HAProxy route for $name"
     exit 1
-  fi
+  }
   echo "[HAPROXY] Route added successfully"
 fi
 
@@ -276,7 +283,7 @@ if [ $reg_portainer -eq 1 ]; then
   # 预拉取镜像并导入到集群（本地有则跳过）
   if [ "${DRY_RUN:-}" != "1" ]; then
     echo "[PORTAINER] Prefetching required images (skip if cached)..."
-    . "$ROOT_DIR/scripts/lib.sh"
+    . "$ROOT_DIR/scripts/lib/lib.sh"
     prefetch_image portainer/agent:latest || true
     
     # 导入镜像到集群（避免镜像拉取失败）
@@ -311,7 +318,7 @@ if [ $reg_portainer -eq 1 ]; then
     echo "[EDGE] agent already Running, skip registration"
   else
     # 注册 Edge Agent，允许失败（ArgoCD 会自动部署）
-    "$ROOT_DIR"/scripts/register_edge_agent.sh "$name" "$provider" || echo "[WARN] Edge Agent registration failed, will be deployed by ArgoCD"
+      "$ROOT_DIR"/tools/setup/register_edge_agent.sh "$name" "$provider" || echo "[WARN] Edge Agent registration failed, will be deployed by ArgoCD"
   fi
 fi
 
@@ -336,15 +343,26 @@ fi
 
 # 创建 Git 分支（含 whoami manifests）- 必须在集群创建时执行
 echo "[INFO] Creating Git branch for $name..."
-if [ -f "$ROOT_DIR/scripts/create_git_branch.sh" ]; then
-  if "$ROOT_DIR/scripts/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
-    echo "[INFO] ✓ Git branch created successfully"
+git_cfg_ok=0
+if [ -f "$ROOT_DIR/config/git.env" ]; then
+  . "$ROOT_DIR/config/git.env" || true
+  if [ -n "${GIT_REPO_URL:-}" ]; then
+    if [ -f "$ROOT_DIR/tools/git/create_git_branch.sh" ]; then
+      if "$ROOT_DIR/tools/git/create_git_branch.sh" "$name" 2>&1 | sed 's/^/  /'; then
+        echo "[INFO] ✓ Git branch created successfully"
+        git_cfg_ok=1
+      else
+        echo "[ERROR] Git branch creation failed; skip ApplicationSet sync for strict GitOps"
+        git_cfg_ok=0
+      fi
+    else
+      echo "[WARN] tools/git/create_git_branch.sh not found (skipping Git branch creation)"
+    fi
   else
-    echo "[WARN] Git branch creation failed (continuing)"
-    echo "[WARN] GitOps deployment may not function until repository is reachable"
+    echo "[WARN] config/git.env missing GIT_REPO_URL (skip GitOps)"
   fi
 else
-  echo "[WARN] create_git_branch.sh not found (skipping Git branch creation)"
+  echo "[WARN] config/git.env not found (skip GitOps)"
 fi
 
 # 保存集群配置到数据库（可选，失败不影响核心功能）
@@ -407,7 +425,7 @@ if db_is_available 2>/dev/null; then
       db_insert_success=true
       
       # [修复] 在数据库更新后同步 ApplicationSet（确保数据一致）
-      if [ "${DRY_RUN:-}" != "1" ] && [ "${REGISTER_ARGOCD:-1}" = "1" ]; then
+      if [ "${DRY_RUN:-}" != "1" ] && [ "${REGISTER_ARGOCD:-1}" = "1" ] && [ "$git_cfg_ok" = "1" ]; then
         if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
           echo "[INFO] Syncing ApplicationSet (after DB update)..."
           "$ROOT_DIR"/scripts/sync_applicationset.sh 2>&1 | sed 's/^/  /' || echo "  [WARNING] ApplicationSet sync failed"

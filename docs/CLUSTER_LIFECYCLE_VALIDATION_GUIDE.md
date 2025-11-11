@@ -93,8 +93,8 @@ kubectl --context k3d-devops exec -n paas deploy/postgresql -- \
   psql -U admin -d paas -c \
   "SELECT name, provider, node_port, http_port, https_port, subnet FROM clusters WHERE name='${TEST_CLUSTER}';"
 
-# 或使用 list_env.sh
-scripts/list_env.sh | grep "$TEST_CLUSTER"
+# 或使用 cluster.sh list
+scripts/cluster.sh list | grep "$TEST_CLUSTER"
 ```
 
 **验收标准**：
@@ -371,8 +371,8 @@ else
   echo "❌ 数据库记录仍然存在 (count: $DB_RECORD)"
 fi
 
-# 或使用 list_env.sh
-if scripts/list_env.sh | grep -q "$TEST_CLUSTER"; then
+# 或使用 cluster.sh list
+if scripts/cluster.sh list | grep -q "$TEST_CLUSTER"; then
   echo "❌ 环境列表仍显示该集群"
 else
   echo "✅ 环境列表已清理"
@@ -381,7 +381,7 @@ fi
 
 **验收标准**：
 - ✅ 数据库无该集群记录
-- ✅ list_env.sh 不显示该集群
+- ✅ cluster.sh list 不显示该集群
 
 ---
 
@@ -709,4 +709,3 @@ scripts/validate_cluster.sh test-123456
 
 **完成时间**: 预计整个流程需要 5-10 分钟  
 **报告生成**: 2025-10-20 14:50 CST
-

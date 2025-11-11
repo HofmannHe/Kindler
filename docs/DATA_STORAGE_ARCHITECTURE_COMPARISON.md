@@ -183,7 +183,7 @@ git commit -m "chore: export cluster config from SQLite"
 1. 创建 `scripts/lib_sqlite.sh` 统一访问层
 2. 修改 `create_env.sh` 使用 SQLite
 3. 修改 `delete_env.sh` 使用 SQLite
-4. 修改 `list_env.sh` 使用 SQLite
+4. 修改 `cluster.sh list` 使用 SQLite（或通过 SQLite 提供数据）
 
 ### Phase 3: CSV 降级为只读导出
 1. 创建 `scripts/export_csv.sh`
@@ -256,4 +256,3 @@ git commit -m "chore: export cluster config from SQLite"
 **文档版本**: v1.0  
 **生成时间**: 2025-10-21  
 **作者**: AI Assistant
-

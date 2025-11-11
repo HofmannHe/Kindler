@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Clean business clusters and related infra state; preserve devops unless --all/--include-devops.
+# Usage: scripts/clean.sh [--all] [--include-devops]
+# See also: scripts/bootstrap.sh, scripts/create_env.sh, scripts/clean_ns.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 

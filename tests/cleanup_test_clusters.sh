@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/scripts/lib_db.sh"
-source "$ROOT_DIR/scripts/lib_git.sh"
+source "$ROOT_DIR/scripts/lib/lib_git.sh"
 
 echo "=========================================="
 echo "  Test Cluster Cleanup Tool"
@@ -209,4 +209,3 @@ if [ $total_cleaned -eq 0 ]; then
 else
   echo "✓ Cleanup completed successfully"
 fi
-

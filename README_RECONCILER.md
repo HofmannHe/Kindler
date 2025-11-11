@@ -20,25 +20,25 @@ Reconciler 是 Kindler 的后台服务，实现声明式集群管理。
 
 ```bash
 cd /home/cloud/github/hofmannhe/kindler
-./scripts/start_reconciler.sh start
+./tools/start_reconciler.sh start
 ```
 
 ### 查看状态
 
 ```bash
-./scripts/start_reconciler.sh status
+./tools/start_reconciler.sh status
 ```
 
 ### 查看日志
 
 ```bash
-./scripts/start_reconciler.sh logs
+./tools/start_reconciler.sh logs
 ```
 
 ### 停止 Reconciler
 
 ```bash
-./scripts/start_reconciler.sh stop
+./tools/start_reconciler.sh stop
 ```
 
 ## 使用方式
@@ -62,7 +62,7 @@ cd /home/cloud/github/hofmannhe/kindler
 ## 并发与锁
 
 - 默认并发度：`RECONCILER_CONCURRENCY=3`
-- 配置方式：环境变量（`start_reconciler.sh` 或 systemd 中设置）
+- 配置方式：环境变量（`tools/start_reconciler.sh` 或 systemd 中设置）
   - 示例：`RECONCILER_CONCURRENCY=3 ./scripts/reconciler.sh loop`
 - 保障机制：
   - 集群级互斥锁：同名集群的调和动作串行（锁文件：`/tmp/kindler_reconcile_<name>.lock`）
@@ -129,7 +129,7 @@ running → deleting → (从数据库删除)
 ### 查看实时日志
 
 ```bash
-./scripts/start_reconciler.sh logs
+./tools/start_reconciler.sh logs
 ```
 
 ### 手动触发 Reconcile
@@ -143,7 +143,7 @@ running → deleting → (从数据库删除)
 ### 选项 1: 后台进程（当前）
 
 ```bash
-./scripts/start_reconciler.sh start
+./tools/start_reconciler.sh start
 ```
 
 ### 选项 2: cron 任务
@@ -200,8 +200,8 @@ sudo systemctl start kindler-reconciler
 ### Reconciler 未运行
 
 ```bash
-./scripts/start_reconciler.sh status
-./scripts/start_reconciler.sh start
+./tools/start_reconciler.sh status
+./tools/start_reconciler.sh start
 ```
 
 ## 总结
