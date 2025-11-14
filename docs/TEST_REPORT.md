@@ -2013,3 +2013,287 @@ local-registry                   registry:2                              Up 2 da
 - 9 test-script-k3d type=7 url=192.168.51.30
 - 10 test-script-kind type=7 url=192.168.51.30
 \n---\n
+
+### Reconcile Snapshot (2025-11-14 19:55:39)
+
+- 状态 Status: success
+- 日志 Log: /home/cloud/github/hofmannhe/kindler/worktrees/stabilize-main/logs/regression/20251114-194739/phase3-reconcile.log
+
+```json
+[{"name": "dev", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "dev-a", "provider": "kind", "desired": "-", "actual": "-", "action": "create", "result": "created", "message": "cluster online"}, {"name": "dev-b", "provider": "kind", "desired": "-", "actual": "-", "action": "create", "result": "created", "message": "cluster online"}, {"name": "dev-c", "provider": "kind", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "prod", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "uat", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}]
+```
+
+- Latest History Entry:
+```json
+{"timestamp": "2025-11-14T11:55:12Z", "duration_seconds": 183, "exit_code": 0, "source": "loop", "invoker": "scripts/reconcile_loop.sh", "history_file": "/home/cloud/github/hofmannhe/kindler/worktrees/stabilize-main/logs/reconcile_history.jsonl", "args": ["--from-db"], "from_db": true, "dry_run": false, "prune_missing": false, "plan_count": 0, "executed_count": 2, "failed_count": 0, "pruned_count": 0, "summary": [{"name": "dev", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "dev-a", "provider": "kind", "desired": "-", "actual": "-", "action": "create", "result": "created", "message": "cluster online"}, {"name": "dev-b", "provider": "kind", "desired": "-", "actual": "-", "action": "create", "result": "created", "message": "cluster online"}, {"name": "dev-c", "provider": "kind", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "prod", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}, {"name": "uat", "provider": "k3d", "desired": "present", "actual": "running", "action": "noop", "result": "ok", "message": "cluster healthy"}]}
+```
+# Smoke Test @ 2025-11-14 19:58:54
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 6 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.dev.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
+# Smoke Test @ 2025-11-14 19:58:55
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 6 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.uat.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
+# Smoke Test @ 2025-11-14 19:58:55
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 6 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.prod.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
+# Smoke Test @ 2025-11-14 19:58:55
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 6 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.dev-a.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
+# Smoke Test @ 2025-11-14 19:58:55
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 6 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.dev-b.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
+# Smoke Test @ 2025-11-14 19:58:56
+- HAPROXY_HOST: 192.168.51.30
+- BASE_DOMAIN: 192.168.51.30.sslip.io
+\n## Containers
+NAMES                            IMAGE                                   STATUS
+test-script-kind-control-plane   kindest/node:v1.31.12                   Up About a minute
+k3d-test-script-k3d-serverlb     ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 2 minutes
+k3d-test-script-k3d-server-0     rancher/k3s:v1.31.5-k3s1                Up 2 minutes
+dev-c-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-b-control-plane              kindest/node:v1.31.12                   Up 5 minutes
+dev-a-control-plane              kindest/node:v1.31.12                   Up 6 minutes
+k3d-prod-serverlb                ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 7 minutes
+k3d-prod-server-0                rancher/k3s:v1.31.5-k3s1                Up 7 minutes
+kindler-webui-frontend           infrastructure-kindler-webui-frontend   Up 7 minutes (healthy)
+kindler-webui-backend            infrastructure-kindler-webui-backend    Up 7 minutes (healthy)
+k3d-uat-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 8 minutes
+k3d-uat-server-0                 rancher/k3s:v1.31.5-k3s1                Up 8 minutes
+k3d-dev-serverlb                 ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-dev-server-0                 rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+k3d-devops-serverlb              ghcr.io/k3d-io/k3d-proxy:5.8.3          Up 9 minutes
+k3d-devops-server-0              rancher/k3s:v1.31.5-k3s1                Up 9 minutes
+portainer-ce                     portainer/portainer-ce:2.33.2-alpine    Up 7 minutes
+haproxy-gw                       haproxy:3.2.6-alpine3.22                Up 2 minutes
+gitlab                           gitlab/gitlab-ce:17.11.7-ce.0           Up 2 days (healthy)
+local-registry                   registry:2                              Up 2 days
+\n## Curl
+\n- Portainer HTTP (80)
+  HTTP/1.x 301
+\n- Portainer HTTPS (443)
+  HTTPS 200
+\n- Ingress Host (whoami.dev-c.192.168.51.30.sslip.io via 80)
+  HTTP/1.x 200
+
+## Portainer Endpoints
+- 1 dockerhost type=1 url=unix:///var/run/docker.sock
+- 2 dev type=7 url=192.168.51.30
+- 3 devops type=7 url=192.168.51.30
+- 4 uat type=7 url=192.168.51.30
+- 5 prod type=7 url=192.168.51.30
+- 6 dev-a type=7 url=192.168.51.30
+- 7 dev-b type=7 url=192.168.51.30
+- 8 dev-c type=7 url=192.168.51.30
+- 9 test-script-k3d type=7 url=192.168.51.30
+- 10 test-script-kind type=7 url=192.168.51.30
+\n---\n
