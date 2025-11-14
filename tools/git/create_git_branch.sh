@@ -59,6 +59,12 @@ fi
 
 cd repo
 
+if [ -n "$GIT_PASSWORD" ]; then
+  PUSH_REMOTE="$GIT_REPO_URL_AUTH"
+else
+  PUSH_REMOTE="origin"
+fi
+
 # 检查分支是否存在
 echo "[2/5] Checking if branch exists..."
 if git ls-remote --heads origin "$CLUSTER_NAME" | grep -q "$CLUSTER_NAME"; then
@@ -243,26 +249,32 @@ if command -v flock >/dev/null 2>&1; then
 fi
 
 push_with_retry() {
-  local tries=0 max=5
-  while :; do
-    tries=$((tries+1))
-    if [ -n "$GIT_PASSWORD" ]; then
-      git push "$GIT_REPO_URL_AUTH" "$CLUSTER_NAME" 2>&1 | grep -v "password" && break || true
+  local tries=0 max=5 delay=2 rc=0
+  while [ $tries -lt $max ]; do
+    tries=$((tries + 1))
+    if [ -n "$GIT_PASSWORD" ] && [ "$PUSH_REMOTE" = "$GIT_REPO_URL_AUTH" ]; then
+      git push "$PUSH_REMOTE" "$CLUSTER_NAME" 2>&1 | grep -v "password" || true
+      rc=${PIPESTATUS[0]}
     else
-      git push origin "$CLUSTER_NAME" && break || true
+      git push "$PUSH_REMOTE" "$CLUSTER_NAME" || true
+      rc=$?
     fi
-    if [ $tries -ge $max ]; then
-      echo "  ✗ push failed after ${max} attempts" >&2
-      break
+    if [ $rc -eq 0 ]; then
+      echo "  ✓ push succeeded (attempt $tries)"
+      return 0
     fi
-    echo "  ⚠ push failed (attempt $tries), fetching and retrying..."
+    echo "  ⚠ push failed (attempt $tries/$max, rc=$rc); fetching and retrying..." >&2
     git fetch --prune origin >/dev/null 2>&1 || true
     git rebase "origin/$CLUSTER_NAME" >/dev/null 2>&1 || true
-    sleep $((RANDOM%3+1))
+    sleep $((delay * tries))
   done
+  echo "  ✗ push failed after ${max} attempts" >&2
+  return $rc
 }
 
-push_with_retry
+if ! push_with_retry; then
+  exit 1
+fi
 
 if command -v flock >/dev/null 2>&1; then
   flock -u 209 2>/dev/null || true

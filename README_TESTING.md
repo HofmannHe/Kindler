@@ -9,12 +9,12 @@
 bash tests/run_tests.sh services
 
 # 方式 2: 使用快速验证脚本（更简单）
-bash scripts/quick_verify.sh
+bash tests/quick_verify.sh
 ```
 
 ## 完整测试
 
-运行所有测试模块：
+运行全部测试模块：
 
 ```bash
 bash tests/run_tests.sh all
@@ -22,11 +22,23 @@ bash tests/run_tests.sh all
 
 ## 回归测试
 
-完整的端到端测试（清理 → 引导 → 创建 → 验证）：
+首选零手动端到端流程：
 
 ```bash
-bash tests/regression_test.sh
+bash scripts/regression.sh --full
 ```
+
+- 自动执行 clean → bootstrap → 根据 `config/environments.csv` 创建 ≥3 个 kind 和 ≥3 个 k3d 集群。
+- 串联 `scripts/reconcile_loop.sh --once`、`scripts/haproxy_sync.sh --prune`、`scripts/smoke.sh <env>` 与 `bats tests`，出现报错立即停止。
+- 回归结果会写入 `docs/TEST_REPORT.md`，流程细节与异常恢复见 `docs/REGRESSION_TEST_PLAN.md`。
+
+调试或局部复跑可直接执行：
+
+```bash
+bash tests/regression_test.sh --skip-clean --skip-bootstrap --clusters dev,uat
+```
+
+按需调整参数即可重放部分阶段。
 
 ## 测试模块
 
@@ -83,4 +95,3 @@ docker logs haproxy-gw --tail 50
 # 查看测试日志
 cat data/test_suite_run.log
 ```
-

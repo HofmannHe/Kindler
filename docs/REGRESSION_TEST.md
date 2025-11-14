@@ -70,6 +70,12 @@ ls -l config/environments.csv
 
 ## 测试流程
 
+### 脚本化计划（必读）
+
+- 标准回归流程已固化在 `docs/REGRESSION_TEST_PLAN.md`，必须通过 `scripts/regression.sh --full`（或 `tests/regression_test.sh --full`）执行。  
+- 若任一环节需要人工命令（kubectl/curl/UI 点击），即视为本轮回归失败，需要修复脚本或配置后重试。  
+- 支持的参数（`--skip-clean`、`--skip-bootstrap`、`--clusters dev,uat`、`--skip-smoke`、`--skip-bats`）详见计划文档；仅限调试时使用，最终验收仍需无跳过的 `--full` 运行。
+
 ### Phase 1: 基础设施部署
 
 **目标**: 验证 devops 集群和核心服务正常部署
@@ -720,4 +726,3 @@ docker inspect portainer-ce | jq '.[0].NetworkSettings.Networks'
 - [AGENTS.md](../AGENTS.md) - 项目规范
 - [CLUSTER_MANAGEMENT.md](CLUSTER_MANAGEMENT.md) - 集群管理指南
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 架构设计
-

@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "$ROOT_DIR/scripts/lib_db.sh"
+source "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 # 全局变量
 TEST_CLUSTER_PREFIX="test-db-$$"
@@ -101,7 +101,7 @@ test_db_insert_k3d_cluster() {
     - subnet: $subnet
     - server_ip: $server_ip
   Error: $(cat /tmp/test_db_insert_error.log 2>/dev/null || echo 'no error log')
-  Fix Suggestion: Check db_insert_cluster implementation in scripts/lib_db.sh
+  Fix Suggestion: Check db_insert_cluster implementation in scripts/lib/lib_sqlite.sh
   Debug Command: kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c "SELECT * FROM clusters WHERE name='$cluster_name';"
 EOF
     return 1
@@ -481,5 +481,3 @@ EOF
 
 # 执行主函数
 main "$@"
-
-

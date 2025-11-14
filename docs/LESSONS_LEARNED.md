@@ -64,7 +64,7 @@
 ### 阶段 1: 只做 SQLite 迁移（最小变更）
 
 1. ✅ 创建 `scripts/lib_sqlite.sh`
-2. ✅ 修改所有脚本的数据源（lib_db.sh → lib_sqlite.sh）
+2. ✅ 修改所有脚本的数据源（legacy `lib_db.sh` → `lib/lib_sqlite.sh`）
 3. ✅ 修改 WebUI 数据库表结构（添加 server_ip）
 4. ✅ 修改 bootstrap.sh（移除 PostgreSQL 部署，添加 CSV 导入）
 5. ❌ **不应该做**：修改任何其他逻辑
@@ -126,7 +126,7 @@
 ### 应该保留的修改
 
 1. ✅ `scripts/lib_sqlite.sh` - 核心功能
-2. ✅ 所有脚本的数据源迁移（lib_db.sh → lib_sqlite.sh）
+2. ✅ 所有脚本的数据源迁移（legacy `lib_db.sh` → `lib/lib_sqlite.sh`）
 3. ✅ WebUI 数据库表结构更新
 4. ✅ bootstrap.sh 的 SQLite 初始化
 5. ✅ AGENTS.md 文档更新

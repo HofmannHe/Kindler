@@ -35,7 +35,7 @@
 13. `scripts/lib.sh`（间接使用）
 
 **修改内容**:
-- 将 `. "$ROOT_DIR/scripts/lib_db.sh"` 改为 `. "$ROOT_DIR/scripts/lib_sqlite.sh"`
+- 确保所有脚本引用 `. "$ROOT_DIR/scripts/lib/lib_sqlite.sh"`（legacy `scripts/lib_db.sh` 已删除）
 - 保持所有其他逻辑不变
 - 更新错误提示信息（移除 PostgreSQL 引用）
 
@@ -124,7 +124,7 @@
 ### 核心功能（必需）
 
 1. ✅ `scripts/lib_sqlite.sh` - SQLite 操作库
-2. ✅ 所有迁移后的脚本（lib_db.sh → lib_sqlite.sh）
+2. ✅ 所有迁移后的脚本均使用 `lib/lib_sqlite.sh`（原 `lib_db.sh` 已移除）
 3. ✅ 修改后的 WebUI 代码
 
 ### 工具脚本（可选保留）

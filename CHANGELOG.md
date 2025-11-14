@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### 🧹 Main Worktree Stabilization
+
+- 清理遗留的 `scripts/lib_db.sh`，所有脚本/测试统一引入 `scripts/lib/lib_sqlite.sh`，避免双数据源漂移。
+- 为 `scripts/` 根目录所有入口脚本补全 `Description/Usage/Category/Status` 元数据，并通过 `scripts/scripts_inventory.sh --check` 强制校验，产出全新的 `docs/scripts_inventory.md`。
+- `tools/legacy/*.sh` 增加明确的 `[DEPRECATED]` 运行提示，引导用户改用 `scripts/register_edge_agent.sh`、`tools/maintenance/batch_create_envs.sh` 等规范命令。
+
+### ✅ Regression Automation
+
+- 新增 `scripts/regression.sh`、`scripts/reconcile_loop.sh`、`scripts/db_verify.sh`、`scripts/test_data_consistency.sh` 等入口，配合 `tests/regression_test.sh` 自动化执行 clean → bootstrap → reconcile → smoke → bats，并在 `docs/TEST_REPORT.md` 记录完整输出。
+- `tools/dev/lint.sh` 统一 `shfmt` 参数，配合 `shellcheck` 清理 `scripts/cleanup_nonexistent_clusters.sh` 等脚本告警，保证回归前 lint 结果稳定。
+- 新增 `docs/REGRESSION_TEST_PLAN.md` 描述强制执行顺序（clean → bootstrap → ≥3 kind/≥3 k3d → haproxy_sync → smoke），并将最新一次 `scripts/regression.sh --full` 的验证写入 `docs/TEST_REPORT.md`。
+
 ## [1.1.0] - 2025-10-21
 
 ### 🚀 Web UI PostgreSQL 集成完成

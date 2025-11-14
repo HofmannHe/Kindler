@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+echo "[DEPRECATED] register_portainer_agents.sh 已弃用，请改用 scripts/register_edge_agent.sh 或 scripts/portainer.sh add-endpoint。" >&2
+
 ROOT_DIR="$(dirname "$0")/.."
 source "$ROOT_DIR/config/secrets.env"
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi

@@ -79,7 +79,7 @@
 
 **新文件**：
 - `scripts/test_full_cycle.sh`
-- `scripts/monitor_test.sh`
+- `scripts/monitor_test.sh`（已在 2025-11 移除，统一使用 `scripts/smoke.sh`）
 
 **功能特性**：
 - **多轮迭代测试**：支持 `--iterations N` 参数（默认3次）

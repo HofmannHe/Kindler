@@ -1,6 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+echo "[DEPRECATED] complete_edge_registration.sh 已弃用，请使用 scripts/register_edge_agent.sh 或 portainer.sh add-endpoint 流程。" >&2
 echo "=== Portainer Edge Agent 完整自动注册脚本 ==="
 
 # 获取项目根目录

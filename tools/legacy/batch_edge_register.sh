@@ -1,6 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+echo "[DEPRECATED] batch_edge_register.sh 已弃用，请使用 scripts/register_edge_agent.sh 和 config/environments.csv 中定义的集群列表。" >&2
 echo "=========================================="
 echo "批量部署并注册 Portainer Edge Agent"
 echo "=========================================="

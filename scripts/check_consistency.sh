@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# 检查 DB、Git、K8s 三者一致性
-# 输出不一致项和修复建议
-
 set -Eeuo pipefail
+IFS=$'\n\t'
+# Description: Compare DB (SQLite), Git branches, and Kubernetes clusters; report drift with fix hints.
+# Usage: scripts/check_consistency.sh
+# Category: diagnostics
+# Status: stable
+# See also: scripts/reconcile.sh, scripts/sync_applicationset.sh
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib.sh"
@@ -21,8 +24,8 @@ inconsistencies=0
 
 # 1. 从 DB 读取集群列表
 echo "[1/5] 读取数据库记录..."
-if db_is_available 2>/dev/null; then
-  db_clusters=$(sqlite_query "SELECT name FROM clusters ORDER BY name;" 2>/dev/null | grep -v '^$' || echo "")
+if db_is_available > /dev/null 2>&1; then
+  db_clusters=$(sqlite_query "SELECT name FROM clusters ORDER BY name;" 2> /dev/null | grep -v '^$' || echo "")
   db_count=$(echo "$db_clusters" | grep -c '^' || echo "0")
   echo "  ✓ DB: $db_count clusters"
   echo "$db_clusters" | sed 's/^/    - /'
@@ -37,7 +40,7 @@ echo ""
 # 2. 检查 Git 分支
 echo "[2/5] 检查 Git 分支..."
 if [ -n "${GIT_REPO_URL:-}" ]; then
-  git_branches=$(git ls-remote --heads "$GIT_REPO_URL" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||' | grep -v -E '^(main|develop|release|devops|master)$' | sort || echo "")
+  git_branches=$(git ls-remote --heads "$GIT_REPO_URL" 2> /dev/null | awk '{print $2}' | sed 's|refs/heads/||' | grep -v -E '^(main|develop|release|devops|master)$' | sort || echo "")
   git_count=$(echo "$git_branches" | grep -c '^' || echo "0")
   echo "  ✓ Git: $git_count branches"
   echo "$git_branches" | sed 's/^/    - /'
@@ -51,7 +54,7 @@ echo ""
 # 3. 检查 K8s 集群
 echo "[3/5] 检查 Kubernetes 集群..."
 k8s_clusters=""
-for ctx in $(kubectl config get-contexts -o name 2>/dev/null | grep -E '^(k3d-|kind-)' | sed 's/^k3d-//;s/^kind-//' | grep -v '^devops$' | sort); do
+for ctx in $(kubectl config get-contexts -o name 2> /dev/null | grep -E '^(k3d-|kind-)' | sed 's/^k3d-//;s/^kind-//' | grep -v '^devops$' | sort); do
   k8s_clusters="${k8s_clusters}${ctx}"$'\n'
 done
 k8s_clusters=$(echo "$k8s_clusters" | grep -v '^$' || echo "")

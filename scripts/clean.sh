@@ -3,6 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 # Description: Clean business clusters and related infra state; preserve devops unless --all/--include-devops.
 # Usage: scripts/clean.sh [--all] [--include-devops]
+# Category: lifecycle
+# Status: stable
 # See also: scripts/bootstrap.sh, scripts/create_env.sh, scripts/clean_ns.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -12,7 +14,7 @@ CLEAN_DEVOPS=0
 VERIFY=0
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --all|--include-devops)
+    --all | --include-devops)
       CLEAN_DEVOPS=1
       shift
       ;;
@@ -56,8 +58,8 @@ echo "[CLEAN] Ensuring Portainer is running for endpoint cleanup..."
 # 确保Portainer在endpoint清理时是运行的
 if ! docker ps --format '{{.Names}}' | grep -q '^portainer-ce$'; then
   echo "[CLEAN] Starting Portainer temporarily for cleanup..."
-  docker start portainer-ce 2>/dev/null || true
-  sleep 5  # 等待Portainer启动
+  docker start portainer-ce 2> /dev/null || true
+  sleep 5 # 等待Portainer启动
 fi
 
 echo "[CLEAN] Deleting Portainer endpoints..."
@@ -65,25 +67,25 @@ echo "[CLEAN] Deleting Portainer endpoints..."
 if docker ps --format '{{.Names}}' | grep -q '^portainer-ce$'; then
   # 从数据库读取集群列表（优先）
   if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-       psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+    psql -U kindler -d kindler -c "SELECT 1" > /dev/null 2>&1; then
     kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-      psql -U kindler -d kindler -t -c "SELECT name FROM clusters" 2>/dev/null | \
-      while read -r env; do
-        env=$(echo "$env" | xargs)  # trim whitespace
+      psql -U kindler -d kindler -t -c "SELECT name FROM clusters" 2> /dev/null \
+      | while read -r env; do
+        env=$(echo "$env" | xargs) # trim whitespace
         [ -n "$env" ] || continue
         ep=$(echo "$env" | tr -d '-')
-        "$ROOT_DIR/scripts/portainer.sh" del-endpoint "$ep" >/dev/null 2>&1 || true
+        "$ROOT_DIR/scripts/portainer.sh" del-endpoint "$ep" > /dev/null 2>&1 || true
       done
   elif [ -f "$ROOT_DIR/config/environments.csv" ]; then
     # Fallback to CSV
     awk -F, '$0 !~ /^\s*#/ && NF>0 {print $1}' "$ROOT_DIR/config/environments.csv" | while read -r env; do
       [ -n "$env" ] || continue
       ep=$(echo "$env" | tr -d '-')
-      "$ROOT_DIR/scripts/portainer.sh" del-endpoint "$ep" >/dev/null 2>&1 || true
+      "$ROOT_DIR/scripts/portainer.sh" del-endpoint "$ep" > /dev/null 2>&1 || true
     done
   fi
   # 额外清理 devops 端点
-  "$ROOT_DIR/scripts/portainer.sh" del-endpoint devops >/dev/null 2>&1 || true
+  "$ROOT_DIR/scripts/portainer.sh" del-endpoint devops > /dev/null 2>&1 || true
 fi
 
 if [ "$CLEAN_DEVOPS" = "1" ]; then
@@ -92,24 +94,24 @@ if [ "$CLEAN_DEVOPS" = "1" ]; then
     docker compose -f "$ROOT_DIR/webui/docker-compose.yml" down --timeout 0 || true
   fi
   # Force stop WebUI containers in case docker-compose fails
-  docker stop --timeout 0 kindler-webui-backend kindler-webui-frontend >/dev/null 2>&1 || true
-  docker rm -f kindler-webui-backend kindler-webui-frontend >/dev/null 2>&1 || true
+  docker stop --timeout 0 kindler-webui-backend kindler-webui-frontend > /dev/null 2>&1 || true
+  docker rm -f kindler-webui-backend kindler-webui-frontend > /dev/null 2>&1 || true
 
   echo "[CLEAN] Stopping infrastructure (Portainer + HAProxy)..."
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" down -v --timeout 0 || true
 
   echo "[CLEAN] Force stopping Portainer containers..."
-  docker stop --timeout 0 portainer-ce >/dev/null 2>&1 || true
-  docker rm -f portainer-ce >/dev/null 2>&1 || true
+  docker stop --timeout 0 portainer-ce > /dev/null 2>&1 || true
+  docker rm -f portainer-ce > /dev/null 2>&1 || true
 
   echo "[CLEAN] Force stopping HAProxy containers..."
-  docker stop --timeout 0 haproxy-gw >/dev/null 2>&1 || true
-  docker rm -f haproxy-gw >/dev/null 2>&1 || true
+  docker stop --timeout 0 haproxy-gw > /dev/null 2>&1 || true
+  docker rm -f haproxy-gw > /dev/null 2>&1 || true
 
   echo "[CLEAN] Removing all Portainer and infrastructure volumes..."
   # 先删除仍占用 portainer_secrets 的临时容器（由 bootstrap 生成 htpasswd 时创建）
   for cid in $(docker ps -aq --filter volume=portainer_secrets); do
-    docker rm -f "$cid" >/dev/null 2>&1 || true
+    docker rm -f "$cid" > /dev/null 2>&1 || true
   done
 
   # 1) 优先删除显式命名卷，兼容 compose 项目名前缀（如 infrastructure_portainer_data）
@@ -118,22 +120,22 @@ if [ "$CLEAN_DEVOPS" = "1" ]; then
     portainer_secrets \
     infrastructure_portainer_data \
     infrastructure_portainer_secrets; do
-    docker volume rm -f "$v" >/dev/null 2>&1 || true
+    docker volume rm -f "$v" > /dev/null 2>&1 || true
   done
 
   # 2) 兜底：匹配所有包含 portainer 或 infrastructure 关键字的卷名称
-  docker volume ls -q | grep -E '(^|_)portainer(_|$)|(^|_)infrastructure(_|$)' | \
-    xargs -r docker volume rm -f 2>/dev/null || true
+  docker volume ls -q | grep -E '(^|_)portainer(_|$)|(^|_)infrastructure(_|$)' \
+    | xargs -r docker volume rm -f 2> /dev/null || true
 
   # 3) 特殊：external 卷 portainer_secrets 可能未被上面模式捕获，再显式删除一次
-  docker volume rm -f portainer_secrets >/dev/null 2>&1 || true
+  docker volume rm -f portainer_secrets > /dev/null 2>&1 || true
 else
   echo "[CLEAN] Skipping Portainer/HAProxy cleanup (use --all to clean)"
 fi
 
 echo "[CLEAN] Cleaning Portainer Edge agents from clusters..."
-for ctx in $(kubectl config get-contexts -o name 2>/dev/null | grep -E '^k3d-|^kind-'); do
-  kubectl --context="$ctx" delete namespace portainer-edge --ignore-not-found=true --timeout=10s >/dev/null 2>&1 || true
+for ctx in $(kubectl config get-contexts -o name 2> /dev/null | grep -E '^k3d-|^kind-'); do
+  kubectl --context="$ctx" delete namespace portainer-edge --ignore-not-found=true --timeout=10s > /dev/null 2>&1 || true
 done
 
 echo "[CLEAN] Reset haproxy.cfg dynamic sections..."
@@ -151,7 +153,7 @@ if [ -f "$CFG" ]; then
       if (in_dyn_be) {next}
       print $0
     }
-  ' "$CFG" >"$tmp" && mv "$tmp" "$CFG" || true
+  ' "$CFG" > "$tmp" && mv "$tmp" "$CFG" || true
 
   # 额外重置 DYNAMIC USE_BACKEND 区块，避免遗留 use_backend / host_* 引用
   tmp2=$(mktemp)
@@ -163,7 +165,7 @@ if [ -f "$CFG" ]; then
       if (in_dyn_ub) {next}
       print $0
     }
-  ' "$CFG" >"$tmp2" && mv "$tmp2" "$CFG" || true
+  ' "$CFG" > "$tmp2" && mv "$tmp2" "$CFG" || true
 fi
 
 if [ "$CLEAN_DEVOPS" = "0" ]; then
@@ -179,17 +181,17 @@ delete_one() {
   local max_retry=3
   local i=0
   local success=0
-  
+
   while [ $i -lt $max_retry ]; do
     case "$p" in
-      k3d) 
+      k3d)
         if k3d cluster delete "$n" 2>&1; then
           echo "[CLEAN] ✓ Deleted k3d cluster: $n"
           success=1
           break
         fi
         ;;
-      *)   
+      *)
         if kind delete cluster --name "$n" 2>&1; then
           echo "[CLEAN] ✓ Deleted kind cluster: $n"
           success=1
@@ -197,28 +199,28 @@ delete_one() {
         fi
         ;;
     esac
-    i=$((i+1))
+    i=$((i + 1))
     [ $i -lt $max_retry ] && sleep 2
   done
-  
+
   if [ $success -eq 0 ]; then
     echo "[CLEAN] ✗ Failed to delete cluster after $max_retry retries: $n (ignoring)"
   fi
-  
-  return 0  # 总是返回成功，避免整个清理流程中断
+
+  return 0 # 总是返回成功，避免整个清理流程中断
 }
 
 # from PostgreSQL database (primary source)
 if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-     psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+  psql -U kindler -d kindler -c "SELECT 1" > /dev/null 2>&1; then
   echo "[CLEAN] Reading clusters from PostgreSQL database..."
-  
+
   if [ "$CLEAN_DEVOPS" = "0" ]; then
     # 过滤掉 devops 集群
     kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters WHERE name != 'devops' ORDER BY name" 2>/dev/null | \
-      while IFS='|' read -r n p; do
-        n=$(echo "$n" | xargs)  # trim whitespace
+      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters WHERE name != 'devops' ORDER BY name" 2> /dev/null \
+      | while IFS='|' read -r n p; do
+        n=$(echo "$n" | xargs) # trim whitespace
         p=$(echo "$p" | xargs)
         [ -n "$n" ] || continue
         [ -n "$p" ] || p=kind
@@ -227,8 +229,8 @@ if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
   else
     # 删除所有集群（包括 devops）
     kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters ORDER BY name" 2>/dev/null | \
-      while IFS='|' read -r n p; do
+      psql -U kindler -d kindler -t -c "SELECT name, provider FROM clusters ORDER BY name" 2> /dev/null \
+      | while IFS='|' read -r n p; do
         n=$(echo "$n" | xargs)
         p=$(echo "$p" | xargs)
         [ -n "$n" ] || continue
@@ -237,7 +239,7 @@ if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
       done
   fi
 else
-  echo "[CLEAN] PostgreSQL not available, falling back to CSV..."
+  echo "[CLEAN] WARN: Database unavailable, falling back to config/environments.csv (legacy path)"
   # Fallback to CSV if database is not available
   if [ -f "$ROOT_DIR/config/environments.csv" ]; then
     if [ "$CLEAN_DEVOPS" = "0" ]; then
@@ -266,8 +268,10 @@ fi
 # also attempt defaults (exclude devops if CLEAN_DEVOPS=0)
 for n in dev uat prod ops; do
   up="$(echo "$n" | tr '[:lower:]' '[:upper:]')"
-  pvar="PROVIDER_${up}"; nvar="CLUSTER_${up}"
-  provider="${!pvar:-kind}"; name="${!nvar:-$n}"
+  pvar="PROVIDER_${up}"
+  nvar="CLUSTER_${up}"
+  provider="${!pvar:-kind}"
+  name="${!nvar:-$n}"
   delete_one "$name" "$provider"
 done
 
@@ -282,44 +286,44 @@ fi
 # Force cleanup any remaining k3d/kind clusters
 if [ "$CLEAN_DEVOPS" = "1" ]; then
   echo "[CLEAN] Force cleanup all remaining clusters..."
-  k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | while read -r cluster; do
+  k3d cluster list -o json 2> /dev/null | jq -r '.[].name' 2> /dev/null | while read -r cluster; do
     [ -n "$cluster" ] && k3d cluster delete "$cluster" 2>&1 || true
   done
-  kind get clusters 2>/dev/null | while read -r cluster; do
+  kind get clusters 2> /dev/null | while read -r cluster; do
     [ -n "$cluster" ] && kind delete cluster --name "$cluster" 2>&1 || true
   done
 else
   echo "[CLEAN] Force cleanup business clusters only..."
-  k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | while read -r cluster; do
+  k3d cluster list -o json 2> /dev/null | jq -r '.[].name' 2> /dev/null | while read -r cluster; do
     [ -n "$cluster" ] && [ "$cluster" != "devops" ] && k3d cluster delete "$cluster" 2>&1 || true
   done
-  kind get clusters 2>/dev/null | while read -r cluster; do
+  kind get clusters 2> /dev/null | while read -r cluster; do
     [ -n "$cluster" ] && kind delete cluster --name "$cluster" 2>&1 || true
   done
 fi
 
 echo "[CLEAN] Cleanup related kubeconfig contexts/clusters..."
-if command -v kubectl >/dev/null 2>&1; then
+if command -v kubectl > /dev/null 2>&1; then
   if [ "$CLEAN_DEVOPS" = "1" ]; then
     # 清理所有 k3d 和 kind contexts
-    kubectl config get-contexts -o name 2>/dev/null | grep -E '^(k3d-|kind-)' | while read -r ctx; do
-      kubectl config delete-context "$ctx" >/dev/null 2>&1 || true
+    kubectl config get-contexts -o name 2> /dev/null | grep -E '^(k3d-|kind-)' | while read -r ctx; do
+      kubectl config delete-context "$ctx" > /dev/null 2>&1 || true
     done || true
     # 清理所有 k3d 和 kind clusters
-    kubectl config get-clusters 2>/dev/null | grep -E '^(k3d-|kind-)' | while read -r cluster; do
-      kubectl config delete-cluster "$cluster" >/dev/null 2>&1 || true
+    kubectl config get-clusters 2> /dev/null | grep -E '^(k3d-|kind-)' | while read -r cluster; do
+      kubectl config delete-cluster "$cluster" > /dev/null 2>&1 || true
     done || true
     # 清理所有 k3d 用户
-    kubectl config view -o jsonpath='{.users[*].name}' 2>/dev/null | tr ' ' '\n' | grep '^k3d-' | while read -r user; do
-      kubectl config unset "users.$user" >/dev/null 2>&1 || true
+    kubectl config view -o jsonpath='{.users[*].name}' 2> /dev/null | tr ' ' '\n' | grep '^k3d-' | while read -r user; do
+      kubectl config unset "users.$user" > /dev/null 2>&1 || true
     done || true
   else
     # 只清理业务集群的 contexts（保留 devops）
-    kubectl config get-contexts -o name 2>/dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' | while read -r ctx; do
-      kubectl config delete-context "$ctx" >/dev/null 2>&1 || true
+    kubectl config get-contexts -o name 2> /dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' | while read -r ctx; do
+      kubectl config delete-context "$ctx" > /dev/null 2>&1 || true
     done || true
-    kubectl config get-clusters 2>/dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' | while read -r cluster; do
-      kubectl config delete-cluster "$cluster" >/dev/null 2>&1 || true
+    kubectl config get-clusters 2> /dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' | while read -r cluster; do
+      kubectl config delete-cluster "$cluster" > /dev/null 2>&1 || true
     done || true
   fi
 fi
@@ -330,18 +334,18 @@ mkdir -p "$ROOT_DIR/data"
 
 echo "[CLEAN] Disconnecting Portainer from K3D networks..."
 for net in $(docker network ls --format '{{.Name}}' | grep '^k3d-'); do
-  docker network disconnect "$net" portainer-ce 2>/dev/null || true
+  docker network disconnect "$net" portainer-ce 2> /dev/null || true
 done
 
 echo "[CLEAN] Removing infrastructure network..."
 remove_network() {
   local net="$1"
   # disconnect any attached containers first (avoid Resource is still in use)
-  if docker network inspect "$net" >/dev/null 2>&1; then
-    for c in $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2>/dev/null); do
-      [ -n "$c" ] && docker network disconnect -f "$net" "$c" >/dev/null 2>&1 || true
+  if docker network inspect "$net" > /dev/null 2>&1; then
+    for c in $(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2> /dev/null); do
+      [ -n "$c" ] && docker network disconnect -f "$net" "$c" > /dev/null 2>&1 || true
     done
-    docker network rm "$net" >/dev/null 2>&1 || true
+    docker network rm "$net" > /dev/null 2>&1 || true
   fi
 }
 
@@ -367,7 +371,7 @@ else
 fi
 
 # Remove kind network (if no kind clusters remain)
-if [ "$CLEAN_DEVOPS" = "1" ] || [ "$(kind get clusters 2>/dev/null | wc -l)" -eq 0 ]; then
+if [ "$CLEAN_DEVOPS" = "1" ] || [ "$(kind get clusters 2> /dev/null | wc -l)" -eq 0 ]; then
   remove_network kind
 fi
 
@@ -399,7 +403,7 @@ if [ "$VERIFY" = "1" ]; then
     echo "[VERIFY] ✓ No cluster/infrastructure networks"
   fi
   # Kube contexts
-  if kubectl config get-contexts -o name 2>/dev/null | grep -Eq '^k3d-|^kind-'; then
+  if kubectl config get-contexts -o name 2> /dev/null | grep -Eq '^k3d-|^kind-'; then
     echo "[VERIFY] ✗ Found kube contexts"
     exit 1
   else
@@ -411,14 +415,14 @@ fi
 if [ "$VERIFY" = "1" ]; then
   echo "[VERIFY] Checking cleanup completeness..."
   errors=0
-  
+
   # 检查集群容器
   if [ "$CLEAN_DEVOPS" = "1" ]; then
     remaining_containers=$(docker ps -a --format '{{.Names}}' | grep -E '^(k3d-|kind-|portainer-ce|haproxy-gw)' || true)
     if [ -n "$remaining_containers" ]; then
       echo "[VERIFY] ✗ Found remaining containers:" >&2
       echo "$remaining_containers" | sed 's/^/  - /' >&2
-      errors=$((errors+1))
+      errors=$((errors + 1))
     else
       echo "[VERIFY] ✓ No cluster/infrastructure containers"
     fi
@@ -427,83 +431,83 @@ if [ "$VERIFY" = "1" ]; then
     if [ -n "$remaining_containers" ]; then
       echo "[VERIFY] ✗ Found remaining business cluster containers:" >&2
       echo "$remaining_containers" | sed 's/^/  - /' >&2
-      errors=$((errors+1))
+      errors=$((errors + 1))
     else
       echo "[VERIFY] ✓ No business cluster containers (devops preserved)"
     fi
   fi
-  
+
   # 检查卷
   if [ "$CLEAN_DEVOPS" = "1" ]; then
     remaining_volumes=$(docker volume ls -q | grep -E 'portainer|infrastructure' || true)
     if [ -n "$remaining_volumes" ]; then
       echo "[VERIFY] ✗ Found remaining volumes:" >&2
       echo "$remaining_volumes" | sed 's/^/  - /' >&2
-      errors=$((errors+1))
+      errors=$((errors + 1))
     else
       echo "[VERIFY] ✓ No Portainer/infrastructure volumes"
     fi
   fi
-  
+
   # 检查网络
   if [ "$CLEAN_DEVOPS" = "1" ]; then
     remaining_networks=$(docker network ls --format '{{.Name}}' | grep -E '^(k3d-|infrastructure)' || true)
     if [ -n "$remaining_networks" ]; then
       echo "[VERIFY] ✗ Found remaining networks:" >&2
       echo "$remaining_networks" | sed 's/^/  - /' >&2
-      errors=$((errors+1))
+      errors=$((errors + 1))
     else
       echo "[VERIFY] ✓ No cluster/infrastructure networks"
     fi
   fi
-  
+
   # 检查 kubeconfig
-  if command -v kubectl >/dev/null 2>&1; then
+  if command -v kubectl > /dev/null 2>&1; then
     if [ "$CLEAN_DEVOPS" = "1" ]; then
-      remaining_contexts=$(kubectl config get-contexts -o name 2>/dev/null | grep -E '^(k3d-|kind-)' || true)
+      remaining_contexts=$(kubectl config get-contexts -o name 2> /dev/null | grep -E '^(k3d-|kind-)' || true)
       if [ -n "$remaining_contexts" ]; then
         echo "[VERIFY] ✗ Found remaining kubeconfig contexts:" >&2
         echo "$remaining_contexts" | sed 's/^/  - /' >&2
-        errors=$((errors+1))
+        errors=$((errors + 1))
       else
         echo "[VERIFY] ✓ No cluster contexts in kubeconfig"
       fi
     else
-      remaining_contexts=$(kubectl config get-contexts -o name 2>/dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' || true)
+      remaining_contexts=$(kubectl config get-contexts -o name 2> /dev/null | grep -E '^(k3d-|kind-)' | grep -v 'devops' || true)
       if [ -n "$remaining_contexts" ]; then
         echo "[VERIFY] ✗ Found remaining business cluster contexts:" >&2
         echo "$remaining_contexts" | sed 's/^/  - /' >&2
-        errors=$((errors+1))
+        errors=$((errors + 1))
       else
         echo "[VERIFY] ✓ No business cluster contexts (devops preserved)"
       fi
     fi
   fi
-  
+
   # 检查数据库记录
   if kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-       psql -U kindler -d kindler -c "SELECT 1" >/dev/null 2>&1; then
+    psql -U kindler -d kindler -c "SELECT 1" > /dev/null 2>&1; then
     if [ "$CLEAN_DEVOPS" = "0" ]; then
       db_count=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters WHERE name != 'devops'" 2>/dev/null | xargs || echo "0")
+        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters WHERE name != 'devops'" 2> /dev/null | xargs || echo "0")
       if [ "$db_count" -gt 0 ]; then
         echo "[VERIFY] ✗ Database still has $db_count business cluster record(s)" >&2
         kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-          psql -U kindler -d kindler -t -c "SELECT name FROM clusters WHERE name != 'devops'" 2>/dev/null | \
-          sed 's/^/  - /' >&2
-        errors=$((errors+1))
+          psql -U kindler -d kindler -t -c "SELECT name FROM clusters WHERE name != 'devops'" 2> /dev/null \
+          | sed 's/^/  - /' >&2
+        errors=$((errors + 1))
       else
         echo "[VERIFY] ✓ No business cluster records in database (devops preserved)"
       fi
     else
       db_count=$(kubectl --context k3d-devops -n paas exec postgresql-0 -- \
-        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters" 2>/dev/null | xargs || echo "0")
+        psql -U kindler -d kindler -t -c "SELECT COUNT(*) FROM clusters" 2> /dev/null | xargs || echo "0")
       if [ "$db_count" -gt 0 ]; then
         echo "[VERIFY] ⚠ Database still has $db_count cluster record(s) (devops cluster still running)"
       fi
     fi
   fi
-  
+
   if [ $errors -eq 0 ]; then
     echo "[VERIFY] ✓ Environment is clean"
     exit 0

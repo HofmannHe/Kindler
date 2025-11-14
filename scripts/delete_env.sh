@@ -3,15 +3,62 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 # Description: Delete a business cluster and clean HAProxy/Portainer/ArgoCD/Git registrations.
 # Usage: scripts/delete_env.sh -n <name> [-p kind|k3d]
+# Category: lifecycle
+# Status: stable
 # See also: scripts/create_env.sh, scripts/haproxy_route.sh, scripts/argocd_register.sh, scripts/portainer.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib.sh"
 . "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
-usage() { echo "Usage: $0 -n <name> [-p kind|k3d]" >&2; exit 1; }
+usage() {
+  echo "Usage: $0 -n <name> [-p kind|k3d]" >&2
+  exit 1
+}
 
-name=""; provider=""
+db_verify_disabled() {
+  case "${SKIP_DB_VERIFY:-0}" in
+    1 | true | TRUE | y | Y | yes | YES | on | ON) return 0 ;;
+  esac
+  return 1
+}
+
+run_db_verify_guard() {
+  local stage="$1"
+  if db_verify_disabled; then
+    echo "[VERIFY] SKIP_DB_VERIFY=1 set; skipping db_verify ($stage)"
+    return 0
+  fi
+  if [ ! -x "$ROOT_DIR/scripts/db_verify.sh" ]; then
+    echo "[VERIFY] db_verify.sh not found; skipping verification ($stage)"
+    return 0
+  fi
+  local attempts=0 max_attempts=3 delay=5 rc=0 tmp
+  tmp=$(mktemp)
+  while [ $attempts -lt $max_attempts ]; do
+    if "$ROOT_DIR/scripts/db_verify.sh" --json-summary > "$tmp" 2>&1; then
+      cat "$tmp"
+      rm -f "$tmp"
+      echo "[VERIFY] ✓ db_verify passed ($stage)"
+      return 0
+    fi
+    rc=$?
+    attempts=$((attempts + 1))
+    echo "[VERIFY] db_verify failed (exit=$rc, attempt $attempts/$max_attempts) [$stage]" >&2
+    cat "$tmp" >&2
+    if [ $attempts -lt $max_attempts ]; then
+      echo "[VERIFY] retrying in ${delay}s..." >&2
+      sleep $delay
+    fi
+  done
+  cat "$tmp" >&2
+  rm -f "$tmp"
+  echo "[VERIFY] ✗ db_verify failed after $max_attempts attempts ($stage)" >&2
+  return $rc
+}
+
+name=""
+provider=""
 while getopts ":n:p:" opt; do
   case "$opt" in
     n) name="$OPTARG" ;;
@@ -29,16 +76,19 @@ ctx="$ctx_prefix-$name"
 
 # 清理 Edge Agent Kubernetes 资源（在删除集群之前）
 echo "[DELETE] Edge Agent from cluster $name"
-kubectl --context "$ctx" delete namespace portainer-edge --ignore-not-found=true --timeout=30s 2>/dev/null || true
+kubectl --context "$ctx" delete namespace portainer-edge --ignore-not-found=true --timeout=30s 2> /dev/null || true
 
 echo "[DELETE] haproxy route for $name"
 "$ROOT_DIR"/scripts/haproxy_route.sh remove "$name" || true
 
-# delete Portainer Edge Environment (使用与 register_edge_agent.sh 相同的命名规则)
-# 移除连字符，例如 dev-k3d -> devk3d
-ep_name=$(echo "$name" | sed 's/-//g')
-echo "[DELETE] Portainer Edge Environment: $ep_name"
-"$ROOT_DIR"/scripts/portainer.sh del-endpoint "$ep_name" || true
+# delete Portainer Edge Environment (优先使用真实集群名，兼容旧的去连字符命名)
+ep_name="${name//-/}"
+echo "[DELETE] Portainer Edge Environment: $name"
+"$ROOT_DIR"/scripts/portainer.sh del-endpoint "$name" || true
+if [ "$ep_name" != "$name" ]; then
+  echo "[DELETE] Portainer Edge Environment (legacy alias): $ep_name"
+  "$ROOT_DIR"/scripts/portainer.sh del-endpoint "$ep_name" || true
+fi
 
 # Unregister from ArgoCD
 echo "[DELETE] Unregistering cluster from ArgoCD..."
@@ -59,7 +109,7 @@ else
 fi
 
 # 从数据库中删除集群记录（优先）
-if db_is_available 2>/dev/null; then
+if db_is_available > /dev/null 2>&1; then
   echo "[DELETE] Removing cluster configuration from database..."
   if db_delete_cluster "$name"; then
     echo "[DELETE] ✓ Cluster configuration removed from database"
@@ -89,6 +139,11 @@ echo "[DELETE] Syncing ApplicationSet for whoami..."
 
 echo "[DELETE] cluster $name via $provider"
 PROVIDER="$provider" "$ROOT_DIR"/scripts/cluster.sh delete "$name" || true
+
+if ! run_db_verify_guard "post-delete"; then
+  rc=$?
+  exit $rc
+fi
 
 echo "[DONE] Deleted env $name (cluster + configuration)"
 echo "[INFO] Environment $name has been permanently deleted"

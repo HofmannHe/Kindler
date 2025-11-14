@@ -41,7 +41,7 @@
 ### 5. 部署基础设施ApplicationSet ✅
 - **问题**: 基础设施应用（Traefik、Portainer Edge Agent）需要通过ArgoCD管理
 - **解决方案**:
-  - 创建infrastructure-applicationset.yaml
+  - 提供 `manifests/argocd/infrastructure-applicationset.yaml.example` 模板（真实 Edge Agent 凭据通过 Secret/env 渲染，或借助 `scripts/argocd_register.sh` 自动注入；生成的 `.yaml` 保持未提交）
   - 创建infrastructure Helm Chart
   - 部署ApplicationSet到ArgoCD
   - 创建ArgoCD AppProject (default)
@@ -131,4 +131,3 @@ curl -I http://192.168.51.30 -H 'Host: portainer.devops.192.168.51.30.sslip.io'
    - 更新README，说明新的GitOps架构
    - 更新部署流程文档
    - 添加故障排查指南
-

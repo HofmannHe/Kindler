@@ -6,11 +6,17 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 PID_FILE="/tmp/kindler_reconciler.pid"
 LOG_FILE="/tmp/kindler_reconciler.log"
 
-# 读取可选配置（如 BASE_DOMAIN, RECONCILER_CONCURRENCY 等）
 if [ -f "$ROOT_DIR/config/clusters.env" ]; then
   . "$ROOT_DIR/config/clusters.env"
 fi
-RECONCILER_CONCURRENCY="${RECONCILER_CONCURRENCY:-3}"
+
+if [ -z "${RECONCILE_LOOP_INTERVAL:-}" ]; then
+  if [ -n "${RECONCILE_INTERVAL:-}" ]; then
+    RECONCILE_LOOP_INTERVAL="${RECONCILE_INTERVAL}s"
+  else
+    RECONCILE_LOOP_INTERVAL="15m"
+  fi
+fi
 
 case "${1:-start}" in
   start)
@@ -18,15 +24,16 @@ case "${1:-start}" in
       echo "Reconciler already running (PID: $(cat $PID_FILE))"
       exit 0
     fi
-    
-    echo "Starting Kindler Reconciler..."
-    echo "  Concurrency: RECONCILER_CONCURRENCY=$RECONCILER_CONCURRENCY"
-    nohup env RECONCILER_CONCURRENCY="$RECONCILER_CONCURRENCY" \
-      "$ROOT_DIR/scripts/reconciler.sh" loop >"$LOG_FILE" 2>&1 &
+
+    echo "Starting Kindler reconcile loop..."
+    echo "  Interval : $RECONCILE_LOOP_INTERVAL"
+    nohup env RECONCILE_SOURCE="start-reconciler" \
+      RECONCILE_INVOKER="tools/start_reconciler.sh" \
+      "$ROOT_DIR/scripts/reconcile_loop.sh" --interval "$RECONCILE_LOOP_INTERVAL" >"$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     echo "✓ Reconciler started (PID: $(cat $PID_FILE))"
     echo "  Log file: $LOG_FILE"
-    echo "  Reconcile interval: 30s"
+    echo "  Reconcile interval: $RECONCILE_LOOP_INTERVAL"
     ;;
     
   stop)
@@ -46,7 +53,7 @@ case "${1:-start}" in
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
       echo "✓ Reconciler running (PID: $(cat $PID_FILE))"
       echo "  Log file: $LOG_FILE"
-      echo "  Concurrency: RECONCILER_CONCURRENCY=$RECONCILER_CONCURRENCY"
+      echo "  Interval: $RECONCILE_LOOP_INTERVAL"
       echo "  Last 10 lines:"
       tail -10 "$LOG_FILE" | sed 's/^/    /'
     else
@@ -64,4 +71,3 @@ case "${1:-start}" in
     exit 1
     ;;
 esac
-

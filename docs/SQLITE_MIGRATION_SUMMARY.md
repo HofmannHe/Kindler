@@ -12,7 +12,7 @@
 ### 1. 创建 SQLite 数据库操作库
 
 - ✅ 创建 `scripts/lib_sqlite.sh`
-  - 实现所有数据库操作函数（与 `lib_db.sh` 兼容）
+  - 实现所有数据库操作函数（与已归档的 `lib_db.sh` 接口兼容）
   - 支持容器内外执行（自动检测环境）
   - 并发安全（使用 flock 文件锁）
   - 支持事务操作
@@ -149,14 +149,14 @@ WebUI 与脚本共享同一个 SQLite 数据库：
 
 1. **SQLite 并发性能**：SQLite 在并发写入场景下性能低于 PostgreSQL，但当前使用场景（集群管理）并发度不高，影响可忽略
 2. **数据持久化**：数据库存储在 Docker volume 中，需要确保 volume 正确挂载
-3. **迁移兼容性**：已保留 `lib_db.sh` 作为参考，但所有脚本已迁移到 `lib_sqlite.sh`
+3. **迁移兼容性**：`lib_db.sh` 已归档，仅供历史参考，所有脚本均依赖 `lib/lib_sqlite.sh`
 
 ## 回滚方案
 
 如需回滚到 PostgreSQL：
-1. 恢复 `scripts/lib_db.sh` 的使用
+1. 重新添加 legacy `scripts/lib_db.sh` 并恢复其调用
 2. 恢复 `bootstrap.sh` 中的 PostgreSQL 部署逻辑
-3. 恢复所有脚本对 `lib_db.sh` 的引用
+3. 将脚本中的 `lib/lib_sqlite.sh` 引用改回 `lib_db.sh`
 4. 从 SQLite 导出数据并导入 PostgreSQL（需要编写迁移脚本）
 
 ## 下一步工作（可选）

@@ -4,6 +4,8 @@ IFS=$'\n\t'
 
 # Description: Register or unregister a cluster with ArgoCD via kubectl (serviceaccount token).
 # Usage: scripts/argocd_register.sh <register|unregister> <cluster_name> [provider]
+# Category: registration
+# Status: stable
 # See also: scripts/create_env.sh, scripts/delete_env.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -21,14 +23,14 @@ get_portainer_credentials() {
   fi
 
   local edge_id="" edge_key=""
-  if kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge &>/dev/null; then
-    edge_id=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-id}' 2>/dev/null | base64 -d || echo "")
-    edge_key=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-key}' 2>/dev/null | base64 -d || echo "")
+  if kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge &> /dev/null; then
+    edge_id=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-id}' 2> /dev/null | base64 -d || echo "")
+    edge_key=$(kubectl --context "${context_name}" get secret portainer-edge-creds -n portainer-edge -o jsonpath='{.data.edge-key}' 2> /dev/null | base64 -d || echo "")
   fi
   echo "$edge_id|$edge_key"
 }
 
-register_cluster_kubectl() {
+register_cluster_once() {
   local cluster_name="$1"
   local provider="${2:-k3d}"
 
@@ -42,16 +44,19 @@ register_cluster_kubectl() {
   echo "[INFO] Registering cluster ${context_name} to ArgoCD via kubectl..."
 
   # 检查集群是否存在
-  if ! kubectl config get-contexts "${context_name}" &>/dev/null; then
+  if ! kubectl config get-contexts "${context_name}" &> /dev/null; then
     echo "[ERROR] Cluster context ${context_name} not found"
     return 1
   fi
 
   # 读取 Portainer 凭证（如果没有则使用空字符串）
-  local credentials=$(get_portainer_credentials "$cluster_name" "$provider")
-  local edge_id=$(echo "$credentials" | cut -d'|' -f1)
-  local edge_key=$(echo "$credentials" | cut -d'|' -f2)
-  
+  local credentials
+  credentials=$(get_portainer_credentials "$cluster_name" "$provider")
+  local edge_id
+  edge_id=$(echo "$credentials" | cut -d'|' -f1)
+  local edge_key
+  edge_key=$(echo "$credentials" | cut -d'|' -f2)
+
   # 确保 annotations 始终存在（即使为空）
   if [[ -z "$edge_id" ]]; then edge_id=""; fi
   if [[ -z "$edge_key" ]]; then edge_key=""; fi
@@ -62,7 +67,7 @@ register_cluster_kubectl() {
     # k3d: 使用 host.k3d.internal:<serverlb_port>，保证 devops Pod 可访问
     local lb_name="k3d-${cluster_name}-serverlb"
     local host_port
-    host_port=$(docker port "$lb_name" 6443/tcp 2>/dev/null | awk -F: '{print $NF}' | tail -1 || true)
+    host_port=$(docker port "$lb_name" 6443/tcp 2> /dev/null | awk -F: '{print $NF}' | tail -1 || true)
     if [[ -z "$host_port" ]]; then
       echo "[ERROR] Failed to get serverlb host port for $lb_name"
       return 1
@@ -77,13 +82,14 @@ register_cluster_kubectl() {
   fi
 
   # 获取 CA 证书
-  local ca_data=$(kubectl config view --raw -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.certificate-authority-data}")
+  local ca_data
+  ca_data=$(kubectl config view --raw -o jsonpath="{.clusters[?(@.name=='${context_name}')].cluster.certificate-authority-data}")
 
   # 创建 ServiceAccount 用于 ArgoCD 访问
   echo "[INFO] Creating argocd-manager ServiceAccount in ${context_name}..."
-  kubectl --context "${context_name}" create namespace argocd 2>/dev/null || true
+  kubectl --context "${context_name}" create namespace argocd 2> /dev/null || true
 
-  cat <<EOF | kubectl --context "${context_name}" apply -f -
+  cat << EOF | kubectl --context "${context_name}" apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -125,7 +131,7 @@ EOF
   sleep 2
 
   # 创建 token secret (Kubernetes 1.24+)
-  cat <<EOF | kubectl --context "${context_name}" apply -f -
+  cat << EOF | kubectl --context "${context_name}" apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
@@ -139,7 +145,8 @@ EOF
   sleep 2
 
   # 获取 token
-  local token=$(kubectl --context "${context_name}" -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
+  local token
+  token=$(kubectl --context "${context_name}" -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
 
   if [[ -z "$token" ]]; then
     echo "[ERROR] Failed to get ServiceAccount token"
@@ -162,7 +169,7 @@ EOF
     portainer-edge-key: \"$edge_key\""
 
   if [[ "$provider" == "k3d" ]]; then
-    cat <<EOF | kubectl --context k3d-devops apply -f -
+    cat << EOF | kubectl --context k3d-devops apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
@@ -188,7 +195,7 @@ stringData:
     }
 EOF
   else
-    cat <<EOF | kubectl --context k3d-devops apply -f -
+    cat << EOF | kubectl --context k3d-devops apply -f -
 apiVersion: v1
 kind: Secret
 metadata:
@@ -221,6 +228,29 @@ EOF
   echo "[INFO] Verify with: kubectl --context k3d-devops get secrets -n argocd -l argocd.argoproj.io/secret-type=cluster"
 }
 
+register_cluster_kubectl() {
+  local cluster_name="$1"
+  local provider="${2:-k3d}"
+  local max_attempts="${ARGOCD_REGISTER_MAX_RETRIES:-3}"
+  local delay="${ARGOCD_REGISTER_BACKOFF:-10}"
+  local attempt=1 rc=0
+
+  while [ $attempt -le $max_attempts ]; do
+    if register_cluster_once "$cluster_name" "$provider"; then
+      return 0
+    fi
+    rc=$?
+    if [ $attempt -lt $max_attempts ]; then
+      echo "[WARN] ArgoCD registration failed for $cluster_name (exit=$rc, attempt $attempt/$max_attempts); retrying in ${delay}s..." >&2
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "[ERROR] ArgoCD registration failed after $max_attempts attempt(s) for $cluster_name" >&2
+  return $rc
+}
+
 unregister_cluster_kubectl() {
   local cluster_name="$1"
   local provider="${2:-k3d}"
@@ -238,7 +268,7 @@ unregister_cluster_kubectl() {
   kubectl --context k3d-devops delete secret "cluster-${cluster_name}" -n argocd --ignore-not-found=true
 
   # 删除集群中的 ServiceAccount 和 RBAC
-  if kubectl config get-contexts "${context_name}" &>/dev/null; then
+  if kubectl config get-contexts "${context_name}" &> /dev/null; then
     kubectl --context "${context_name}" delete clusterrolebinding argocd-manager-role-binding --ignore-not-found=true
     kubectl --context "${context_name}" delete clusterrole argocd-manager-role --ignore-not-found=true
     kubectl --context "${context_name}" delete serviceaccount argocd-manager -n kube-system --ignore-not-found=true

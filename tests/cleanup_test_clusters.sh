@@ -6,7 +6,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "$ROOT_DIR/scripts/lib_db.sh"
+source "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 source "$ROOT_DIR/scripts/lib/lib_git.sh"
 
 echo "=========================================="

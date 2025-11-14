@@ -48,21 +48,37 @@ bash tests/run_tests.sh argocd
 
 ### 运行完整回归测试
 
-完整回归测试会执行：清理 → 引导 → 创建集群 → 验证
+完整回归测试会执行：清理 → 引导 → **调和** → 验证，并确保 SQLite 与实际集群完全一致。
+
+- 首选命令：
 
 ```bash
-# 完整回归测试（包括清理）
-bash tests/regression_test.sh
-
-# 跳过清理步骤
-bash tests/regression_test.sh --skip-clean
-
-# 跳过 bootstrap 步骤
-bash tests/regression_test.sh --skip-bootstrap
-
-# 仅测试指定集群
-bash tests/regression_test.sh --clusters dev-k3d,prod-k3d
+bash scripts/regression.sh --full
 ```
+
+- 调试/局部验证可使用：
+
+```bash
+bash tests/regression_test.sh --skip-clean
+bash tests/regression_test.sh --skip-bootstrap
+bash tests/regression_test.sh --clusters dev,uat
+bash tests/regression_test.sh --skip-smoke --skip-bats  # 仅限临时排障
+```
+
+- `scripts/reconcile.sh --from-db` 是关键步骤：它读取 SQLite `clusters` 表，并在必要时创建/删除集群（要求 ≥3 k3d 与 ≥3 kind）。日志写入 `/tmp/kindler_reconcile.log`，`RECONCILE_SUMMARY=...` JSON 将被追加到 `docs/TEST_REPORT.md`。
+- `scripts/test_sqlite_migration.sh` 在 bootstrap 之后运行，确认迁移后的字段（`desired_state`、`actual_state`、`last_reconciled_at` 等）以及 `devops` 记录存在。
+- `tests/regression_test.sh` 在调和后调用 `scripts/test_data_consistency.sh --json-summary` 和 `scripts/db_verify.sh --json-summary`，并利用其 JSON 输出判断漂移及记录结果。
+
+### 数据一致性 / 数据库验证
+
+- `scripts/test_data_consistency.sh [--json-summary]`（或 `tests/test_data_consistency.sh`）
+  - 逐步验证 SQLite ↔ Kubernetes 集群 ↔ ApplicationSet ↔ Portainer ↔ ArgoCD。
+  - `--json-summary` 会输出 `CONSISTENCY_SUMMARY=...`，便于 CI 或回归脚本解析。
+  - 可独立运行，亦由 `tests/regression_test.sh` 的数据一致性步骤自动触发。
+- `scripts/db_verify.sh [--cleanup-missing] [--json-summary]`（或 `tests/db_verify.sh`）
+  - 输出 SQLite `clusters` 表与实际 kube-contexts 的对照表。
+  - 退出码含义：`0`=一致、`10`=数据库记录缺少对应集群、`11`=状态漂移。`--json-summary` 会打印 `DB_VERIFY_SUMMARY=...`。
+  - 使用 `--cleanup-missing` 可自动移除已删除但仍留在数据库中的业务集群记录（跳过 devops）。
 
 ## 测试模块说明
 
@@ -246,7 +262,6 @@ assert_contains "$response" "Expected Content" "New service responds correctly"
 
 ## 参考
 
-- [快速验证脚本](../scripts/quick_verify.sh): 快速验证核心服务
-- [完整测试脚本](../scripts/run_full_test.sh): 三轮完整测试（已有）
-- [验证脚本](../scripts/verify_cluster.sh): 单集群验证
-
+- [快速验证脚本](../tests/quick_verify.sh): 快速验证核心服务
+- [完整测试脚本](../tests/run_full_test.sh): 三轮完整测试（已有）
+- [验证脚本](../tests/verify_cluster.sh): 单集群验证

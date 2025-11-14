@@ -44,7 +44,7 @@ CREATE TABLE clusters (
 **作用**:
 - 存储所有业务集群的元数据
 - 支持并发访问和事务一致性
-- 提供 CRUD 操作接口 (`scripts/lib_db.sh`)
+- 提供 CRUD 操作接口（`scripts/lib/lib_sqlite.sh`，已完全取代历史 `scripts/lib_db.sh`）
 
 ### 2. Git 分支（衍生数据）
 

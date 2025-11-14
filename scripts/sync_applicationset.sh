@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Generate ArgoCD ApplicationSet definitions from SQLite and optionally lock during updates.
+# Usage: scripts/sync_applicationset.sh
+# Category: gitops
+# Status: stable
+# See also: scripts/reconcile.sh, tools/git/sync_git_from_db.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib.sh"
@@ -36,14 +41,14 @@ get_branch_for_env() { echo "$1"; }
 # 从数据库读取集群列表并生成 ApplicationSet
 generate_applicationset() {
   # acquire process-level lock to avoid concurrent file writes/applies
-  if command -v flock >/dev/null 2>&1; then
-    exec 203>"$LOCK_FILE"
+  if command -v flock > /dev/null 2>&1; then
+    exec 203> "$LOCK_FILE"
     flock -x 203
   fi
   log "从数据库读取集群列表并生成 ApplicationSet..."
 
   # 检查数据库可用性
-  if ! db_is_available 2>/dev/null; then
+  if ! db_is_available > /dev/null 2>&1; then
     log "⚠️  数据库不可用，ApplicationSet 不会更新"
     log "  ArgoCD 将继续使用现有的 ApplicationSet 配置"
     return 0
@@ -57,7 +62,7 @@ generate_applicationset() {
   while IFS='|' read -r name provider _; do
     # 跳过 devops 环境（不部署 whoami）
     [[ "$name" == "devops" ]] && continue
-    
+
     # 验证集群是否实际存在（检查 kubectl context）
     local ctx=""
     if [ "$provider" = "k3d" ]; then
@@ -65,13 +70,13 @@ generate_applicationset() {
     else
       ctx="kind-${name}"
     fi
-    
+
     # 验证集群是否存在且可访问
-    if ! kubectl --context "$ctx" get nodes >/dev/null 2>&1; then
+    if ! kubectl --context "$ctx" get nodes > /dev/null 2>&1; then
       log "  ⚠ 跳过不存在的集群: $name (context: $ctx)"
       continue
     fi
-    
+
     # 分支名 = 集群名（一对一映射）
     local branch="$name"
     local host_env="$name"
@@ -89,10 +94,10 @@ generate_applicationset() {
         branch: ${branch}
         clusterName: ${name}
         ingressClass: ${ingress_class}"
-    
+
     cluster_count=$((cluster_count + 1))
     log "  ✓ 添加集群: $name ($provider, context: $ctx)"
-  done < <(sqlite_query "SELECT name, provider, node_port FROM clusters WHERE name != 'devops' ORDER BY name;" 2>/dev/null || echo "")
+  done < <(sqlite_query "SELECT name, provider, node_port FROM clusters WHERE name != 'devops' ORDER BY name;" 2> /dev/null || echo "")
 
   if [ $cluster_count -eq 0 ]; then
     log "⚠️  数据库中没有业务集群记录"
@@ -103,7 +108,7 @@ generate_applicationset() {
   log "  发现 $cluster_count 个业务集群"
 
   # 生成 ApplicationSet YAML（使用 List Generator + 数据库数据源）
-  cat > "$APPSET_FILE" <<EOF
+  cat > "$APPSET_FILE" << EOF
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -168,25 +173,25 @@ EOF
 apply_applicationset() {
   log "应用 ApplicationSet 到 ArgoCD..."
 
-  if ! kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
+  if ! kubectl --context k3d-devops get ns argocd > /dev/null 2>&1; then
     log "⚠️  devops 集群未就绪，跳过应用"
     return 0
   fi
 
-  kubectl --context k3d-devops apply -f "$APPSET_FILE" >/dev/null 2>&1 || {
+  kubectl --context k3d-devops apply -f "$APPSET_FILE" > /dev/null 2>&1 || {
     log "⚠️  应用 ApplicationSet 失败（devops 集群可能未就绪）"
     # ensure we release lock even on failure
-    if command -v flock >/dev/null 2>&1; then
-      flock -u 203 2>/dev/null || true
-      exec 203>&- 2>/dev/null || true
+    if command -v flock > /dev/null 2>&1; then
+      flock -u 203 2> /dev/null || true
+      exec 203>&- 2> /dev/null || true
     fi
     return 0
   }
 
   log "✓ ApplicationSet 已应用到 ArgoCD"
-  if command -v flock >/dev/null 2>&1; then
-    flock -u 203 2>/dev/null || true
-    exec 203>&- 2>/dev/null || true
+  if command -v flock > /dev/null 2>&1; then
+    flock -u 203 2> /dev/null || true
+    exec 203>&- 2> /dev/null || true
   fi
 }
 
