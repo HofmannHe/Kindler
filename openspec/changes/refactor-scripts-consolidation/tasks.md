@@ -34,6 +34,6 @@
 - [x] 3.6 Relocate selected fix/debug utilities to `tools/` with wrappers: `debug_portainer.sh`, `registry.sh`, `reconfigure_host.sh`, `fix_haproxy_routes.sh`
 
 ## 4. Validation
-- [ ] 4.1 Shellcheck and shfmt formatting for changed files
-- [ ] 4.2 Smoke path: `scripts/clean.sh` → `scripts/bootstrap.sh` → `scripts/cluster.sh create ...` (≥3 kind, ≥3 k3d) → `scripts/haproxy_sync.sh` → `scripts/smoke.sh <env>`
-- [ ] 4.3 Verify wrappers print notices and exit codes propagate
+- [x] 4.1 Shellcheck and shfmt formatting for changed files
+- [x] 4.2 Smoke path: `scripts/clean.sh` → `scripts/bootstrap.sh` → `scripts/cluster.sh create ...` (≥3 kind, ≥3 k3d) → `scripts/haproxy_sync.sh` → `scripts/smoke.sh <env>`
+- [x] 4.3 Verify wrappers print notices and exit codes propagate
