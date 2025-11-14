@@ -1,8 +1,9 @@
 Scripts Overview / 脚本总览
 
-This folder contains operational entrypoints and small libraries for the local DevOps environment: Portainer CE as control plane, HAProxy as ingress, and k3d/kind business clusters. The focus is simple, fast, and “just enough.”
+This folder contains operational entrypoints and small libraries for the local DevOps environment: Portainer CE as control plane, HAProxy as ingress, and k3d/kind business clusters. The focus is simple, fast, and “just enough.” Script metadata is enforced via `scripts/scripts_inventory.sh --check`, and the rendered catalog lives in `docs/scripts_inventory.md`.
 
 Conventions / 约定
+- 所有脚本帮助、日志提示默认使用中文描述；仅命令、路径、标识符保持英文原样（参见 `openspec/specs/tooling-scripts/spec.md`）。
 - Shebang + `set -Eeuo pipefail` + `IFS=$'\n\t'`
 - Keep behavior idempotent; prefer fast-fail, clear logs
 - Use `lib/lib.sh` for helpers and `lib/lib_sqlite.sh` for the single source of truth
@@ -22,6 +23,11 @@ Primary Entrypoints / 主要入口脚本
 - `clean.sh` — Clean all business clusters (preserves devops by default)
 - `clean_ns.sh` — Namespace-scoped cleanup for worktrees (development only)
 - `smoke.sh` — Minimal validation and append report to `docs/TEST_REPORT.md`
+
+Diagnostics / 数据一致性排查
+- `check_consistency.sh` — Compare SQLite, Git branches, and actual clusters to highlight drift.
+- `test_data_consistency.sh` — Full-stack check covering SQLite ↔ clusters ↔ ApplicationSet ↔ Portainer/ArgoCD.
+- `db_verify.sh` — Validate SQLite cluster rows against live kube-contexts; `--cleanup-missing` prunes stale records.
 
 Batch Utilities / 批处理工具
 - `batch_create_envs.sh` — moved to `tools/maintenance/batch_create_envs.sh`
@@ -57,15 +63,8 @@ Removed This Phase / 本阶段移除
 - `project_manage.sh` → use `tools/project_manage.sh`
 - `start_reconciler.sh` → use `tools/start_reconciler.sh`
 
-Deprecated Wrappers / 弃用包装（仍保留以兼容）
-- `basic-test.sh` → `smoke.sh`
-- `monitor_test.sh` → `smoke.sh`
-- `create_predefined_clusters.sh` → `tools/maintenance/batch_create_envs.sh`
-- `haproxy_project_route.sh` → `haproxy_route.sh` (environment-level)
-- `batch_edge_register.sh`, `auto_edge_register.sh`, `register_portainer_agents.sh` → `register_edge_agent.sh`
-- `start_env.sh` → `cluster.sh start <env>`
-- `stop_env.sh` → `cluster.sh stop <env>`
-- `list_env.sh` → `cluster.sh list`
+Legacy Wrappers Removed / 已移除的包装脚本
+- 旧的兼容性包装脚本已经全部移除，请直接使用上文列出的规范命令（`cluster.sh`、`smoke.sh` 等）。详见 `docs/scripts_inventory.md` 中的审计记录。
 
 Moved to tools/（保留 scripts/ 轻量包装）
 - 修复/调试类：`fix_applicationset.sh`、`fix_git_branches.sh`、`fix_helm_duplicate_resources.sh`、`fix_ingress_controllers.sh`、`fix_haproxy_routes.sh`

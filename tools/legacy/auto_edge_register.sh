@@ -1,6 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+echo "[DEPRECATED] auto_edge_register.sh 已弃用，请改用 scripts/register_edge_agent.sh --edge 或 tools/maintenance/batch_create_envs.sh。" >&2
 echo "=== Portainer Edge Agent 全自动注册 ==="
 
 # 配置

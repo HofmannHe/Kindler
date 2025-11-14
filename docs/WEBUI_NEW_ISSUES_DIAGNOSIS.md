@@ -55,7 +55,7 @@ created = await db_service.create_cluster(cluster_record)
 但问题是：`create_env.sh` 在创建成功后会调用 `db_insert_cluster`，它会覆盖status为"running"，因为：
 
 ```bash
-# scripts/lib_db.sh
+# scripts/lib/lib_sqlite.sh
 db_insert_cluster() {
   local status="${9:-running}"  # 默认值是running
   # INSERT ... ON CONFLICT DO UPDATE
@@ -308,4 +308,3 @@ kubectl -n argocd get applicationset whoami-applicationset -o yaml
 # 手动删除孤立的cluster secret
 kubectl -n argocd delete secret cluster-diagnose-test
 ```
-

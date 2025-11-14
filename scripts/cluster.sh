@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Unified dispatcher for cluster lifecycle commands (create/delete/import/status/start/stop/list).
+# Usage: scripts/cluster.sh <create|delete|import|status|start|stop|list> <env> [args]
+# Category: lifecycle
+# Status: stable
+# See also: scripts/create_env.sh, scripts/delete_env.sh, scripts/clean.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 # shellcheck source=lib/lib.sh
@@ -9,7 +14,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() {
-  cat <<EOF
+  cat << EOF
 Usage: $0 <create|delete|import|status|start|stop|list> <env> [args]
 
 env: dev|uat|prod
@@ -28,8 +33,7 @@ Environment:
 EOF
 }
 
-run() { if [ "${DRY_RUN:-}" = "1" ]; then echo "+ $*"; else eval "$*"; fi }
-
+run() { if [ "${DRY_RUN:-}" = "1" ]; then echo "+ $*"; else eval "$*"; fi; }
 
 # Apply container resource limits to the created node container
 limit_node_resources() {
@@ -45,11 +49,11 @@ limit_node_resources() {
     cname="${name}-control-plane"
   fi
   # wait until container exists
-  for i in $(seq 1 60); do
-    if docker inspect "$cname" >/dev/null 2>&1; then break; fi
+  for _ in $(seq 1 60); do
+    if docker inspect "$cname" > /dev/null 2>&1; then break; fi
     sleep 1
   done
-  if docker inspect "$cname" >/dev/null 2>&1; then
+  if docker inspect "$cname" > /dev/null 2>&1; then
     run "docker update --cpus ${cpus} --memory ${mem} --memory-swap ${mem} ${cname} >/dev/null 2>&1 || true"
   fi
 }
@@ -62,16 +66,17 @@ create_k3d() {
   # 读取集群子网配置（从 CSV）
   local subnet network_name network_arg
   subnet="$(subnet_for "$name")"
-  
+
   if [ -n "$subnet" ]; then
     # 使用独立子网：创建专用网络
     network_name="k3d-${name}"
     log INFO "Creating dedicated network for k3d cluster: $network_name (subnet: $subnet)"
-    
+
     # 创建独立网络（幂等）
-    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+    if ! docker network inspect "$network_name" > /dev/null 2>&1; then
       # 从子网计算网关地址（使用 .0.1）
-      local gateway=$(echo "$subnet" | sed -E 's|([0-9]+\.[0-9]+)\.0\.0/[0-9]+|\1.0.1|')
+      local gateway
+      gateway=$(echo "$subnet" | sed -E 's|([0-9]+\.[0-9]+)\.0\.0/[0-9]+|\1.0.1|')
       run "docker network create \"$network_name\" --subnet \"$subnet\" --gateway \"$gateway\" --opt com.docker.network.bridge.name=\"br-k3d-${name}\""
       log INFO "Network $network_name created with subnet $subnet (gateway: $gateway)"
     else
@@ -98,22 +103,30 @@ create_k3d() {
   # 修正kubeconfig中的0.0.0.0地址为127.0.0.1
   local cluster_name="k3d-${name}"
   local actual_port
-  for i in $(seq 1 10); do
-    actual_port=$(docker port "k3d-${name}-serverlb" 6443/tcp 2>/dev/null | grep "0.0.0.0" | cut -d: -f2 || true)
+  for _ in $(seq 1 10); do
+    actual_port=$(docker port "k3d-${name}-serverlb" 6443/tcp 2> /dev/null | grep "0.0.0.0" | cut -d: -f2 || true)
     if [ -n "$actual_port" ]; then
       log INFO "Fixing API server address from 0.0.0.0:$actual_port to 127.0.0.1:$actual_port"
-      kubectl config set-cluster "$cluster_name" --server="https://127.0.0.1:$actual_port" >/dev/null 2>&1 || true
+      kubectl config set-cluster "$cluster_name" --server="https://127.0.0.1:$actual_port" > /dev/null 2>&1 || true
       # Avoid certificate SAN mismatch when using 127.0.0.1
-      kubectl config set-cluster "$cluster_name" --insecure-skip-tls-verify=true >/dev/null 2>&1 || true
+      kubectl config set-cluster "$cluster_name" --insecure-skip-tls-verify=true > /dev/null 2>&1 || true
       break
     fi
     sleep 1
   done
 }
 
-delete_k3d() { local name="$1"; need_cmd k3d || return 0; run "k3d cluster delete ${name}"; }
+delete_k3d() {
+  local name="$1"
+  need_cmd k3d || return 0
+  run "k3d cluster delete ${name}"
+}
 
-import_k3d() { local name="$1" image="$2"; need_cmd k3d || return 0; run "k3d image import ${image} -c ${name}"; }
+import_k3d() {
+  local name="$1" image="$2"
+  need_cmd k3d || return 0
+  run "k3d image import ${image} -c ${name}"
+}
 
 create_kind() {
   local name="$1" http_port="$2" https_port="$3"
@@ -121,7 +134,7 @@ create_kind() {
   local cfg
   cfg="$(mktemp)"
   if [ -n "${http_port:-}" ] && [ -n "${https_port:-}" ]; then
-    cat >"$cfg" <<YAML
+    cat > "$cfg" << YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ${name}
@@ -139,7 +152,7 @@ nodes:
     protocol: TCP
 YAML
   else
-    cat >"$cfg" <<YAML
+    cat > "$cfg" << YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ${name}
@@ -157,25 +170,36 @@ YAML
 
   # 修正 kubeconfig 中的 0.0.0.0 地址为 127.0.0.1（主机访问更稳定）
   local host_port
-  host_port=$(docker port "${name}-control-plane" 6443/tcp 2>/dev/null | awk -F: '{print $NF}' | tail -1 || true)
+  host_port=$(docker port "${name}-control-plane" 6443/tcp 2> /dev/null | awk -F: '{print $NF}' | tail -1 || true)
   if [ -n "$host_port" ]; then
     log INFO "Fixing kind kubeconfig server from 0.0.0.0:$host_port to 127.0.0.1:$host_port"
-    kubectl config set-cluster "kind-${name}" --server="https://127.0.0.1:${host_port}" >/dev/null 2>&1 || true
+    kubectl config set-cluster "kind-${name}" --server="https://127.0.0.1:${host_port}" > /dev/null 2>&1 || true
     # Avoid certificate SAN mismatch (0.0.0.0 vs 127.0.0.1)
-    kubectl config set-cluster "kind-${name}" --insecure-skip-tls-verify=true >/dev/null 2>&1 || true
+    kubectl config set-cluster "kind-${name}" --insecure-skip-tls-verify=true > /dev/null 2>&1 || true
   fi
 }
 
-delete_kind() { local name="$1"; need_cmd kind || return 0; run "kind delete cluster --name ${name}"; }
+delete_kind() {
+  local name="$1"
+  need_cmd kind || return 0
+  run "kind delete cluster --name ${name}"
+}
 
-import_kind() { local name="$1" image="$2"; need_cmd kind || return 0; run "kind load docker-image ${image} --name ${name}"; }
+import_kind() {
+  local name="$1" image="$2"
+  need_cmd kind || return 0
+  run "kind load docker-image ${image} --name ${name}"
+}
 
 main() {
   load_env
   local cmd="${1:-}" env="${2:-}" arg3="${3:-}"
-  if [ -z "$cmd" ]; then usage; exit 1; fi
+  if [ -z "$cmd" ]; then
+    usage
+    exit 1
+  fi
 
-  local provider name ports http_port https_port
+  local provider name http_port https_port
   if [ -n "${env:-}" ]; then
     provider="$(provider_for "$env")"
     name="$(ctx_name "$env")"
@@ -194,7 +218,10 @@ main() {
       if [ "$provider" = "k3d" ]; then delete_k3d "$name"; else delete_kind "$name"; fi
       ;;
     import)
-      [ -n "$arg3" ] || { log ERROR "image required"; exit 1; }
+      [ -n "$arg3" ] || {
+        log ERROR "image required"
+        exit 1
+      }
       if [ "$provider" = "k3d" ]; then import_k3d "$name" "$arg3"; else import_kind "$name" "$arg3"; fi
       ;;
     status)
@@ -209,7 +236,10 @@ main() {
       run "kubectl --context ${ctx} get nodes"
       ;;
     start)
-      [ -n "${env:-}" ] || { usage; exit 1; }
+      [ -n "${env:-}" ] || {
+        usage
+        exit 1
+      }
       if [ "$provider" = "k3d" ]; then
         run "k3d cluster start ${name}"
       else
@@ -221,7 +251,10 @@ main() {
       fi
       ;;
     stop)
-      [ -n "${env:-}" ] || { usage; exit 1; }
+      [ -n "${env:-}" ] || {
+        usage
+        exit 1
+      }
       if [ "$provider" = "k3d" ]; then
         run "k3d cluster stop ${name}"
       else
@@ -233,23 +266,29 @@ main() {
       ;;
     list)
       # Prefer SQLite database
-      if db_is_available 2>/dev/null; then
+      if db_is_available > /dev/null 2>&1; then
         echo "NAME            PROVIDER  SUBNET             NODE_PORT PF_PORT  HTTP_PORT  HTTPS_PORT"
         echo "-------------------------------------------------------------------------------------"
-        db_list_clusters 2>/dev/null | while IFS='|' read -r n prov subnet node_port pf_port hp hs; do
+        db_list_clusters 2> /dev/null | while IFS='|' read -r n prov subnet node_port pf_port hp hs; do
           [ -z "$subnet" ] && subnet="N/A"
           printf "%-15s %-9s %-18s %-9s %-7s %-10s %-11s\n" "$n" "$prov" "$subnet" "$node_port" "$pf_port" "$hp" "$hs"
         done
       else
         # Fallback to CSV
         local csv="$ROOT_DIR/config/environments.csv"
-        [ -f "$csv" ] || { echo "[ERROR] CSV not found: $csv" >&2; exit 1; }
+        [ -f "$csv" ] || {
+          echo "[ERROR] CSV not found: $csv" >&2
+          exit 1
+        }
         echo "NAME            PROVIDER  SUBNET             NODE_PORT PF_PORT  HTTP_PORT  HTTPS_PORT"
         echo "-------------------------------------------------------------------------------------"
         awk -F, '$0 !~ /^[[:space:]]*#/ && NF>0 && NR>1 {gsub(/^ +| +$/,"",$1);gsub(/^ +| +$/,"",$2);gsub(/^ +| +$/,"",$9);gsub(/^ +| +$/,"",$3);gsub(/^ +| +$/,"",$4);gsub(/^ +| +$/,"",$7);gsub(/^ +| +$/,"",$8); s=($9==""||$9=="N/A")?"N/A":$9; printf "%-15s %-9s %-18s %-9s %-7s %-10s %-11s\n", $1,$2,s,$3,$4,$7,$8}' "$csv"
       fi
       ;;
-    *) usage; exit 1 ;;
+    *)
+      usage
+      exit 1
+      ;;
   esac
 }
 

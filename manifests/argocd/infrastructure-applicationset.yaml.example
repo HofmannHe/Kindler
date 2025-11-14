@@ -1,0 +1,68 @@
+# 示例：复制为 manifests/argocd/infrastructure-applicationset.yaml 并使用
+# envsubst、sops、或 scripts/argocd_register.sh 输出的凭据渲染实际 Edge Agent 参数。
+# 真实 Edge ID/Key 请放在 Secrets/环境变量中，避免直接提交到 Git。
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infrastructure
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - list:
+      elements:
+      # ⛔ 示例数据：请从 SQLite/Portainer API 动态生成或注入 Secret。以下占位符
+      # 适合搭配 `envsubst` 渲染，例如：
+      #   envsubst < manifests/argocd/infrastructure-applicationset.yaml.example \
+      #     > manifests/argocd/infrastructure-applicationset.yaml
+      # 也可以完全跳过该文件，直接使用 scripts/argocd_register.sh 自动注册。
+        - env: dev
+          clusterName: dev
+          provider: kind
+          portainerEdgeId: "${PORTAINER_EDGE_ID_DEV:-}"
+          portainerEdgeKey: "${PORTAINER_EDGE_KEY_DEV:-}"  # 直接使用 Portainer API 返回值
+        - env: dev-k3d
+          clusterName: dev-k3d
+          provider: k3d
+          portainerEdgeId: "${PORTAINER_EDGE_ID_DEV_K3D:-}"
+          portainerEdgeKey: "${PORTAINER_EDGE_KEY_DEV_K3D:-}"
+  template:
+    metadata:
+      name: 'infrastructure-{{.env}}'
+      labels:
+        app: infrastructure
+        env: '{{.env}}'
+    spec:
+      project: default
+      source:
+        # 重要：不要在 repoURL 中内嵌账号/令牌。凭据应通过 ArgoCD 的 repository/repo-creds Secret 注入。
+        # 参见: tools/setup/register_git_to_argocd.sh 与 config/git.env
+        repoURL: 'http://git.devops.192.168.51.30.sslip.io/fc005/devops.git'
+        path: infrastructure
+        targetRevision: develop
+        helm:
+          releaseName: infrastructure
+          parameters:
+          # 动态设置环境相关参数
+          - name: environment.name
+            value: '{{.env}}'
+          - name: environment.provider
+            value: '{{.provider}}'
+          - name: environment.clusterName
+            value: '{{.clusterName}}'
+          # Portainer Edge Agent 配置
+          - name: portainer.edge.id
+            value: '{{.portainerEdgeId}}'
+          - name: portainer.edge.key
+            value: '{{.portainerEdgeKey}}'
+      destination:
+        # 部署到对应的集群
+        name: '{{.clusterName}}'
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true

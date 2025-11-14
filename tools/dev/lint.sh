@@ -16,6 +16,7 @@ esac
 shfmt_cmd=""
 if command -v shfmt >/dev/null 2>&1; then
   shfmt_cmd="shfmt"
+  SHFMT_OPTS=(-i 2 -ci -bn -sr)
 else
   echo "[lint] shfmt not found (skip)" >&2
 fi
@@ -32,10 +33,10 @@ targets=(scripts/*.sh)
 if [ -n "$shfmt_cmd" ]; then
   if [ $FIX -eq 1 ]; then
     echo "[lint] shfmt -w scripts/*.sh"
-    $shfmt_cmd -w "${targets[@]}"
+    $shfmt_cmd "${SHFMT_OPTS[@]}" -w "${targets[@]}"
   else
     echo "[lint] shfmt -d scripts/*.sh"
-    $shfmt_cmd -d "${targets[@]}" || true
+    $shfmt_cmd "${SHFMT_OPTS[@]}" -d "${targets[@]}" || true
   fi
 fi
 
@@ -45,4 +46,3 @@ if [ -n "$shellcheck_cmd" ]; then
 fi
 
 echo "[lint] done"
-

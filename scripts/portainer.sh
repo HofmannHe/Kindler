@@ -3,9 +3,36 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 # Description: Manage Portainer CE (compose up/down) and call simple API helpers (auth, endpoints CRUD).
 # Usage: scripts/portainer.sh up|down|api-login|add-endpoint|del-endpoint [...]
+# Category: registration
+# Status: stable
 # See also: tools/setup/register_edge_agent.sh, scripts/create_env.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+PORTAINER_AUTH_BASE_FILE="${PORTAINER_AUTH_BASE_FILE:-/tmp/portainer_auth_base}"
+PORTAINER_EFFECTIVE_BASE=""
+
+add_no_proxy_host() {
+  local host="$1"
+  [ -n "$host" ] || return
+  local current="${NO_PROXY:-${no_proxy:-}}"
+  if [ -n "$current" ]; then
+    case "${current}," in
+      *"${host},"*) return ;;
+    esac
+    current+=",$host"
+  else
+    current="$host"
+  fi
+  export NO_PROXY="$current"
+  export no_proxy="$current"
+}
+
+host_from_url() {
+  local url="$1"
+  url="${url#*://}"
+  url="${url%%/*}"
+  printf '%s' "${url%%:*}"
+}
 
 load_secrets() {
   if [ -f "$ROOT_DIR/config/secrets.env" ]; then . "$ROOT_DIR/config/secrets.env"; fi
@@ -21,12 +48,11 @@ ensure_named_volumes() { :; }
 ensure_admin_secret() {
   load_secrets
   ensure_named_volumes
-  docker volume inspect portainer_secrets >/dev/null 2>&1 || docker volume create portainer_secrets >/dev/null
+  docker volume inspect portainer_secrets > /dev/null 2>&1 || docker volume create portainer_secrets > /dev/null
   # Portainer --admin-password-file expects PLAINTEXT password (align with bootstrap.sh)
   docker run --rm -v portainer_secrets:/run/secrets alpine:3.20 \
-    sh -lc "umask 077; printf '%s' '"$PORTAINER_ADMIN_PASSWORD"' > /run/secrets/portainer_admin"
+    sh -lc "umask 077; printf '%s' \"${PORTAINER_ADMIN_PASSWORD}\" > /run/secrets/portainer_admin"
 }
-
 
 up() {
   ensure_admin_secret
@@ -45,24 +71,26 @@ status() {
 reset_admin() {
   echo "[portainer] resetting admin (recreate data volume)"
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" down -v portainer || true
-  docker volume rm -f portainer_data >/dev/null 2>&1 || true
+  docker volume rm -f portainer_data > /dev/null 2>&1 || true
   ensure_admin_secret
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d portainer
   echo "[portainer] admin reset complete"
 }
 
-
-api_base() {
-  if [ -n "${PORTAINER_API_BASE:-}" ]; then echo "$PORTAINER_API_BASE"; return; fi
+compute_default_api_base() {
+  if [ -n "${PORTAINER_API_BASE:-}" ]; then
+    echo "$PORTAINER_API_BASE"
+    return
+  fi
   if [ -z "${HAPROXY_HOST:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
   if [ -z "${BASE_DOMAIN:-}" ] && [ -f "$ROOT_DIR/config/clusters.env" ]; then . "$ROOT_DIR/config/clusters.env"; fi
-  
+
   # Prefer full domain name for Portainer (via HAProxy)
   if [ -n "${BASE_DOMAIN:-}" ]; then
     echo "https://portainer.devops.${BASE_DOMAIN}"
     return
   fi
-  
+
   # Fallback to IP-based URL (legacy)
   local https_port="${HAPROXY_HTTPS_PORT:-443}"
   if [ -n "${HAPROXY_HOST:-}" ]; then
@@ -75,53 +103,122 @@ api_base() {
   fi
   echo "https://127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}"
 }
+
+load_cached_auth_base() {
+  if [ -n "${PORTAINER_AUTH_BASE:-}" ]; then
+    return
+  fi
+  if [ -f "$PORTAINER_AUTH_BASE_FILE" ]; then
+    PORTAINER_AUTH_BASE="$(cat "$PORTAINER_AUTH_BASE_FILE" 2> /dev/null || true)"
+  fi
+}
+
+ensure_api_base() {
+  load_cached_auth_base
+  if [ -n "${PORTAINER_EFFECTIVE_BASE:-}" ]; then
+    [ -n "$PORTAINER_EFFECTIVE_BASE" ] && add_no_proxy_host "$(host_from_url "$PORTAINER_EFFECTIVE_BASE")"
+    return
+  fi
+  if [ -n "${PORTAINER_API_BASE:-}" ]; then
+    PORTAINER_EFFECTIVE_BASE="$PORTAINER_API_BASE"
+  elif [ -n "${PORTAINER_AUTH_BASE:-}" ]; then
+    PORTAINER_EFFECTIVE_BASE="$PORTAINER_AUTH_BASE"
+  else
+    PORTAINER_EFFECTIVE_BASE="$(compute_default_api_base)"
+  fi
+  if [ -n "${PORTAINER_EFFECTIVE_BASE:-}" ]; then
+    add_no_proxy_host "$(host_from_url "$PORTAINER_EFFECTIVE_BASE")"
+  fi
+}
+
+api_base() {
+  ensure_api_base
+  load_cached_auth_base
+  echo "$PORTAINER_EFFECTIVE_BASE"
+}
 api_login() {
   load_secrets
   local pw_json
-  if command -v python3 >/dev/null 2>&1; then
-    pw_json=$(python3 - <<'PY2'
+  if command -v python3 > /dev/null 2>&1; then
+    pw_json=$(
+      python3 - << 'PY2'
 import json,os
 u=json.dumps('admin')
 p=json.dumps(os.environ.get('PORTAINER_ADMIN_PASSWORD',''))
 print('{"username":%s,"password":%s}'%(u,p))
 PY2
-)
+    )
   else
     pw_json='{"username":"admin","password":"'"$PORTAINER_ADMIN_PASSWORD"'"}'
   fi
-  local bases=("$(api_base)" "https://127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}")
-  local jwt="" code body tmp
+  local default_base
+  default_base="$(compute_default_api_base)"
+  local fallback_base="https://127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}"
+  local bases=()
+  if [ -n "${PORTAINER_API_BASE:-}" ]; then
+    bases+=("${PORTAINER_API_BASE}")
+  else
+    bases+=("$default_base")
+  fi
+  if [ "${bases[0]}" != "$fallback_base" ]; then
+    bases+=("$fallback_base")
+  fi
+  local host
+  for base in "${bases[@]}"; do
+    host="$(host_from_url "$base")"
+    add_no_proxy_host "$host"
+  done
+  add_no_proxy_host "localhost"
+  local jwt="" code tmp
   for b in "${bases[@]}"; do
     tmp=$(mktemp)
-    code=$(curl -sk -o "$tmp" -w '%{http_code}' -X POST "$b/api/auth"       -H 'Content-Type: application/json' -d "$pw_json")
+    code=$(curl -sk -o "$tmp" -w '%{http_code}' -X POST "$b/api/auth" -H 'Content-Type: application/json' -d "$pw_json")
     if [ "$code" = "200" ]; then
       jwt=$(sed -n 's/.*"jwt":"\([^"]*\)".*/\1/p' "$tmp")
       rm -f "$tmp"
-      [ -n "$jwt" ] && echo "$jwt" && return 0
+      if [ -n "$jwt" ]; then
+        PORTAINER_AUTH_BASE="$b"
+        PORTAINER_EFFECTIVE_BASE="$b"
+        printf '%s' "$b" > "$PORTAINER_AUTH_BASE_FILE" 2> /dev/null || true
+        echo "$jwt"
+        return 0
+      fi
     else
       echo "[portainer] auth failed at $b (HTTP $code): $(head -c 120 "$tmp")" >&2
       rm -f "$tmp"
     fi
   done
+  rm -f "$PORTAINER_AUTH_BASE_FILE" 2> /dev/null || true
   return 1
 }
 
 endpoint_exists() {
   local name="$1"
   local jwt="$2"
-  curl -sk -H "Authorization: Bearer $jwt" "$(api_base)/api/endpoints" | grep -q '"Name":"'"$name"'"'
+  ensure_api_base
+  local base="$PORTAINER_EFFECTIVE_BASE"
+  curl -sk -H "Authorization: Bearer $jwt" "$base/api/endpoints" | grep -q '"Name":"'"$name"'"'
 }
 
 add_endpoint() {
   local name="$1" url="$2"
-  local jwt; jwt=$(api_login)
-  if [ -z "$jwt" ]; then echo "[portainer] login failed" >&2; return 1; fi
-  if endpoint_exists "$name" "$jwt"; then echo "[portainer] endpoint exists: $name"; return 0; fi
+  local jwt
+  jwt=$(api_login)
+  if [ -z "$jwt" ]; then
+    echo "[portainer] login failed" >&2
+    return 1
+  fi
+  ensure_api_base
+  local base="$PORTAINER_EFFECTIVE_BASE"
+  if endpoint_exists "$name" "$jwt"; then
+    echo "[portainer] endpoint exists: $name"
+    return 0
+  fi
   # Use multipart/form-data per Portainer CE 2.33.2 swagger
   # EndpointCreationType=2 (Agent), TLS required, skip verify for self-signed agent
-  local tries=10 code
-  for i in $(seq 1 $tries); do
-    code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST "$(api_base)/api/endpoints" \
+  local tries=5 code attempt=1 delay=3
+  while [ $attempt -le $tries ]; do
+    code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST "$base/api/endpoints" \
       -H "Authorization: Bearer $jwt" \
       -F Name="${name}" \
       -F EndpointCreationType=2 \
@@ -130,9 +227,12 @@ add_endpoint() {
       -F TLSSkipVerify=true \
       -F TLSSkipClientVerify=true \
       -F GroupID=1)
-    if [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "204" ]; then break; fi
-    echo "[portainer] add-endpoint HTTP $code (attempt $i/$tries), retrying..." >&2
-    sleep 2
+    if [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "204" ]; then
+      break
+    fi
+    echo "[portainer] add-endpoint HTTP $code (attempt $attempt/$tries), retrying in ${delay}s..." >&2
+    sleep $((delay * attempt))
+    attempt=$((attempt + 1))
   done
   if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
     echo "[portainer] add-endpoint failed (HTTP $code): $name -> $url" >&2
@@ -148,18 +248,38 @@ add_endpoint() {
 
 delete_endpoint() {
   local name="$1"
-  local jwt; jwt=$(api_login)
-  if [ -z "$jwt" ]; then echo "[portainer] login failed" >&2; return 1; fi
-  # find id by name (jq optional)
-  local eid
-  if command -v jq >/dev/null 2>&1; then
-    eid=$(curl -sk -H "Authorization: Bearer $jwt" "$(api_base)/api/endpoints" | jq -r '.[] | select(.Name=="'"$name"'") | .Id')
-  else
-    eid=$(curl -sk -H "Authorization: Bearer $jwt" "$(api_base)/api/endpoints" | sed -n 's/.*{"Id":\([0-9]\+\),"Name":"'"$name"'".*/\1/p')
+  local jwt
+  jwt=$(api_login)
+  if [ -z "$jwt" ]; then
+    echo "[portainer] login failed" >&2
+    return 1
   fi
-  if [ -z "${eid:-}" ]; then echo "[portainer] endpoint not found: $name"; return 0; fi
-  curl -sk -X DELETE -H "Authorization: Bearer $jwt" "$(api_base)/api/endpoints/$eid" >/dev/null || true
-  echo "[portainer] endpoint deleted: $name (#$eid)"
+  # find id by name (jq optional)
+  ensure_api_base
+  local base="$PORTAINER_EFFECTIVE_BASE"
+  local eid
+  if command -v jq > /dev/null 2>&1; then
+    eid=$(curl -sk -H "Authorization: Bearer $jwt" "$base/api/endpoints" | jq -r '.[] | select(.Name=="'"$name"'") | .Id')
+  else
+    eid=$(curl -sk -H "Authorization: Bearer $jwt" "$base/api/endpoints" | sed -n 's/.*{"Id":\([0-9]\+\),"Name":"'"$name"'".*/\1/p')
+  fi
+  if [ -z "${eid:-}" ]; then
+    echo "[portainer] endpoint not found: $name"
+    return 0
+  fi
+  local tries=5 attempt=1 delay=3 code
+  while [ $attempt -le $tries ]; do
+    code=$(curl -sk -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $jwt" "$base/api/endpoints/$eid")
+    if [ "$code" = "200" ] || [ "$code" = "204" ] || [ "$code" = "201" ]; then
+      echo "[portainer] endpoint deleted: $name (#$eid)"
+      return 0
+    fi
+    echo "[portainer] delete-endpoint HTTP $code (attempt $attempt/$tries), retrying in ${delay}s..." >&2
+    sleep $((delay * attempt))
+    attempt=$((attempt + 1))
+  done
+  echo "[portainer] delete-endpoint failed for $name (HTTP ${code:-unknown})" >&2
+  return 4
 }
 
 # Add local Docker endpoint (unix:///var/run/docker.sock) by connecting directly
@@ -170,7 +290,7 @@ add_local_endpoint() {
   : "${PORTAINER_HTTP_PORT:=9000}"
   # Discover Portainer container IP on 'infrastructure' network
   local ip
-  ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' portainer-ce 2>/dev/null || true)
+  ip=$(docker inspect -f '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' portainer-ce 2> /dev/null || true)
   if [ -z "$ip" ]; then
     echo "[portainer] cannot determine container IP on 'infrastructure' network" >&2
     return 1
@@ -212,5 +332,8 @@ case "${1:-}" in
   add-endpoint) add_endpoint "$2" "$3" ;;
   add-local) add_local_endpoint ;;
   del-endpoint) delete_endpoint "$2" ;;
-  *) echo "Usage: $0 {up|down|status|reset-admin|api-login|add-endpoint <name> <url>|add-local|del-endpoint <name>}"; exit 1 ;;
+  *)
+    echo "Usage: $0 {up|down|status|reset-admin|api-login|add-endpoint <name> <url>|add-local|del-endpoint <name>}"
+    exit 1
+    ;;
 esac

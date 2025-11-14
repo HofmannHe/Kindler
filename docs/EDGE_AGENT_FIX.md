@@ -49,7 +49,7 @@ client: Connected (Latency 496.548µs)
 
 ## 解决方案
 
-### 1. 更新 `manifests/argocd/infrastructure-applicationset.yaml`
+### 1. 更新 `manifests/argocd/infrastructure-applicationset.yaml.example`
 
 **移除 Edge Key 末尾的 `==`：**
 
@@ -58,8 +58,10 @@ client: Connected (Latency 496.548µs)
   clusterName: dev-k3d
   provider: k3d
   portainerEdgeId: "3"
-  portainerEdgeKey: "aHR0cDovLzEwLjEwMC4wLjc6OTAwMHwxMC4xMDAuMC43OjgwMDB8Q3djNlUxaHVpRmdRdSthaWJzUm1mbUVBUnpHMnQwK1FEbkt2b2cvbWNjZz18Mw"  # 注意：不含 ==
+  portainerEdgeKey: "${PORTAINER_EDGE_KEY_DEV_K3D:-}"  # 注意：不含 ==
 ```
+
+> ⚠️ **敏感信息管理**：`*.yaml` 正式文件已被 `.gitignore` 忽略，仅提交 `.yaml.example` 模板。真实 Edge ID/Key 通过 `scripts/argocd_register.sh` 自动写入 ArgoCD cluster Secret 的 annotations，或使用 envsubst/sops 从 `.example` 渲染。切勿在 Git 仓库中提交生成后的 `.yaml`。
 
 ### 2. 更新 `tools/setup/register_edge_agent.sh`
 
@@ -108,7 +110,7 @@ kubectl --context k3d-dev-k3d logs -n portainer-edge deployment/portainer-edge-a
 
 ## 相关文件
 
-- `manifests/argocd/infrastructure-applicationset.yaml`
+- `manifests/argocd/infrastructure-applicationset.yaml.example`
 - `tools/setup/register_edge_agent.sh`
 - `docs/REGRESSION_TEST.md`
 

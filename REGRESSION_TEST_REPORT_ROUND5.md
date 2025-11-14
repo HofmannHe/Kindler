@@ -41,7 +41,7 @@ fi
 ### 2. 修复数据库一致性检查脚本 ✅
 **问题**: `check_consistency.sh` 只能读取 3 个集群（应该是 7 个）  
 **根因**: 使用 `tail -n +3 | head -n -2` 处理 psql 输出不可靠，导致数据被截断  
-**修复**: `lib_db.sh` 已使用 `-t -A` 参数获取纯文本输出，但 `check_consistency.sh` 还在去除表头  
+**修复**: SQLite helper (`lib/lib_sqlite.sh`) 已返回纯文本输出，但 `check_consistency.sh` 仍多余地移除表头  
 **解决**: 移除不必要的 `tail` 和 `head` 处理，直接使用 `grep -v '^$'` 过滤空行
 
 **修改前**:
@@ -350,5 +350,3 @@ tests/webui_api_test.sh
 - 一致性检查: `scripts/check_consistency.sh` 输出
 
 **生成时间**: 2025-10-25 14:35:00
-
-

@@ -69,14 +69,14 @@ bash tests/test_db_insert.sh  # 成功
 
 **定义**：测试独立的函数或模块，不依赖外部系统。
 
-**示例**：测试 `lib_db.sh` 中的函数
+**示例**：测试 `lib/lib_sqlite.sh` 中的函数
 
 ```bash
 #!/usr/bin/env bash
-# tests/lib_db_unit_test.sh
+# tests/lib_sqlite_unit_test.sh
 set -Eeuo pipefail
 
-source scripts/lib_db.sh
+source scripts/lib/lib_sqlite.sh
 
 test_db_query_escapes_quotes() {
   local test_name="test_db_query_escapes_quotes"
@@ -447,7 +447,7 @@ echo "  Fix Suggestion: Add server_ip column to clusters table in init_database.
 echo "  Debug Commands:"
 echo "    1. kubectl --context k3d-devops -n paas exec postgresql-0 -- psql -U kindler -d kindler -c '\d clusters'"
 echo "    2. cat tools/db/init_database.sh | grep -A 10 'CREATE TABLE clusters'"
-echo "    3. grep 'server_ip' scripts/lib_db.sh"
+echo "    3. grep 'server_ip' scripts/lib/lib_sqlite.sh"
 echo "  Related:"
 echo "    - AGENTS.md#案例-5：数据库表结构不一致"
 echo "    - docs/TESTING_GUIDELINES.md#测试固化原则"
@@ -737,7 +737,7 @@ scripts/generate_test_coverage.sh
 # 输出示例：
 # Module                 Coverage    Tests
 # ====================================================
-# scripts/lib_db.sh      85%         12 tests
+# scripts/lib/lib_sqlite.sh      85%         12 tests
 # scripts/create_env.sh  90%         8 tests
 # webui/backend/api/     70%         15 tests
 # ====================================================
@@ -886,5 +886,4 @@ tests/run_tests.sh all > /tmp/test_report_$(date +%s).log 2>&1
 **最后更新**：2025-10-24  
 **维护者**：项目团队  
 **反馈**：如有问题或建议，请提交 Issue
-
 

@@ -5,6 +5,8 @@ IFS=$'\n\t'
 # Usage: scripts/create_env.sh -n <name> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] \
 #        [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route] \
 #        [--register-argocd|--no-register-argocd] [--pf-host <addr>]
+# Category: lifecycle
+# Status: stable
 # See also: scripts/delete_env.sh, scripts/haproxy_route.sh, scripts/argocd_register.sh, scripts/portainer.sh
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -12,7 +14,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 
 usage() {
-  cat >&2 <<USAGE
+  cat >&2 << USAGE
 Usage: $0 -n <name> [-p kind|k3d] [--node-port <port>] [--pf-port <port>] \
             [--register-portainer|--no-register-portainer] [--haproxy-route|--no-haproxy-route] \
             [--register-argocd|--no-register-argocd] [--pf-host <addr>]
@@ -24,34 +26,92 @@ USAGE
   exit 1
 }
 
-name=""; provider=""; reg_portainer=1; add_haproxy=1; reg_argocd=1
-pf_host_override=""; node_port=30080; pf_port=""
-http_port=""; https_port=""; subnet=""
+name=""
+provider=""
+reg_portainer=1
+add_haproxy=1
+reg_argocd=1
+# shellcheck disable=SC2034
+pf_host_override=""
+node_port=30080
+pf_port=""
+http_port=""
+https_port=""
+subnet=""
 # 追踪命令行明确设置的参数
-cmd_reg_portainer=""; cmd_add_haproxy=""
+cmd_reg_portainer=""
+cmd_add_haproxy=""
 
-trim() { sed -e 's/^\s\+//' -e 's/\s\+$//' ; }
-to_lower() { tr 'A-Z' 'a-z'; }
-parse_bool() { v=$(echo "$1" | to_lower); case "$v" in 1|y|yes|true|on) echo 1;; 0|n|no|false|off) echo 0;; *) echo 0;; esac; }
+trim() { sed -e 's/^\s\+//' -e 's/\s\+$//'; }
+to_lower() { tr '[:upper:]' '[:lower:]'; }
+parse_bool() {
+  v=$(echo "$1" | to_lower)
+  case "$v" in 1 | y | yes | true | on) echo 1 ;; 0 | n | no | false | off) echo 0 ;; *) echo 0 ;; esac
+}
+
+db_verify_disabled() {
+  case "${SKIP_DB_VERIFY:-0}" in
+    1 | true | TRUE | y | Y | yes | YES | on | ON) return 0 ;;
+  esac
+  return 1
+}
+
+run_db_verify_guard() {
+  local stage="$1"
+  if db_verify_disabled; then
+    echo "[VERIFY] SKIP_DB_VERIFY=1 set; skipping db_verify ($stage)"
+    return 0
+  fi
+  if [ "${DRY_RUN:-0}" = "1" ]; then
+    echo "[VERIFY] DRY_RUN=1 -> skipping db_verify ($stage)"
+    return 0
+  fi
+  if [ ! -x "$ROOT_DIR/scripts/db_verify.sh" ]; then
+    echo "[VERIFY] db_verify.sh not found; skipping verification ($stage)"
+    return 0
+  fi
+  local attempts=0 max_attempts=3 delay=5 rc=0 tmp
+  tmp=$(mktemp)
+  while [ $attempts -lt $max_attempts ]; do
+    if "$ROOT_DIR/scripts/db_verify.sh" --json-summary > "$tmp" 2>&1; then
+      cat "$tmp"
+      rm -f "$tmp"
+      echo "[VERIFY] ✓ db_verify passed ($stage)"
+      return 0
+    fi
+    rc=$?
+    attempts=$((attempts + 1))
+    echo "[VERIFY] db_verify failed (exit=$rc, attempt $attempts/$max_attempts) [$stage]" >&2
+    cat "$tmp" >&2
+    if [ $attempts -lt $max_attempts ]; then
+      echo "[VERIFY] retrying in ${delay}s..." >&2
+      sleep $delay
+    fi
+  done
+  cat "$tmp" >&2
+  rm -f "$tmp"
+  echo "[VERIFY] ✗ db_verify failed after $max_attempts attempts ($stage)" >&2
+  return $rc
+}
 
 # 从数据库加载配置（优先级高于 CSV）
 load_db_defaults() {
   local n="$1"
   # 检查数据库是否可用
-  if ! db_is_available 2>/dev/null; then
-    return 1  # 数据库不可用，回退到 CSV
+  if ! db_is_available > /dev/null 2>&1; then
+    return 1 # 数据库不可用，回退到 CSV
   fi
-  
+
   # 查询集群记录
   local record
-  record=$(db_get_cluster "$n" 2>/dev/null) || return 1
+  record=$(db_get_cluster "$n" 2> /dev/null) || return 1
   [ -n "$record" ] || return 1
-  
+
   # 解析记录：name|provider|subnet|node_port|pf_port|http_port|https_port
-  IFS='|' read -r db_name db_provider db_subnet db_node_port db_pf_port db_http_port db_https_port <<EOF
+  IFS='|' read -r _db_name db_provider db_subnet db_node_port db_pf_port db_http_port db_https_port << EOF
 $record
 EOF
-  
+
   # 应用配置（如果命令行未指定）
   [ -z "$provider" ] && [ -n "$db_provider" ] && provider="$db_provider"
   [ -z "$pf_port" ] && [ -n "$db_pf_port" ] && pf_port="$db_pf_port"
@@ -59,7 +119,7 @@ EOF
   [ -z "$http_port" ] && [ -n "$db_http_port" ] && http_port="$db_http_port"
   [ -z "$https_port" ] && [ -n "$db_https_port" ] && https_port="$db_https_port"
   [ -z "$subnet" ] && [ -n "$db_subnet" ] && subnet="$db_subnet"
-  
+
   echo "[INFO] Loaded configuration from database"
   return 0
 }
@@ -71,7 +131,7 @@ load_csv_defaults() {
   local line
   line=$(awk -F, -v n="$n" 'BEGIN{IGNORECASE=0} $0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print; exit}' "$csv" | tr -d '\r') || true
   [ -n "$line" ] || return 0
-  IFS=, read -r c_env c_provider c_node_port c_pf_port c_reg_portainer c_haproxy_route c_http_port c_https_port c_subnet <<EOF
+  IFS=, read -r _c_env c_provider c_node_port c_pf_port c_reg_portainer c_haproxy_route c_http_port c_https_port c_subnet << EOF
 $line
 EOF
   c_provider=$(echo "${c_provider:-}" | trim)
@@ -104,29 +164,56 @@ while getopts ":n:p:-:" opt; do
     p) provider="$OPTARG" ;;
     -)
       case "$OPTARG" in
-        register-portainer) reg_portainer=1; cmd_reg_portainer=1 ;;
-        no-register-portainer) reg_portainer=0; cmd_reg_portainer=0 ;;
-        haproxy-route) add_haproxy=1; cmd_add_haproxy=1 ;;
-        no-haproxy-route) add_haproxy=0; cmd_add_haproxy=0 ;;
+        register-portainer)
+          reg_portainer=1
+          cmd_reg_portainer=1
+          ;;
+        no-register-portainer)
+          reg_portainer=0
+          cmd_reg_portainer=0
+          ;;
+        haproxy-route)
+          add_haproxy=1
+          cmd_add_haproxy=1
+          ;;
+        no-haproxy-route)
+          add_haproxy=0
+          cmd_add_haproxy=0
+          ;;
         register-argocd) reg_argocd=1 ;;
         no-register-argocd) reg_argocd=0 ;;
         node-port)
-          node_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+          node_port="${!OPTIND}"
+          OPTIND=$((OPTIND + 1))
+          ;;
         node-port=*) node_port="${OPTARG#node-port=}" ;;
         pf-port)
-          pf_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+          pf_port="${!OPTIND}"
+          OPTIND=$((OPTIND + 1))
+          ;;
         pf-port=*) pf_port="${OPTARG#pf-port=}" ;;
         http-port)
-          http_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+          http_port="${!OPTIND}"
+          OPTIND=$((OPTIND + 1))
+          ;;
         http-port=*) http_port="${OPTARG#http-port=}" ;;
         https-port)
-          https_port="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
+          https_port="${!OPTIND}"
+          OPTIND=$((OPTIND + 1))
+          ;;
         https-port=*) https_port="${OPTARG#https-port=}" ;;
         pf-host)
-          pf_host_override="${!OPTIND}"; OPTIND=$((OPTIND+1)) ;;
-        pf-host=*) pf_host_override="${OPTARG#pf-host=}" ;;
+          # shellcheck disable=SC2034
+          pf_host_override="${!OPTIND}"
+          OPTIND=$((OPTIND + 1))
+          ;;
+        pf-host=*)
+          # shellcheck disable=SC2034
+          pf_host_override="${OPTARG#pf-host=}"
+          ;;
         *) usage ;;
-      esac ;;
+      esac
+      ;;
     *) usage ;;
   esac
 done
@@ -142,7 +229,7 @@ fi
 
 # Load defaults: 优先数据库，回退到 CSV
 if ! load_db_defaults "$name"; then
-  echo "[INFO] Database not available or cluster not found, falling back to CSV"
+  echo "[WARN] SQLite defaults unavailable; falling back to config/environments.csv (legacy path)"
   load_csv_defaults "$name"
 fi
 
@@ -153,8 +240,11 @@ if [ -z "$provider" ]; then
 fi
 
 case "$provider" in
-  kind|k3d) : ;;
-  *) echo "Invalid provider: $provider (use kind|k3d)" >&2; exit 2 ;;
+  kind | k3d) : ;;
+  *)
+    echo "Invalid provider: $provider (use kind|k3d)" >&2
+    exit 2
+    ;;
 esac
 
 echo "[CREATE] $name via $provider (node-port=$node_port, reg_portainer=$reg_portainer, haproxy=$add_haproxy)"
@@ -163,13 +253,13 @@ echo "[CREATE] $name via $provider (node-port=$node_port, reg_portainer=$reg_por
 already_exists=0
 case "$provider" in
   k3d)
-    if k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | grep -qx "$name"; then
+    if k3d cluster list -o json 2> /dev/null | jq -r '.[].name' 2> /dev/null | grep -qx "$name"; then
       already_exists=1
       echo "[CREATE] k3d cluster '$name' already exists, skip creation"
     fi
     ;;
   kind)
-    if kind get clusters 2>/dev/null | grep -qx "$name"; then
+    if kind get clusters 2> /dev/null | grep -qx "$name"; then
       already_exists=1
       echo "[CREATE] kind cluster '$name' already exists, skip creation"
     fi
@@ -182,7 +272,7 @@ if [ "$already_exists" -eq 0 ]; then
     # 容忍“已存在”之类的错误信息（例如并发或残留），若此时已存在则继续后续步骤
     case "$provider" in
       k3d)
-        if k3d cluster list -o json 2>/dev/null | jq -r '.[].name' 2>/dev/null | grep -qx "$name"; then
+        if k3d cluster list -o json 2> /dev/null | jq -r '.[].name' 2> /dev/null | grep -qx "$name"; then
           echo "[CREATE] detected existing cluster '$name' after create attempt; continue"
         else
           echo "[ERROR] cluster '$name' not found after failed create; abort" >&2
@@ -190,7 +280,7 @@ if [ "$already_exists" -eq 0 ]; then
         fi
         ;;
       kind)
-        if kind get clusters 2>/dev/null | grep -qx "$name"; then
+        if kind get clusters 2> /dev/null | grep -qx "$name"; then
           echo "[CREATE] detected existing cluster '$name' after create attempt; continue"
         else
           echo "[ERROR] cluster '$name' not found after failed create; abort" >&2
@@ -208,16 +298,16 @@ ctx="$ctx_prefix-$name"
 if [ "$provider" = "k3d" ]; then
   echo "[K3D] Preloading critical system and Traefik images to avoid network pull failures..."
   . "$ROOT_DIR/scripts/lib/lib.sh"
-  
+
   # 基础设施镜像（pause, coredns）
   prefetch_image rancher/mirrored-pause:3.6 || echo "[WARN] Failed to prefetch pause image"
   prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || echo "[WARN] Failed to prefetch coredns image"
-  
+
   # k3d 内置 Traefik 所需镜像（klipper-helm 和 traefik）
   # 这些镜像是 k3d 自动部署 Traefik 时需要的
   prefetch_image rancher/klipper-helm:v0.9.3-build20241008 || echo "[WARN] Failed to prefetch klipper-helm image"
   prefetch_image rancher/mirrored-library-traefik:2.11.18 || echo "[WARN] Failed to prefetch traefik image"
-  
+
   echo "[K3D] Importing system and Traefik images to cluster..."
   k3d image import \
     rancher/mirrored-pause:3.6 \
@@ -225,7 +315,7 @@ if [ "$provider" = "k3d" ]; then
     rancher/klipper-helm:v0.9.3-build20241008 \
     rancher/mirrored-library-traefik:2.11.18 \
     -c "$name" 2>&1 | grep -v "INFO" || echo "[WARN] Failed to import some images"
-  
+
   echo "[K3D] All critical images imported successfully"
 fi
 
@@ -240,9 +330,9 @@ else
   preload_image_to_cluster k3d "$name" "traefik/whoami:v1.10.2" || true
 fi
 need_apply_traefik=1
-if kubectl --context "$ctx" get ns traefik >/dev/null 2>&1; then
+if kubectl --context "$ctx" get ns traefik > /dev/null 2>&1; then
   # If service exists and has a nodePort, skip reinstall
-  np=$(kubectl --context "$ctx" -n traefik get svc traefik -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
+  np=$(kubectl --context "$ctx" -n traefik get svc traefik -o jsonpath='{.spec.ports[0].nodePort}' 2> /dev/null || true)
   if [ -n "$np" ]; then
     echo "[TRAEFIK] exists (nodePort=$np), skip apply"
     need_apply_traefik=0
@@ -259,24 +349,24 @@ if [ "$provider" = "k3d" ] && [ "$name" != "devops" ]; then
   if [ -n "$subnet" ]; then
     dedicated_network="k3d-${name}"
     echo "[NETWORK] Connecting devops cluster to $dedicated_network..."
-    docker network connect "$dedicated_network" k3d-devops-server-0 2>/dev/null || true
+    docker network connect "$dedicated_network" k3d-devops-server-0 2> /dev/null || true
     echo "[NETWORK] devops can now access $name cluster"
   fi
 fi
 
 # Add HAProxy route (domain-based; default to node_port)
-if [ $add_haproxy -eq 1 ]; then
+if [ "$add_haproxy" -eq 1 ]; then
   echo "[HAPROXY] Adding route for cluster $name..."
   # 为避免在批量创建时因临时不一致导致 HAProxy reload 失败，先禁用即时重载
   NO_RELOAD=1 \
-  "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || {
+    "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || {
     echo "[ERROR] Failed to add HAProxy route for $name"
     exit 1
   }
   echo "[HAPROXY] Route added successfully"
 fi
 
-if [ $reg_portainer -eq 1 ]; then
+if [ "$reg_portainer" -eq 1 ]; then
   # 使用 Edge Agent 方式（更可靠，不依赖网络镜像拉取）
   echo "[PORTAINER] Using Edge Agent mode (recommended for offline environments)"
 
@@ -285,14 +375,14 @@ if [ $reg_portainer -eq 1 ]; then
     echo "[PORTAINER] Prefetching required images (skip if cached)..."
     . "$ROOT_DIR/scripts/lib/lib.sh"
     prefetch_image portainer/agent:latest || true
-    
+
     # 导入镜像到集群（避免镜像拉取失败）
     echo "[PORTAINER] Importing portainer/agent:latest to $provider cluster..."
     if [ "$provider" = "k3d" ]; then
       # k3d: 同时导入 CoreDNS 和 pause 镜像
       prefetch_image rancher/mirrored-pause:3.6 || true
       prefetch_image rancher/mirrored-coredns-coredns:1.12.0 || true
-      k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2>/dev/null || true
+      k3d image import portainer/agent:latest rancher/mirrored-pause:3.6 rancher/mirrored-coredns-coredns:1.12.0 -c "$name" 2> /dev/null || true
     else
       # kind: 使用 preload_image_to_cluster 导入
       preload_image_to_cluster kind "$name" "portainer/agent:latest" || true
@@ -314,11 +404,11 @@ if [ $reg_portainer -eq 1 ]; then
   fi
 
   # 如果 Edge Agent 已在 Running，则跳过注册
-  if kubectl --context "$ctx" -n portainer-edge get pod -l app=portainer-edge-agent -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q '^Running$'; then
+  if kubectl --context "$ctx" -n portainer-edge get pod -l app=portainer-edge-agent -o jsonpath='{.items[0].status.phase}' 2> /dev/null | grep -q '^Running$'; then
     echo "[EDGE] agent already Running, skip registration"
   else
     # 注册 Edge Agent，允许失败（ArgoCD 会自动部署）
-      "$ROOT_DIR"/tools/setup/register_edge_agent.sh "$name" "$provider" || echo "[WARN] Edge Agent registration failed, will be deployed by ArgoCD"
+    "$ROOT_DIR"/tools/setup/register_edge_agent.sh "$name" "$provider" || echo "[WARN] Edge Agent registration failed, will be deployed by ArgoCD"
   fi
 fi
 
@@ -326,7 +416,7 @@ fi
 if [ "$reg_argocd" = 1 ]; then
   echo "[INFO] Registering cluster to ArgoCD..."
   if [ "${DRY_RUN:-}" != "1" ]; then
-    if kubectl --context k3d-devops -n argocd get secret "cluster-${name}" >/dev/null 2>&1; then
+    if kubectl --context k3d-devops -n argocd get secret "cluster-${name}" > /dev/null 2>&1; then
       echo "[ARGOCD] secret cluster-${name} exists, skip register"
     else
       "$ROOT_DIR"/scripts/argocd_register.sh register "$name" "$provider" || echo "[WARNING] Failed to register to ArgoCD"
@@ -366,18 +456,18 @@ else
 fi
 
 # 保存集群配置到数据库（可选，失败不影响核心功能）
-if db_is_available 2>/dev/null; then
+if db_is_available > /dev/null 2>&1; then
   echo "[INFO] Saving cluster configuration to database..."
   # 从 CSV 或配置中获取 http_port 和 https_port
-  http_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | trim || echo "")
-  https_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $8; exit}' "$ROOT_DIR/config/environments.csv" 2>/dev/null | trim || echo "")
-  subnet=$(subnet_for "$name" 2>/dev/null || echo "")
-  
+  http_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $7; exit}' "$ROOT_DIR/config/environments.csv" 2> /dev/null | trim || echo "")
+  https_port=$(awk -F, -v n="$name" '$0 !~ /^[[:space:]]*#/ && NF>0 && $1==n {print $8; exit}' "$ROOT_DIR/config/environments.csv" 2> /dev/null | trim || echo "")
+  subnet=$(subnet_for "$name" 2> /dev/null || echo "")
+
   # 使用默认值如果未找到
-  pf_port=${pf_port:-19000}  # 默认端口转发端口
+  pf_port=${pf_port:-19000} # 默认端口转发端口
   http_port=${http_port:-18080}
   https_port=${https_port:-18443}
-  
+
   # 获取集群API server容器IP（用于WebUI kubectl访问）
   server_ip=""
   if [ "$provider" = "k3d" ]; then
@@ -385,64 +475,61 @@ if db_is_available 2>/dev/null; then
   else
     server_container="${name}-control-plane"
   fi
-  
+
   # 等待容器就绪并获取IP（最多等待60秒）
   echo "[INFO] Waiting for container IP assignment..."
   max_wait=60
   wait_interval=2
   elapsed=0
-  
+
   while [ $elapsed -lt $max_wait ]; do
-    server_ip=$(docker inspect "$server_container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}' || echo "")
-    
+    server_ip=$(docker inspect "$server_container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2> /dev/null | awk '{print $1}' || echo "")
+
     if [ -n "$server_ip" ] && [ "$server_ip" != " " ]; then
       echo "[INFO] ✓ Container IP obtained: $server_ip (after ${elapsed}s)"
       break
     fi
-    
+
     sleep $wait_interval
     elapsed=$((elapsed + wait_interval))
   done
-  
+
   if [ -z "$server_ip" ] || [ "$server_ip" = " " ]; then
     echo "[WARN] Failed to obtain container IP after ${max_wait}s - will save without server_ip"
     echo "[WARN] The IP can be updated later when the container is fully ready"
     server_ip=""
   fi
-  
+
   if [ -n "$server_ip" ]; then
     echo "[INFO] Cluster API server IP: $server_ip"
   fi
-  
+
   # 重试逻辑（最多 3 次，间隔 5 秒）
   max_retries=3
   retry_delay=5
-  db_insert_success=false
-  
   for attempt in $(seq 1 $max_retries); do
-    if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2>/tmp/db_insert_error.log; then
+    if db_insert_cluster "$name" "$provider" "${subnet:-}" "$node_port" "$pf_port" "$http_port" "$https_port" "$server_ip" 2> /tmp/db_insert_error.log; then
       echo "[INFO] ✓ Cluster configuration saved to database"
-      db_insert_success=true
-      
+
       # [修复] 在数据库更新后同步 ApplicationSet（确保数据一致）
       if [ "${DRY_RUN:-}" != "1" ] && [ "${REGISTER_ARGOCD:-1}" = "1" ] && [ "$git_cfg_ok" = "1" ]; then
-        if kubectl --context k3d-devops get ns argocd >/dev/null 2>&1; then
+        if kubectl --context k3d-devops get ns argocd > /dev/null 2>&1; then
           echo "[INFO] Syncing ApplicationSet (after DB update)..."
           "$ROOT_DIR"/scripts/sync_applicationset.sh 2>&1 | sed 's/^/  /' || echo "  [WARNING] ApplicationSet sync failed"
         fi
       fi
-      
+
       break
     else
-      if [ $attempt -eq $max_retries ]; then
+      if [ "$attempt" -eq "$max_retries" ]; then
         # 最终失败，输出详细诊断
-        cat <<EOF
+        cat << EOF
 [ERROR] Failed to save cluster configuration to database after $max_retries attempts
   Cluster: $name
   Provider: $provider
   Node Port: $node_port
   Server IP: $server_ip
-  Error: $(cat /tmp/db_insert_error.log 2>/dev/null || echo 'no error log')
+  Error: $(cat /tmp/db_insert_error.log 2> /dev/null || echo 'no error log')
   
   Fix Suggestions:
     1. Check if SQLite database is accessible:
@@ -471,6 +558,11 @@ else
   echo "  This cluster will not appear in WebUI until database record is added manually."
   echo "  Fix: Ensure devops cluster and PostgreSQL are running, then run:"
   echo "    scripts/sync_clusters_to_db.sh  # (if this script exists)"
+fi
+
+if ! run_db_verify_guard "post-create"; then
+  rc=$?
+  exit $rc
 fi
 
 if [ "$already_exists" -eq 1 ]; then

@@ -2,14 +2,20 @@
 
 > 基于 Portainer CE、HAProxy 和 Kubernetes（kind/k3d）的轻量级本地开发环境编排工具
 
-**Kindler** 提供了一种简单、快速、高效的方式,通过统一网关和管理界面来管理容器化应用和轻量级 Kubernetes 集群。
+**Kindler** 提供了一种简单、快速、高效的方式，通过统一网关和管理界面来管理容器化应用和轻量级 Kubernetes 集群。
 
-[中文文档](./README_CN.md) | [English](./README.md)
+[English Reference](./README_EN.md)
+
+## 语言与沟通 / Language & Communication
+
+- 所有官方文档、脚本帮助、提交说明默认使用中文描述（参见 `openspec/specs/tooling-scripts/spec.md` 中的 *Chinese-First Communication* 要求）。
+- 专业术语、命令、路径、标识符保持英文原样即可，避免歧义或错误翻译。
+- 如确需补充英文内容，请在中文正文之后单独说明，明确其仅作参考而非主语种来源。
 
 ## 脚本总览
 
 - 参见 `scripts/README.md` 获取分类的入口脚本、库脚本与弃用包装说明。
-- 关键命令：`bootstrap.sh`、`cluster.sh`（create/delete/import/status/start/stop/list）、`create_env.sh`、`delete_env.sh`、`haproxy_route.sh`、`haproxy_sync.sh`、`reconcile.sh`、`portainer.sh`、`argocd_register.sh`、`smoke.sh`。批量工具已迁移至 `tools/maintenance/`。
+- 关键命令：`bootstrap.sh`、`cluster.sh`（create/delete/import/status/start/stop/list）、`create_env.sh`、`delete_env.sh`、`haproxy_route.sh`、`haproxy_sync.sh`、`reconcile.sh`、`reconcile_loop.sh`、`portainer.sh`、`argocd_register.sh`、`smoke.sh`。批量工具已迁移至 `tools/maintenance/`。
 
 ## 特性
 
@@ -174,9 +180,11 @@ sequenceDiagram
 ### 声明式集群管理
 
 - WebUI 采用声明式：仅写入 SQLite 数据库中的期望状态；由宿主机上的 Reconciler 调用与预置集群相同的 `scripts/create_env.sh` 完成实际创建与 Portainer/ArgoCD 注册。
-- `bootstrap.sh` 会自动启动 Reconciler，可通过以下命令管理：
-  - `./tools/start_reconciler.sh start|stop|status|logs`
-  - 并发度可调：设置 `RECONCILER_CONCURRENCY`（默认 3），用于同时并行调和多个集群；同名集群始终串行（集群级锁保障）
+- `bootstrap.sh` 会自动启动调和循环，可通过以下命令管理：
+  - `./tools/start_reconciler.sh start|stop|status|logs`（内部调用 `scripts/reconcile_loop.sh --interval <值>`，输出记录在 `/tmp/kindler_reconciler.log`）。
+  - 临时运行：`scripts/reconcile_loop.sh --once --prune-missing` 或结合 cron/systemd（示例：`*/5 * * * * cd ... && ./scripts/reconcile_loop.sh --interval 5m --max-runs 1`）。
+  - 全量历史记录保存在 `logs/reconcile_history.jsonl`，可用 `scripts/reconcile.sh --last-run [--json]` 查看最近一次执行并写入 `docs/TEST_REPORT.md`。
+  - `logs/reconcile_history.jsonl` 不会自动轮转；如需裁剪请配置 logrotate 或执行 `truncate -s 0 logs/reconcile_history.jsonl`。
 - 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
  - P2 修复：bootstrap 会在 SQLite 中初始化 `devops` 集群的 `actual_state=running`（并记录 `last_reconciled_at`），确保 WebUI 正确显示管理集群状态。
  - 可选：如需在 `devops` 上部署业务，可在 bootstrap 前导出 `REGISTER_DEVOPS_ARGOCD=1`，系统将把 `devops` 注册到 ArgoCD（默认不注册；ApplicationSet 仍仅匹配业务集群）。
@@ -347,12 +355,30 @@ curl http://whoami.prod.192.168.51.30.sslip.io
   - GitOps 推送/归档采用全局锁串行化，避免远端竞争。
 - 批量创建最佳实践：并发创建完成后执行一次最终收敛：
   ```bash
-  ./scripts/reconcile.sh   # Git 分支 → ApplicationSet → HAProxy（prune + 单次重载）
+  ./scripts/reconcile_loop.sh --once   # 封装 reconcile.sh --from-db，并负责 ApplicationSet/HAProxy 同步
   ```
 
 仓库范围澄清：
 - Kindler 仓库（本仓库）：仅包含基础设施与脚本；不引入“生效/归档分支”。
 - GitOps 仓库（外部仓库，配置于 `config/git.env`）：必须执行“生效（= SQLite clusters 除 devops）/归档（archive/<env>-<timestamp>）”策略；由 `tools/git/sync_git_from_db.sh` 强制实施。
+
+### 声明式生命周期（Clean → Bootstrap → Reconcile → Validate）
+
+SQLite 是唯一可信源。任何清理或手工改动后，都必须通过调和脚本把实际集群拉回到数据库描述的状态。
+
+1. **Clean**：`scripts/clean.sh --all`
+2. **Bootstrap**：`scripts/bootstrap.sh`
+3. **Reconcile**：
+   - 运行 `scripts/reconcile_loop.sh --once [--prune-missing] [...]`；它会调用 `scripts/reconcile.sh --from-db`，随后执行 Git 分支同步、ApplicationSet 渲染与 HAProxy prune，确保业务集群 ≥3 个 `k3d` / ≥3 个 `kind`。
+   - 每次运行都会将 JSON 条目追加到 `logs/reconcile_history.jsonl`（含时间、参数、动作统计）。通过 `scripts/reconcile.sh --last-run` 或 `--last-run --json` 可立即查看最近一次调和摘要并写入 `docs/TEST_REPORT.md`。
+   - `--dry-run` 仅打印计划并在存在漂移时返回非零；`--prune-missing` 则删除数据库中已无对应集群的陈旧记录。
+4. **Validate**：
+   - `scripts/test_sqlite_migration.sh` 检查迁移后的列（`desired_state`/`actual_state`/`last_reconciled_at` 等）以及 `devops` 记录。
+   - `scripts/db_verify.sh --json-summary` 现在使用退出码 `0`（正常）/`10`（缺少集群）/`11`（状态漂移），并输出 `DB_VERIFY_SUMMARY=...`。
+   - `scripts/create_env.sh` / `scripts/delete_env.sh` 在成功后会自动运行 `scripts/db_verify.sh --json-summary`（最多重试 3 次）；如需临时跳过可显式设置 `SKIP_DB_VERIFY=1`。
+   - `scripts/test_data_consistency.sh --json-summary` 覆盖数据库/集群/ApplicationSet/Portainer/ArgoCD 并生成 `CONSISTENCY_SUMMARY=...`。
+
+`tests/regression_test.sh` 已将以上流程自动化：清理 → 启动 → `scripts/reconcile_loop.sh --once` → 校验集群数量 → 运行全量验证，并把 `RECONCILE_SUMMARY=...` 与最新 `--last-run --json` 结果都写入 `docs/TEST_REPORT.md` 以便审计。
 
 ## 项目结构
 

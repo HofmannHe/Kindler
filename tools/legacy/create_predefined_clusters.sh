@@ -6,6 +6,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+echo "[DEPRECATED] create_predefined_clusters.sh 已弃用，请使用 tools/maintenance/batch_create_envs.sh --from-csv。" >&2
+
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT_DIR/scripts/lib/lib_sqlite.sh"
 

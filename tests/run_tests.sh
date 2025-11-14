@@ -78,34 +78,26 @@ verify_final_state() {
   local orphaned=0
   
   # 检查所有 test-* ArgoCD secrets（应该已全部删除）
-  # 注意：grep -c 在 0 匹配时会输出 0 且返回码为 1，避免使用 "|| echo 0" 造成双行输出
-  local argocd_count=$( (kubectl --context k3d-devops get secrets -n argocd \
+  local argocd_count=$(kubectl --context k3d-devops get secrets -n argocd \
     -l "argocd.argoproj.io/secret-type=cluster" --no-headers 2>/dev/null | \
-    grep -c "cluster-test-") || true )
-  argocd_count=$(echo "$argocd_count" | head -n1 | tr -dc '0-9')
-  argocd_count=${argocd_count:-0}
-  if [ "$argocd_count" -gt 0 ] 2>/dev/null; then
+    grep -c "cluster-test-" || echo 0)
+  if [ "$argocd_count" -gt 0 ]; then
     echo "  ✗ Found $argocd_count orphaned test-* ArgoCD secrets"
     orphaned=$((orphaned + argocd_count))
   fi
   
   # 检查所有 test-* K8s 集群（应该已全部删除）
-  local test_cluster_count=$( (k3d cluster list 2>/dev/null | grep -c "test-") || true )
-  test_cluster_count=$(echo "$test_cluster_count" | head -n1 | tr -dc '0-9')
-  local kind_test_count=$( (kind get clusters 2>/dev/null | grep -c "test-") || true )
-  kind_test_count=$(echo "$kind_test_count" | head -n1 | tr -dc '0-9')
-  test_cluster_count=$(( ${test_cluster_count:-0} + ${kind_test_count:-0} ))
-  if [ "$test_cluster_count" -gt 0 ] 2>/dev/null; then
+  local test_cluster_count=$(k3d cluster list 2>/dev/null | grep -c "test-" || echo 0)
+  test_cluster_count=$((test_cluster_count + $(kind get clusters 2>/dev/null | grep -c "test-" || echo 0)))
+  if [ "$test_cluster_count" -gt 0 ]; then
     echo "  ✗ Found $test_cluster_count orphaned test-* clusters"
     orphaned=$((orphaned + test_cluster_count))
   fi
   
   # 检查所有 test-* 数据库记录（应该已全部删除）
   local db_count=$(kubectl --context k3d-devops exec -i postgresql-0 -n paas -- \
-    psql -U kindler -d kindler -t -c "SELECT count(*) FROM clusters WHERE name LIKE 'test-%';" 2>/dev/null | \
-    tr -dc '0-9\n' | head -n1)
-  db_count=${db_count:-0}
-  if [ "$db_count" -gt 0 ] 2>/dev/null; then
+    psql -U kindler -d kindler -t -c "SELECT count(*) FROM clusters WHERE name LIKE 'test-%';" 2>/dev/null | tr -d ' ')
+  if [ "$db_count" -gt 0 ]; then
     echo "  ✗ Found $db_count orphaned test-* database records"
     orphaned=$((orphaned + db_count))
   fi
@@ -300,3 +292,4 @@ else
   echo "Status: ✗ $total_failed TEST SUITE(S) FAILED"
   exit 1
 fi
+

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
+# Description: Register Portainer Edge Agent for a cluster using HAProxy as ingress; create K8s secret for EdgeID/EdgeKey.
+# Usage: tools/setup/register_edge_agent.sh <cluster-name> <provider>
+# See also: scripts/portainer.sh, scripts/create_env.sh, scripts/haproxy_route.sh
 
-ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "$0")/../.." && pwd)"
 
 usage() {
 	echo "Usage: $0 <cluster-name> <provider>" >&2
@@ -85,8 +88,8 @@ if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
 	exit 1
 fi
 
-# 构造 Edge Environment 名称
-EP_NAME="$CLUSTER_NAME" # 保留原始集群名（含连字符）
+# 构造 Edge Environment 名称（与集群名一致，保留连字符）
+EP_NAME="$CLUSTER_NAME"
 
 echo "[EDGE] Creating Edge Environment: $EP_NAME"
 
@@ -261,7 +264,7 @@ fi
 
 echo "[EDGE] Waiting for Edge Agent to be ready (max 300s = 5min)..."
 # Generalized retry: preload image to cluster and retry if not Running
-. "$ROOT_DIR/scripts/lib.sh"
+. "$ROOT_DIR/scripts/lib/lib.sh"
 ensure_pod_running_with_preload "$CTX" portainer-edge 'app=portainer-edge-agent' "$PROVIDER" "$CLUSTER_NAME" 'portainer/agent:latest' 300 || {
 	echo "[ERROR] Edge Agent pod failed to start"
 	kubectl --context "$CTX" get pods -n portainer-edge

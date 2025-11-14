@@ -14,6 +14,28 @@ GIT_REPO_URL="${GIT_REPO_URL:-}"
 GIT_USERNAME="${GIT_USERNAME:-codex}"
 GIT_PASSWORD="${GIT_PASSWORD:-}"
 
+git_push_with_retry() {
+  local remote="$1"
+  shift
+  local tries=0 max=5 delay=2 rc=0
+  while [ $tries -lt $max ]; do
+    tries=$((tries + 1))
+    if [ -n "$GIT_PASSWORD" ]; then
+      git push "$remote" "$@" 2>&1 | grep -v "password" || true
+      rc=${PIPESTATUS[0]}
+    else
+      git push "$remote" "$@" || true
+      rc=$?
+    fi
+    if [ $rc -eq 0 ]; then
+      return 0
+    fi
+    echo "[GIT] push failed (attempt $tries/$max, rc=$rc); retrying in $((delay * tries))s..." >&2
+    sleep $((delay * tries))
+  done
+  return $rc
+}
+
 usage() {
   echo "Usage: $0 <cluster-name>" >&2
   echo "Example: $0 dev" >&2
@@ -58,6 +80,7 @@ if [ -n "$GIT_PASSWORD" ]; then
 else
   GIT_REPO_URL_AUTH="$GIT_REPO_URL"
 fi
+PUSH_REMOTE="$GIT_REPO_URL_AUTH"
 
 # 根据分支类型处理
 case "$BRANCH_TYPE" in
@@ -84,10 +107,11 @@ case "$BRANCH_TYPE" in
       local tag_name="archive/$CLUSTER_NAME/$timestamp"
       
       if git tag "$tag_name" "$CLUSTER_NAME" -m "Archive before deletion at $timestamp" 2>/dev/null; then
-        if git push "$GIT_REPO_URL_AUTH" "$tag_name" 2>&1 | grep -v "password"; then
+        if git_push_with_retry "$GIT_REPO_URL_AUTH" "$tag_name"; then
           echo "  ✓ Archive tag created: $tag_name"
         else
-          echo "  ⚠ Failed to push archive tag"
+          echo "  ✗ Failed to push archive tag"
+          exit 1
         fi
       else
         echo "  ⚠ Failed to create archive tag"
@@ -97,7 +121,7 @@ case "$BRANCH_TYPE" in
     fi
 
     # 删除分支
-    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+    if git_push_with_retry "$PUSH_REMOTE" --delete "$CLUSTER_NAME"; then
       echo "  ✓ Branch deleted (archive preserved)"
       exit 0
     else
@@ -114,24 +138,23 @@ case "$BRANCH_TYPE" in
     fi
     
     echo "  ✓ Deleting ephemeral branch: $CLUSTER_NAME"
-    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+    if git_push_with_retry "$PUSH_REMOTE" --delete "$CLUSTER_NAME"; then
       echo "  ✓ Branch deleted"
       exit 0
     else
-      echo "  ⚠ Branch deletion failed (continuing)"
-      exit 0  # 不阻塞集群删除
+      echo "  ✗ Branch deletion failed"
+      exit 1
     fi
     ;;
 
   unknown)
     echo "  ⚠ Unknown branch type, deleting without archive: $CLUSTER_NAME"
-    if git push "$GIT_REPO_URL_AUTH" --delete "$CLUSTER_NAME" 2>&1 | grep -v "password"; then
+    if git_push_with_retry "$PUSH_REMOTE" --delete "$CLUSTER_NAME"; then
       echo "  ✓ Branch deleted"
       exit 0
     else
-      echo "  ⚠ Branch deletion failed"
-      exit 0  # 不阻塞集群删除
+      echo "  ✗ Branch deletion failed"
+      exit 1
     fi
     ;;
 esac
-
