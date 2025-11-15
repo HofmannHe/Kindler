@@ -464,6 +464,5 @@ kubectl --context k3d-devops -n argocd get pods >> /tmp/debug.log
 
 - [AGENTS.md](../AGENTS.md) - 项目规范和约束
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 架构设计
-- [REGRESSION_TEST.md](REGRESSION_TEST.md) - 回归测试流程
+- [REGRESSION_TEST_PLAN.md](REGRESSION_TEST_PLAN.md) - 回归测试计划与流程
 - [README_CN.md](../README_CN.md) - 项目介绍
-

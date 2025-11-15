@@ -3,14 +3,14 @@
 _Generated via scripts/scripts_inventory.sh_
 
 ## Summary
-- Total scripts: 22
+- Total scripts: 26
 - Status counts:
-  - experimental: 3
-  - stable: 19
+  - experimental: 5
+  - stable: 21
 - Category counts:
   - diagnostics: 5
   - gitops: 4
-  - inventory: 1
+  - inventory: 5
   - lifecycle: 7
   - registration: 2
   - routing: 2
@@ -22,7 +22,7 @@ _Generated via scripts/scripts_inventory.sh_
 | --- | --- | --- | --- | --- |
 | `scripts/check_consistency.sh` | Compare DB (SQLite), Git branches, and Kubernetes clusters; report drift with fix hints. | `scripts/check_consistency.sh` | stable | scripts/reconcile.sh, scripts/sync_applicationset.sh |
 | `scripts/db_verify.sh` | Validate SQLite cluster records against actual Kubernetes contexts and optionally prune stale rows. | `scripts/db_verify.sh [--cleanup-missing] [--json-summary]` | stable | scripts/test_data_consistency.sh, scripts/check_consistency.sh |
-| `scripts/smoke.sh` | Minimal validation of HAProxy routes and Portainer endpoints; appends a report to docs/TEST_REPORT.md. | `scripts/smoke.sh <env> [service]` | stable | scripts/haproxy_route.sh, scripts/portainer.sh |
+| `scripts/smoke.sh` | Minimal validation of HAProxy routes and Portainer endpoints; optional Markdown report when TEST_REPORT_OUTPUT is set. | `scripts/smoke.sh <env> [service]` | stable | scripts/haproxy_route.sh, scripts/portainer.sh |
 | `scripts/test_data_consistency.sh` | Full data consistency sweep across SQLite, clusters, ApplicationSet, Portainer, and ArgoCD. | `scripts/test_data_consistency.sh [--json-summary]` | stable | scripts/db_verify.sh, scripts/check_consistency.sh |
 | `scripts/test_sqlite_migration.sh` | Validate SQLite clusters schema after migration and ensure baseline rows exist. | `scripts/test_sqlite_migration.sh` | stable | scripts/db_verify.sh, scripts/test_data_consistency.sh |
 
@@ -39,6 +39,10 @@ _Generated via scripts/scripts_inventory.sh_
 
 | Script | Description | Usage | Status | See also |
 | --- | --- | --- | --- | --- |
+| `scripts/file_inventory_all.sh` | Validate that all Git-tracked files are registered in FILE_INVENTORY_ALL.md (global strict whitelist). | `scripts/file_inventory_all.sh [--check] [--prune]` | stable | FILE_INVENTORY_ALL.md |
+| `scripts/file_inventory.sh` | Validate that Markdown docs in repo root, docs/, and selected top-level subdirectories are registered in the FILE_INVENTORY tree (root FILE_INVENTORY.md + docs/FILE_INVENTORY.md) or live under history/archive. | `scripts/file_inventory.sh [--check]` | stable | FILE_INVENTORY.md, docs/FILE_INVENTORY.md |
+| `scripts/file_inventory_tree.sh` | Validate that every git-tracked file is covered by the FILE_INVENTORY tree (root + subdirectory FILE_INVENTORY.md). | `scripts/file_inventory_tree.sh [--check]` | experimental | FILE_INVENTORY.md, docs/FILE_INVENTORY.md, FILE_INVENTORY_ALL.md |
+| `scripts/file_tree_audit.sh` | Audit git-tracked files per directory and warn when a directory holds too many files. | `scripts/file_tree_audit.sh [--max-per-dir N]` | experimental | FILE_INVENTORY_ALL.md |
 | `scripts/scripts_inventory.sh` | Generate Markdown/JSON inventory from script metadata and verify docs/scripts_inventory.md is current. | `scripts/scripts_inventory.sh [--markdown|--json] [--output <file>] [--check]` | stable | scripts/README.md, docs/scripts_inventory.md |
 
 ### lifecycle

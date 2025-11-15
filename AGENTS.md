@@ -149,7 +149,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Agent 专用说明
 - 域名命名统一遵循 `[service].[env].[BASE_DOMAIN]` 规则；系统保留集群使用 `devops` 作为 env，例如 `portainer.devops.192.168.51.30.sslip.io`、`haproxy.devops.192.168.51.30.sslip.io/stat`、`argocd.devops.192.168.51.30.sslip.io`、`whoami.devk3d.192.168.51.30.sslip.io`。
-- 每次修改后必须验证：至少使用 curl（必要时配合浏览器/MCP 浏览器）验证基础环境与域名路由；并运行 `scripts/smoke.sh <env>` 记录到 `docs/TEST_REPORT.md`（强制要求）。准备合并/回归前必须执行 `scripts/regression.sh --full`（确保 ≥3 kind + ≥3 k3d），并将 `docs/REGRESSION_TEST_PLAN.md` 定义的 Reconcile Snapshot/JSON 摘要写入 `docs/TEST_REPORT.md`。
+- 每次修改后必须验证：至少使用 curl（必要时配合浏览器/MCP 浏览器）验证基础环境与域名路由；并运行 `scripts/smoke.sh <env>`，在 stdout 中确认 Portainer/Ingress 状态（如确需 Markdown 报告，可显式设置 `TEST_REPORT_OUTPUT=docs/TEST_REPORT.md` 生成一次性报告，而不是默认写入）。准备合并/回归前必须执行 `scripts/regression.sh --full`（确保 ≥3 kind + ≥3 k3d），并按照 `docs/REGRESSION_TEST_PLAN.md` 中的要求，从回归脚本的 stdout/JSON 摘要中提取 Reconcile Snapshot/JSON 片段用于 PR/CI 描述；仅在需要时再显式使用 `--report` 或 `TEST_REPORT_OUTPUT` 生成 Markdown 报告。
 - 遵循本 AGENTS.md 对其目录树内文件的要求。
 - 提前给出简短计划，保持改动最小，避免破坏性命令。
 - 对改动文件执行格式化/静态检查；统一通过 `scripts/*` 入口脚本暴露操作，避免新增 Makefile 目标。
@@ -158,7 +158,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 1. 先执行clean.sh，然后执行bootstrap.sh拉起基础集群
 2. 执行create_env.sh,创建environments.csv中的虚拟环境，其中kind至少三个，k3d至少三个
 3. 确保拉起的集群功能正常，能被portainer管理，且全程无报错和警告
-4. 在 clean+bootstrap 之后立刻运行 `scripts/reconcile_loop.sh --once --prune-missing`，确保 SQLite 描述的集群（≥3 k3d / ≥3 kind）全部落地；随后使用 `scripts/reconcile.sh --last-run --json` 将 `logs/reconcile_history.jsonl` 中最新条目追加到 `docs/TEST_REPORT.md` 作为审计记录。需要预览可用 `--dry-run`，清理残留使用 `--prune-missing`。
+4. 在 clean+bootstrap 之后立刻运行 `scripts/reconcile_loop.sh --once --prune-missing`，确保 SQLite 描述的集群（≥3 k3d / ≥3 kind）全部落地；随后使用 `scripts/reconcile.sh --last-run --json` 从 `logs/reconcile_history.jsonl` 中读取最新条目，检查 stdout/JSON 是否符合预期，并在 PR/CI 描述中引用关键字段（不再默认追加到 `docs/TEST_REPORT.md`，如确需 Markdown 报告请手动复制或按需使用报告参数）。需要预览可用 `--dry-run`，清理残留使用 `--prune-missing`。
 5. `scripts/create_env.sh` / `scripts/delete_env.sh` 默认会在成功后调用 `scripts/db_verify.sh --json-summary`（最多 3 次重试）；除非应急排障，不要设置 `SKIP_DB_VERIFY=1` 跳过验证，如确需跳过必须在提交说明中注明原因。
 - `scripts/db_verify.sh --json-summary` 的退出码定义：0=一致、10=数据库存在缺失集群、11=状态漂移；CI/脚本需解析 `DB_VERIFY_SUMMARY`。
 - `scripts/test_data_consistency.sh --json-summary` 会输出 `CONSISTENCY_SUMMARY`，作为数据平面健康度的机器可读凭证。

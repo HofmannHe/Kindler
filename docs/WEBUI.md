@@ -317,10 +317,16 @@ kubectl --context k3d-devops exec -it postgresql-0 -n paas -- \
 - [ ] 邮件/Webhook 通知
 - [ ] 多语言支持（英文）
 
+## 历史案例与报告收缩说明
+
+- 典型历史案例：
+  - `docs/history/WEBUI_REAL_SCRIPTS_INTEGRATION_FINAL_REPORT.md`：WebUI 与脚本系统集成的最终总结。
+  - `docs/history/WEB_UI_INTEGRATION_STATUS_FINAL.md`：WebUI 集成状态与问题的最终汇总。
+- 其它 WebUI* 报告/总结类文档（例如 `WEBUI_FIX_REPORT.md`、`WEBUI_*_SUMMARY.md`、`WEBUI_*_REPORT.md` 等）已在 `shrink-file-inventory-tree` 变更中收敛到本规范、`docs/WEBUI_FIX_SUMMARY.md` 以及上述少量历史案例；如需完整过程可通过 Git 历史查看。
+
 ## 相关文档
 
 - [项目 README](../README_CN.md)
 - [API 接口文档](http://kindler.devops.192.168.51.30.sslip.io/docs)
 - [测试文档](../tests/README.md)
 - [开发者指南](../AGENTS.md)
-

@@ -82,6 +82,14 @@ tests/run_tests.sh all                # 所有测试
 ✅ 明确的验收标准  
 ✅ 详细的架构文档和最佳实践
 
+## 🗂️ 历史文档与收缩说明
+
+- 本文档作为 Implementation 相关变更的 canonical 汇总入口，用于取代早期分散的 `IMPLEMENTATION_*.md`、`*_SUMMARY.md`、`*_REPORT.md` 等实现过程文档。
+- 仅保留少量代表性历史案例：
+  - `docs/history/IMPLEMENTATION_COMPLETE_SUMMARY.md`：一次完整实施收尾与一致性完善的过程记录。
+  - `docs/history/HONEST_STATUS_REPORT_20251020.md`：围绕实现/回归状态的诚实汇报与剩余风险说明。
+- 其他实现与状态类报告已在 `shrink-file-inventory-tree` 变更中删除或折叠进本总结；如需原始细节可通过 Git 历史查看相应文档的旧版本。
+
 ## 📋 剩余工作 (10%, 可选)
 
 - ⏳ 清理外部 Git 临时分支 (手动执行)

@@ -30,7 +30,7 @@ bash scripts/regression.sh --full
 
 - 自动执行 clean → bootstrap → 根据 `config/environments.csv` 创建 ≥3 个 kind 和 ≥3 个 k3d 集群。
 - 串联 `scripts/reconcile_loop.sh --once`、`scripts/haproxy_sync.sh --prune`、`scripts/smoke.sh <env>` 与 `bats tests`，出现报错立即停止。
-- 回归结果会写入 `docs/TEST_REPORT.md`，流程细节与异常恢复见 `docs/REGRESSION_TEST_PLAN.md`。
+- 回归结果通过 stdout/JSON 摘要输出（例如 `RECONCILE_SUMMARY=...` 与 `scripts/reconcile.sh --last-run --json`），建议将关键片段复制到 PR/CI 描述；如确需 Markdown 报告，可显式使用 `--report` 或 `TEST_REPORT_OUTPUT`，而不是默认写入 `docs/TEST_REPORT.md`。流程细节与异常恢复见 `docs/REGRESSION_TEST_PLAN.md`。
 
 调试或局部复跑可直接执行：
 

@@ -183,7 +183,7 @@ sequenceDiagram
 - `bootstrap.sh` 会自动启动调和循环，可通过以下命令管理：
   - `./tools/start_reconciler.sh start|stop|status|logs`（内部调用 `scripts/reconcile_loop.sh --interval <值>`，输出记录在 `/tmp/kindler_reconciler.log`）。
   - 临时运行：`scripts/reconcile_loop.sh --once --prune-missing` 或结合 cron/systemd（示例：`*/5 * * * * cd ... && ./scripts/reconcile_loop.sh --interval 5m --max-runs 1`）。
-  - 全量历史记录保存在 `logs/reconcile_history.jsonl`，可用 `scripts/reconcile.sh --last-run [--json]` 查看最近一次执行并写入 `docs/TEST_REPORT.md`。
+  - 全量历史记录保存在 `logs/reconcile_history.jsonl`，可用 `scripts/reconcile.sh --last-run [--json]` 查看最近一次执行并在 PR/CI 描述中引用关键字段；如仍维护 `docs/TEST_REPORT.md`，可按需手工复制片段而非由脚本自动写入。
   - `logs/reconcile_history.jsonl` 不会自动轮转；如需裁剪请配置 logrotate 或执行 `truncate -s 0 logs/reconcile_history.jsonl`。
 - 删除同样是声明式：`DELETE /api/clusters/{name}` 将把 `desired_state=absent`，Reconciler 删除集群并在完成后清理数据库记录。
  - P2 修复：bootstrap 会在 SQLite 中初始化 `devops` 集群的 `actual_state=running`（并记录 `last_reconciled_at`），确保 WebUI 正确显示管理集群状态。
@@ -370,7 +370,7 @@ SQLite 是唯一可信源。任何清理或手工改动后，都必须通过调�
 2. **Bootstrap**：`scripts/bootstrap.sh`
 3. **Reconcile**：
    - 运行 `scripts/reconcile_loop.sh --once [--prune-missing] [...]`；它会调用 `scripts/reconcile.sh --from-db`，随后执行 Git 分支同步、ApplicationSet 渲染与 HAProxy prune，确保业务集群 ≥3 个 `k3d` / ≥3 个 `kind`。
-   - 每次运行都会将 JSON 条目追加到 `logs/reconcile_history.jsonl`（含时间、参数、动作统计）。通过 `scripts/reconcile.sh --last-run` 或 `--last-run --json` 可立即查看最近一次调和摘要并写入 `docs/TEST_REPORT.md`。
+   - 每次运行都会将 JSON 条目追加到 `logs/reconcile_history.jsonl`（含时间、参数、动作统计）。通过 `scripts/reconcile.sh --last-run` 或 `--last-run --json` 可立即查看最近一次调和摘要，并将关键信息复制到 PR/CI 描述中；默认不再自动写入 `docs/TEST_REPORT.md`。
    - `--dry-run` 仅打印计划并在存在漂移时返回非零；`--prune-missing` 则删除数据库中已无对应集群的陈旧记录。
 4. **Validate**：
    - `scripts/test_sqlite_migration.sh` 检查迁移后的列（`desired_state`/`actual_state`/`last_reconciled_at` 等）以及 `devops` 记录。
@@ -378,7 +378,7 @@ SQLite 是唯一可信源。任何清理或手工改动后，都必须通过调�
    - `scripts/create_env.sh` / `scripts/delete_env.sh` 在成功后会自动运行 `scripts/db_verify.sh --json-summary`（最多重试 3 次）；如需临时跳过可显式设置 `SKIP_DB_VERIFY=1`。
    - `scripts/test_data_consistency.sh --json-summary` 覆盖数据库/集群/ApplicationSet/Portainer/ArgoCD 并生成 `CONSISTENCY_SUMMARY=...`。
 
-`tests/regression_test.sh` 已将以上流程自动化：清理 → 启动 → `scripts/reconcile_loop.sh --once` → 校验集群数量 → 运行全量验证，并把 `RECONCILE_SUMMARY=...` 与最新 `--last-run --json` 结果都写入 `docs/TEST_REPORT.md` 以便审计。
+`tests/regression_test.sh` 已将以上流程自动化：清理 → 启动 → `scripts/reconcile_loop.sh --once` → 校验集群数量 → 运行全量验证，并通过 stdout/JSON 暴露 `RECONCILE_SUMMARY=...` 与最新 `--last-run --json` 结果，便于在 PR/CI 描述中引用；如确需 Markdown 报告，可显式使用 `--report` 或 `TEST_REPORT_OUTPUT` 生成一次性文件（例如 `docs/TEST_REPORT.md`）。
 
 ## 项目结构
 
@@ -810,8 +810,8 @@ curl -H 'Host: dev.local' -I http://${HAPROXY_HOST}
     awk -F, 'NR>1 && $2=="k3d"  {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
     ./scripts/haproxy_sync.sh --prune
     ./tests/regression_test.sh
-    # 可选：为每个环境记录冒烟报告（docs/TEST_REPORT.md）
-    for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
+    # 可选：为每个环境记录冒烟结果到 Markdown 报告
+    TEST_REPORT_OUTPUT=docs/TEST_REPORT.md for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
   ```
 
 ## 高级用法
@@ -1044,7 +1044,7 @@ agents: 2
 ./scripts/smoke.sh dev
 ```
 
-测试结果记录在 `docs/TEST_REPORT.md` 中。
+脚本会在 stdout 打印简要结果（Portainer/Ingress HTTP 状态），默认不再写入 `docs/TEST_REPORT.md`。如需生成一次性 Markdown 报告，可显式设置 `TEST_REPORT_OUTPUT=docs/TEST_REPORT.md ./scripts/smoke.sh dev`。
 
 ## 故障排除
 

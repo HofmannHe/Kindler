@@ -11,20 +11,43 @@ usage() {
 说明:
 - 从 clean 开始，拉起基础设施 (bootstrap)，然后按 CSV 批量创建业务环境，最后同步 HAProxy 路由并冒烟验证。
 - 要求 CSV 中至少包含 3 个 kind 与 3 个 k3d 环境（不含 devops）。
+可选:
+- 使用 TEST_REPORT_OUTPUT 或 --report/--report-file 生成一次性 Markdown 报告 (默认不写入 docs/TEST_REPORT.md)。
 USAGE
 }
 
 dry=0
 concurrency=3
+REPORT_ENABLED=false
+REPORT_PATH="${TEST_REPORT_OUTPUT:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1; shift ;;
     --concurrency) concurrency="$2"; shift 2 ;;
     --concurrency=*) concurrency="${1#--concurrency=}"; shift ;;
+    --report)
+      REPORT_ENABLED=true
+      shift
+      ;;
+    --report-file)
+      [ $# -ge 2 ] || { usage; exit 2; }
+      REPORT_ENABLED=true
+      REPORT_PATH="$2"
+      shift 2
+      ;;
+    --report-file=*)
+      REPORT_ENABLED=true
+      REPORT_PATH="${1#--report-file=}"
+      shift
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [ -n "$REPORT_PATH" ]; then
+  REPORT_ENABLED=true
+fi
 
 export DRY_RUN="$dry"
 
@@ -39,7 +62,16 @@ time_section() {
 }
 total_start=$(ts)
 
-report_file="$ROOT_DIR/docs/TEST_REPORT.md"
+if $REPORT_ENABLED; then
+  if [ -z "${REPORT_PATH:-}" ]; then
+    REPORT_PATH="$ROOT_DIR/docs/TEST_REPORT.md"
+  fi
+  mkdir -p "$(dirname "$REPORT_PATH")"
+  report_file="$REPORT_PATH"
+else
+  report_file="/dev/null"
+fi
+
 printf '\n## Full Cycle Run @ %s\n' "$(date -Is)" >>"$report_file"
 
 csv="$ROOT_DIR/config/environments.csv"
@@ -113,7 +145,7 @@ wait || true
 echo "[FULL] 同步 HAProxy 路由"
 "$ROOT_DIR/scripts/haproxy_sync.sh" || true
 
-echo "[FULL] 5/5 冒烟验证并记录 TEST_REPORT"
+echo "[FULL] 5/5 冒烟验证 (可选报告)"
 for e in "${kind_selected[@]}" "${k3d_selected[@]}"; do
   "$ROOT_DIR/scripts/smoke.sh" "$e" || true
 done

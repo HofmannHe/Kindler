@@ -232,6 +232,41 @@ run_check() {
   fi
   rm -f "$tmp"
   echo "[CHECK] docs/scripts_inventory.md is up-to-date."
+
+  # 同步检查文档文件清单（根目录 + docs/ + 顶层子目录）
+  if [ -x "$ROOT_DIR/scripts/file_inventory.sh" ]; then
+    "$ROOT_DIR/scripts/file_inventory.sh" --check
+  else
+    echo "[WARN] scripts/file_inventory.sh not found; skipping file inventory check." >&2
+  fi
+
+  # 递归检查子目录清单树（examples/ + webui/ + tools/ 等）
+  if [ -x "$ROOT_DIR/examples/file_inventory.sh" ]; then
+    "$ROOT_DIR/examples/file_inventory.sh" --check
+  fi
+
+  if [ -x "$ROOT_DIR/webui/file_inventory.sh" ]; then
+    "$ROOT_DIR/webui/file_inventory.sh" --check
+  fi
+
+  if [ -x "$ROOT_DIR/tools/file_inventory.sh" ]; then
+    "$ROOT_DIR/tools/file_inventory.sh" --check
+  fi
+
+  # 全局文件清单（所有 git ls-files）
+  if [ -x "$ROOT_DIR/scripts/file_inventory_all.sh" ]; then
+    "$ROOT_DIR/scripts/file_inventory_all.sh" --check
+  fi
+
+  # 清单树覆盖检查（所有 git 跟踪文件都能在 FILE_INVENTORY 清单树中找到归属）
+  if [ -x "$ROOT_DIR/scripts/file_inventory_tree.sh" ]; then
+    "$ROOT_DIR/scripts/file_inventory_tree.sh" --check
+  fi
+
+  # 目录规模审计（仅输出 WARNING，不改变退出码）
+  if [ -x "$ROOT_DIR/scripts/file_tree_audit.sh" ]; then
+    "$ROOT_DIR/scripts/file_tree_audit.sh"
+  fi
 }
 
 collect_scripts

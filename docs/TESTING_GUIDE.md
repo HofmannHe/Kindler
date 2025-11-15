@@ -65,7 +65,7 @@ bash tests/regression_test.sh --clusters dev,uat
 bash tests/regression_test.sh --skip-smoke --skip-bats  # 仅限临时排障
 ```
 
-- `scripts/reconcile.sh --from-db` 是关键步骤：它读取 SQLite `clusters` 表，并在必要时创建/删除集群（要求 ≥3 k3d 与 ≥3 kind）。日志写入 `/tmp/kindler_reconcile.log`，`RECONCILE_SUMMARY=...` JSON 将被追加到 `docs/TEST_REPORT.md`。
+- `scripts/reconcile.sh --from-db` 是关键步骤：它读取 SQLite `clusters` 表，并在必要时创建/删除集群（要求 ≥3 k3d 与 ≥3 kind）。日志写入 `/tmp/kindler_reconcile.log`，`RECONCILE_SUMMARY=...` JSON 会通过 stdout 暴露，便于在 PR/CI 描述中引用；默认不再追加到 `docs/TEST_REPORT.md`，如确需 Markdown 报告可显式使用报告参数或手工复制。
 - `scripts/test_sqlite_migration.sh` 在 bootstrap 之后运行，确认迁移后的字段（`desired_state`、`actual_state`、`last_reconciled_at` 等）以及 `devops` 记录存在。
 - `tests/regression_test.sh` 在调和后调用 `scripts/test_data_consistency.sh --json-summary` 和 `scripts/db_verify.sh --json-summary`，并利用其 JSON 输出判断漂移及记录结果。
 
@@ -265,3 +265,88 @@ assert_contains "$response" "Expected Content" "New service responds correctly"
 - [快速验证脚本](../tests/quick_verify.sh): 快速验证核心服务
 - [完整测试脚本](../tests/run_full_test.sh): 三轮完整测试（已有）
 - [验证脚本](../tests/verify_cluster.sh): 单集群验证
+
+## 测试哲学与分类（整合自 TESTING_GUIDELINES）
+
+> 本章节整合了历史文档 `docs/TESTING_GUIDELINES.md` 中的核心内容，用于统一测试编写、执行和维护标准；旧文件已废弃，仅保留本指南作为唯一事实来源。
+
+### TDD 与迭代节奏
+
+- 推荐使用“红-绿-重构”循环组织变更：
+  - Red：先写能复现问题/需求的测试，确认当前失败。
+  - Green：用最小改动让测试通过，专注行为正确性。
+  - Refactor：在保持测试通过的前提下整理脚本与结构。
+- 在 Kindler 中，TDD 常见落点：
+  - 先在 `tests/` 下写独立脚本或函数形式的测试。
+  - 明确前置条件（已 bootstrap / 已有集群 / 数据库可用）。
+  - 通过退出码与标准化输出（见下文）驱动 CI/回归。
+
+### 测试金字塔与覆盖分布
+
+- 建议分布：
+  - 单元测试：约 70%，快速验证函数/脚本逻辑。
+  - 集成测试：约 20%，验证组件之间的交互。
+  - E2E 测试：约 10%，覆盖关键用户场景。
+- 在 Kindler 中的典型映射：
+  - 单元测试：如针对 `scripts/lib/*.sh` 的函数级测试。
+  - 集成测试：如集群生命周期、一致性检查、 GitOps 流。
+  - E2E 测试：如 WebUI 创建集群并通过 HAProxy 访问 whoami。
+
+### 测试分类与示例
+
+- 单元测试：
+  - 不依赖外部集群/容器，仅依赖本地脚本/库。
+  - 利用临时表/临时文件隔离状态，确保可重复运行。
+- 集成测试：
+  - 依赖 devops 集群、SQLite、HAProxy、ArgoCD 等真实组件。
+  - 适用于验证 `scripts/create_env.sh`、`scripts/reconcile.sh` 等完整流程。
+- E2E 测试：
+  - 从 WebUI 或公开 API 出发，贯穿前端、后端、集群与路由。
+  - 需要显式等待异步任务完成，并在结束时做完整清理。
+
+## 编写测试的步骤与模板
+
+> 如需完整 shell 模板，可参考历史 `docs/TESTING_GUIDELINES.md` 中的示例脚本，或在 `tests/` 目录内搜索 `template_test.sh` / `*_test.sh`。
+
+1. 明确测试目标与前置条件
+   - 指出要验证的行为（例如“db_insert_cluster 会写入 server_ip 字段”）。
+   - 标明依赖：数据库、devops 集群、业务集群、网络等。
+2. 设计 Setup / Execute / Assert / Teardown 四个阶段
+   - Setup：清理残留状态、准备测试数据或临时资源。
+   - Execute：调用被测脚本或函数，并捕获输出与退出码。
+   - Assert：检查数据库/集群/文件/HTTP 返回码是否符合预期。
+   - Teardown：删除测试集群、清理数据库记录和临时文件。
+3. 使用统一的错误输出格式
+   - 失败时输出：预期值、实际值、上下文、修复建议与调试命令，例如：
+     ```bash
+     echo "✗ Test Failed: <test_name>"
+     echo "  Expected: <expected>"
+     echo "  Actual:   <actual>"
+     echo "  Context:  <key facts>"
+     echo "  Fix:      <how to fix>"
+     echo "  Debug:"
+     echo "    1. <command_to_check_state>"
+     echo "    2. <command_to_view_logs>"
+     ```
+4. 约定退出码
+   - `0`：所有断言通过。
+   - `1`：至少一个断言失败。
+   - `2`：前置条件不满足（如数据库不可用），表示“跳过而非失败”。
+   - `100+`：可用于特别严重或诊断专用错误。
+5. 输出格式便于机器解析
+   - 推荐使用统一前缀：
+     - `[PASS] test_name (...)`
+     - `[FAIL] test_name (...)`
+     - `[SKIP] test_name (...)`
+   - 复杂场景可按需输出 TAP/JSON，但仍需保持日志可读性。
+
+## 测试维护与演进建议
+
+- 定期审查：
+  - 按月检查新增脚本是否已有覆盖。
+  - 按季度整理冗余测试，合并重叠路径。
+- 新增测试前的 checklist：
+  - 能否复用现有入口（如 `tests/regression_test.sh`、`tests/run_tests.sh`）？
+  - 是否可以扩展已有模块，而不是增加平行入口脚本？
+  - 是否考虑将公共逻辑抽到 `tests/lib.sh` 或 `scripts/lib/*`？
+- 编写新测试模块时，优先在本指南中补充说明，而不是再创建新的平行“指南”文档。

@@ -309,7 +309,7 @@ The SQLite database is the single source of truth. Every destructive operation *
 2. **Bootstrap** – `scripts/bootstrap.sh`
 3. **Reconcile from DB**
    - `scripts/reconcile_loop.sh --once [--prune-missing] [...]` invokes `scripts/reconcile.sh --from-db` exactly once, then runs GitOps/HAProxy post-sync. This ensures ≥3 `k3d` and ≥3 `kind` business clusters exist (as described in the SQLite `clusters` table).
-   - Each run appends a JSON line to `logs/reconcile_history.jsonl` (with timestamps, args, counts, and action summaries). Use `scripts/reconcile.sh --last-run` or `--last-run --json` to print the latest entry and embed it into `docs/TEST_REPORT.md`.
+   - Each run appends a JSON line to `logs/reconcile_history.jsonl` (with timestamps, args, counts, and action summaries). Use `scripts/reconcile.sh --last-run` or `--last-run --json` to print the latest entry and copy the relevant fields into your PR/CI description; by default scripts no longer update `docs/TEST_REPORT.md` automatically.
    - Use `--dry-run` to preview actions (non-zero exit if drift remains) or `--prune-missing` to remove stale DB rows instead of recreating them.
 4. **Validate**
    - `scripts/test_sqlite_migration.sh` ensures the migrated schema (columns such as `desired_state`, `actual_state`, `last_reconciled_at`) and the `devops` row exist.
@@ -317,7 +317,7 @@ The SQLite database is the single source of truth. Every destructive operation *
    - `scripts/create_env.sh` and `scripts/delete_env.sh` automatically run `scripts/db_verify.sh --json-summary` on success (up to three attempts). Set `SKIP_DB_VERIFY=1` only for emergency workflows.
    - `scripts/test_data_consistency.sh --json-summary` cross-checks ApplicationSet/Portainer/ArgoCD and emits `CONSISTENCY_SUMMARY=…`.
 
-Regression (`tests/regression_test.sh`) enforces this lifecycle automatically: it runs clean → bootstrap → `scripts/reconcile_loop.sh --once`, verifies the cluster counts, and copies both the `RECONCILE_SUMMARY=…` line plus the latest `--last-run --json` payload into `docs/TEST_REPORT.md` for auditing.
+Regression (`tests/regression_test.sh`) enforces this lifecycle automatically: it runs clean → bootstrap → `scripts/reconcile_loop.sh --once`, verifies the cluster counts, and exposes both the `RECONCILE_SUMMARY=…` line plus the latest `--last-run --json` payload via stdout/JSON so you can reference them in PR/CI summaries (Markdown reports are opt-in via `--report`/`TEST_REPORT_OUTPUT`).
 
 ## Project Structure
 
@@ -831,7 +831,7 @@ agents: 2
 ./scripts/smoke.sh dev
 ```
 
-Each execution appends the curl/Portainer snapshot to `docs/TEST_REPORT.md`.
+Each execution prints a concise summary (HTTP status codes for Portainer and ingress) to stdout. By default no Markdown report is written; if you need a one-off report file (for example during manual verification), set `TEST_REPORT_OUTPUT=docs/TEST_REPORT.md ./scripts/smoke.sh dev`.
 
 ### Full regression (clean → bootstrap → reconcile → smoke/tests)
 
@@ -841,7 +841,7 @@ Each execution appends the curl/Portainer snapshot to `docs/TEST_REPORT.md`.
 
 - Automates `clean.sh --all`, `bootstrap.sh`, and creates every environment listed in `config/environments.csv`, ensuring **≥3 kind + ≥3 k3d** clusters exist before validation.
 - Chains `scripts/reconcile_loop.sh --once`, `haproxy_sync.sh --prune`, environment-wide `scripts/smoke.sh <env>`, and `bats tests` with zero manual work; any failure aborts the run.
-- Stores the reconcile snapshot and smoke output in `docs/TEST_REPORT.md`. Consult `docs/REGRESSION_TEST_PLAN.md` for the complete checklist and recovery actions.
+- Emits reconcile summaries (`RECONCILE_SUMMARY=…` and `reconcile.sh --last-run --json`) and smoke results via stdout/JSON so you can copy them directly into PR/CI descriptions. Markdown reports (for example `docs/TEST_REPORT.md`) are no longer updated by default; enable them explicitly with `TEST_REPORT_OUTPUT` or `--report` if you need a one-off report file.
 
 ### Consistency sweep (DB ↔ clusters ↔ HAProxy)
 
@@ -885,8 +885,8 @@ Run these after manual tweaks to align SQLite, ApplicationSet, Portainer, and HA
     awk -F, 'NR>1 && $2=="k3d"  {print $1}' config/environments.csv | head -3 | xargs -r -n1 ./scripts/create_env.sh -n
     ./scripts/haproxy_sync.sh --prune
     ./tests/regression_test.sh
-    # Optional: record smoke per env (docs/TEST_REPORT.md)
-    for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
+    # Optional: record smoke per env into a Markdown report
+    TEST_REPORT_OUTPUT=docs/TEST_REPORT.md for e in $(awk -F, 'NR>1 {print $1}' config/environments.csv); do ./scripts/smoke.sh "$e"; done
     ```
 
 ## Troubleshooting
@@ -960,7 +960,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - Bootstrap now starts the reconcile loop automatically. You can manage it via:
   - `./tools/start_reconciler.sh start|stop|status|logs` (wraps `scripts/reconcile_loop.sh --interval <value>` and persists stdout to `/tmp/kindler_reconciler.log`).
   - On-demand runs: `scripts/reconcile_loop.sh --once --prune-missing` or schedule via cron/systemd (e.g., `*/5 * * * * cd ... && ./scripts/reconcile_loop.sh --interval 5m --max-runs 1`).
-  - Every run appends to `logs/reconcile_history.jsonl`; fetch the latest record with `scripts/reconcile.sh --last-run [--json]` for audit trails and docs/TEST_REPORT.md snippets.
+  - Every run appends to `logs/reconcile_history.jsonl`; fetch the latest record with `scripts/reconcile.sh --last-run [--json]` for audit trails and PR/CI snippets（you can still copy parts into `docs/TEST_REPORT.md` manually if you maintain a legacy report file, but scripts no longer update it by default）.
   - `logs/reconcile_history.jsonl` is not rotated automatically—use logrotate or `truncate -s 0 logs/reconcile_history.jsonl` when you need to prune it.
 - Deletion is declarative too: `DELETE /api/clusters/{name}` sets `desired_state=absent`; the reconciler deletes the cluster and removes its DB record when finished.
  - P2 fix: bootstrap initializes the `devops` cluster state in SQLite as `actual_state=running` (and sets `last_reconciled_at`) so that WebUI shows the management cluster correctly.

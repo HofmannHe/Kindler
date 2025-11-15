@@ -22,7 +22,7 @@ Primary Entrypoints / 主要入口脚本
 - `argocd_register.sh` — Register/unregister clusters to ArgoCD (kubectl-based)
 - `clean.sh` — Clean all business clusters (preserves devops by default)
 - `clean_ns.sh` — Namespace-scoped cleanup for worktrees (development only)
-- `smoke.sh` — Minimal validation and append report to `docs/TEST_REPORT.md`
+- `smoke.sh` — Minimal validation for HAProxy/Portainer; prints a concise summary to stdout, and only writes a Markdown report when `TEST_REPORT_OUTPUT` is explicitly set
 
 Diagnostics / 数据一致性排查
 - `check_consistency.sh` — Compare SQLite, Git branches, and actual clusters to highlight drift.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 IFS=$'\n\t'
-# Description: Minimal validation of HAProxy routes and Portainer endpoints; appends a report to docs/TEST_REPORT.md.
+# Description: Minimal validation of HAProxy routes and Portainer endpoints; optional Markdown report when TEST_REPORT_OUTPUT is set.
 # Usage: scripts/smoke.sh <env> [service]
 # Category: diagnostics
 # Status: stable
@@ -22,7 +22,13 @@ service_name="${2:-whoami}"
 # 注意：不再使用 host_label()，以免 KINDLER_NS 后缀导致域名不匹配
 host_env_label="$env_name"
 host_fqdn="${service_name}.${host_env_label}.${BASE_DOMAIN}"
-report="$ROOT_DIR/docs/TEST_REPORT.md"
+REPORT_PATH="${TEST_REPORT_OUTPUT:-}"
+if [ -n "$REPORT_PATH" ]; then
+  report="$REPORT_PATH"
+  mkdir -p "$(dirname "$report")"
+else
+  report="/dev/null"
+fi
 ts="$(date '+%Y-%m-%d %H:%M:%S')"
 
 ensure_no_proxy() {
@@ -45,8 +51,6 @@ ensure_no_proxy() {
 }
 
 ensure_no_proxy "$HAPROXY_HOST" "portainer.devops.${BASE_DOMAIN}" localhost 127.0.0.1
-
-mkdir -p "$ROOT_DIR/docs"
 
 echo "# Smoke Test @ $ts" >> "$report"
 echo "- HAPROXY_HOST: $HAPROXY_HOST" >> "$report"
@@ -123,4 +127,8 @@ if [ -n "${status_portainer_http:-}" ] || [ -n "${status_portainer_https:-}" ] |
   if [ "${status_ingress:-}" = "200" ]; then ok_ing=1; fi
   echo "[smoke] result env=$env_name http=$ok_http https=$ok_https ingress=$ok_ing (codes: ${status_portainer_http:-NA},${status_portainer_https:-NA},${status_ingress:-NA})"
 fi
-echo "[smoke] report written to $report"
+if [ -n "$REPORT_PATH" ]; then
+  echo "[smoke] report written to $report"
+else
+  echo "[smoke] no TEST_REPORT_OUTPUT configured; see summary above"
+fi

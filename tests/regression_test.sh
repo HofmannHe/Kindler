@@ -25,6 +25,8 @@ SKIP_SMOKE=false
 SKIP_BATS=false
 CLUSTER_FILTER_RAW=""
 LOG_DIR_OVERRIDE=""
+REPORT_ENABLED=false
+REPORT_PATH="${TEST_REPORT_OUTPUT:-}"
 
 trim() {
   local var="$1"
@@ -45,6 +47,8 @@ usage() {
   --skip-bats          跳过 bats tests（不推荐）
   --clusters a,b,c     仅针对指定业务集群执行 smoke/校验
   --log-dir <dir>      自定义日志目录（默认 logs/regression/<timestamp>）
+  --report             使用默认路径生成 Markdown 报告 (docs/TEST_REPORT.md)
+  --report-file <path> 输出 Markdown 报告到指定路径 (等价于 TEST_REPORT_OUTPUT=path)
   -h, --help           显示此帮助
 
 所有步骤均由脚本实现，出现需要手动干预的情况即视为失败。
@@ -84,6 +88,21 @@ while [ $# -gt 0 ]; do
       LOG_DIR_OVERRIDE="$2"
       shift 2
       ;;
+    --report)
+      REPORT_ENABLED=true
+      shift
+      ;;
+    --report-file)
+      [ $# -ge 2 ] || usage
+      REPORT_ENABLED=true
+      REPORT_PATH="$2"
+      shift 2
+      ;;
+    --report-file=*)
+      REPORT_ENABLED=true
+      REPORT_PATH="${1#--report-file=}"
+      shift
+      ;;
     -h|--help)
       usage
       ;;
@@ -94,6 +113,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ -n "$REPORT_PATH" ]; then
+  REPORT_ENABLED=true
+fi
+
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 DEFAULT_LOG_DIR="$ROOT_DIR/logs/regression/$RUN_ID"
 RUN_DIR="${LOG_DIR_OVERRIDE:-$DEFAULT_LOG_DIR}"
@@ -103,7 +126,14 @@ LOG_FILE="$MAIN_LOG"
 RECON_LOG="$RUN_DIR/phase3-reconcile.log"
 touch "$MAIN_LOG"
 touch "$RECON_LOG"
-touch "$ROOT_DIR/docs/TEST_REPORT.md"
+
+if $REPORT_ENABLED; then
+  if [ -z "${REPORT_PATH:-}" ]; then
+    REPORT_PATH="$ROOT_DIR/docs/TEST_REPORT.md"
+  fi
+  mkdir -p "$(dirname "$REPORT_PATH")"
+  touch "$REPORT_PATH"
+fi
 
 printf '==========================================\n' | tee -a "$MAIN_LOG"
 printf '  SQLite 迁移完整回归测试\n' | tee -a "$MAIN_LOG"
@@ -114,7 +144,11 @@ printf '模式: %s\n' "$MODE" | tee -a "$MAIN_LOG"
 [ -n "$CLUSTER_FILTER_RAW" ] && printf '集群过滤: %s\n' "$CLUSTER_FILTER_RAW" | tee -a "$MAIN_LOG"
 printf '\n' | tee -a "$MAIN_LOG"
 
-TEST_REPORT="$ROOT_DIR/docs/TEST_REPORT.md"
+if $REPORT_ENABLED; then
+  TEST_REPORT="$REPORT_PATH"
+else
+  TEST_REPORT=""
+fi
 
 cleanup_test_clusters() {
   local quiet="${1:-false}"
@@ -252,6 +286,10 @@ verify_cluster_counts() {
 RECON_RECORDED=false
 record_reconcile_report() {
   local status="$1"
+  if ! $REPORT_ENABLED || [ -z "${TEST_REPORT:-}" ]; then
+    RECON_RECORDED=true
+    return 0
+  fi
   if $RECON_RECORDED; then
     return 0
   fi
