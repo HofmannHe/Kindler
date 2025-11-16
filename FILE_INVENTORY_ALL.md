@@ -205,6 +205,9 @@
 | `openspec/changes/reduce-report-noise/proposal.md` | auto |
 | `openspec/changes/reduce-report-noise/specs/tooling-scripts/spec.md` | auto |
 | `openspec/changes/reduce-report-noise/tasks.md` | auto |
+| `openspec/changes/shrink-file-inventory-tree/proposal.md` | auto |
+| `openspec/changes/shrink-file-inventory-tree/specs/tooling-scripts/spec.md` | auto |
+| `openspec/changes/shrink-file-inventory-tree/tasks.md` | auto |
 | `openspec/changes/stabilize-main-worktree/design.md` | auto |
 | `openspec/changes/stabilize-main-worktree/inventory.md` | auto |
 | `openspec/changes/stabilize-main-worktree/proposal.md` | auto |

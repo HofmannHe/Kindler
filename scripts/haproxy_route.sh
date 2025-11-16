@@ -430,6 +430,15 @@ case "$cmd" in
         exit 1
       fi
 
+      # Test hook: allow callers (unit tests) to simulate a failure
+      # after configuration validation without触发实际 HAProxy reload。
+      if [ "${FORCE_HAPROXY_ROUTE_FAIL:-0}" = "1" ]; then
+        echo "[haproxy][TEST] FORCE_HAPROXY_ROUTE_FAIL=1 -> simulate failure for $name" >&2
+        restore_backup
+        release_lock
+        exit 1
+      fi
+
       # Connect HAProxy to cluster network
       ensure_network
 

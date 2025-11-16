@@ -71,10 +71,31 @@ release_lock() {
   fi
 }
 
+validate_cfg() {
+  # 允许通过环境变量跳过校验（测试或调试场景）
+  if [ "${SKIP_VALIDATE:-0}" = "1" ]; then
+    return 0
+  fi
+  if docker ps --format '{{.Names}}' 2> /dev/null | grep -qx 'haproxy-gw'; then
+    local out
+    out=$(docker exec haproxy-gw /usr/local/sbin/haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1 || true)
+    # 仅将 ALERT 视为致命错误，忽略 WARNING
+    if echo "$out" | grep -q "ALERT"; then
+      echo "[sync] ERROR: HAProxy configuration validation failed" >&2
+      echo "$out" | grep -E "(ALERT|ERROR)" | head -5 >&2 || true
+      return 1
+    fi
+    return 0
+  fi
+  echo "[sync] WARN: haproxy-gw not running; skipping validation" >&2
+  return 0
+}
+
 acquire_lock
 trap 'release_lock' EXIT
 
 declare -a records
+failed_envs=()
 src="db"
 if db_is_available > /dev/null 2>&1; then
   # name,provider,node_port
@@ -95,7 +116,6 @@ if [ ${#records[@]} -eq 0 ]; then
 fi
 
 echo "[sync] adding/updating routes from $src..."
-export NO_RELOAD=1
 for entry in "${records[@]}"; do
   IFS=, read -r n provider node_port extra <<< "$entry"
   IFS=$'\n\t'
@@ -111,7 +131,12 @@ for entry in "${records[@]}"; do
     continue
   fi
   p="${node_port:-30080}"
-  NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p" || true
+  if NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$n" --node-port "$p"; then
+    :
+  else
+    echo "[sync] ERROR: failed to add route for $n ($provider)" >&2
+    failed_envs+=("$n")
+  fi
 done
 
 if [ $prune -eq 1 ]; then
@@ -153,10 +178,21 @@ if [ $prune -eq 1 ]; then
   done
 fi
 
-# 单次重载（避免在循环内多次重载），测试模式或显式 NO_RELOAD 时跳过
-unset NO_RELOAD
+# 若任一环境的路由添加失败，则直接报告错误并返回非零，交由上层回归脚本捕获
+if [ ${#failed_envs[@]} -gt 0 ]; then
+  echo "[sync] ERROR: haproxy_route.sh add failed for: ${failed_envs[*]}" >&2
+  exit 1
+fi
+
+# 单次重载（避免在循环内多次重载）；测试模式或显式 NO_RELOAD=1 时跳过
 if [ "${NO_RELOAD:-0}" != "1" ]; then
+  if ! validate_cfg; then
+    echo "[sync] ERROR: validation failed, aborting haproxy reload" >&2
+    exit 1
+  fi
   docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" restart haproxy > /dev/null 2>&1 \
     || docker compose -f "$ROOT_DIR/compose/infrastructure/docker-compose.yml" up -d haproxy > /dev/null
+else
+  echo "[sync] NO_RELOAD=1 set, skipping haproxy reload"
 fi
 echo "[sync] done (routes applied from $src)"

@@ -6,7 +6,6 @@
 }
 
 @test "docs present" {
-  run test -f "docs/DEVELOPMENT_PLAN.md" -a -f "docs/ARCHITECTURE.md"
+  run test -f "docs/TESTING_GUIDE.md" -a -f "docs/ARCHITECTURE.md"
   [ $status -eq 0 ]
 }
-

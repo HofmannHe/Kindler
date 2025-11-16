@@ -51,6 +51,33 @@ PASSED=0
 FAILED=0
 declare -a JSON_CHECKS=()
 
+# 从 environments.csv 读取预置业务集群（排除 devops），用于确定“必须出现在 Portainer/ArgoCD/HAProxy 中”的核心业务集群集合
+EXPECTED_CLUSTERS=""
+EXPECTED_HAPROXY_CLUSTERS=""
+if [ -f "$ROOT_DIR/config/environments.csv" ]; then
+  EXPECTED_CLUSTERS=$(awk -F, '
+    NR>1 && $0 !~ /^[[:space:]]*#/ && NF>=5 {
+      env=$1; provider=$2; reg_portainer=$5;
+      gsub(/[[:space:]]+/, "", env);
+      gsub(/[[:space:]]+/, "", provider);
+      gsub(/[[:space:]]+/, "", reg_portainer);
+      if (env != "" && env != "devops" && reg_portainer != "" && tolower(reg_portainer) != "false" && tolower(reg_portainer) != "0") {
+        print env "|" provider;
+      }
+    }' "$ROOT_DIR/config/environments.csv" || echo "")
+  EXPECTED_HAPROXY_CLUSTERS=$(awk -F, '
+    NR>1 && $0 !~ /^[[:space:]]*#/ && NF>=6 {
+      env=$1; provider=$2; haproxy_route=$6;
+      gsub(/[[:space:]]+/, "", env);
+      gsub(/[[:space:]]+/, "", provider);
+      gsub(/[[:space:]]+/, "", haproxy_route);
+      # 仅当 haproxy_route 显式为 true/on/1 时才作为“必须存在路由”的核心集群
+      if (env != "" && env != "devops" && haproxy_route != "" && tolower(haproxy_route) != "false" && tolower(haproxy_route) != "0") {
+        print env "|" provider;
+      }
+    }' "$ROOT_DIR/config/environments.csv" || echo "")
+fi
+
 # 测试函数
 test_check() {
   local name="$1"
@@ -215,14 +242,178 @@ if kubectl --context k3d-devops get ns argocd > /dev/null 2>&1; then
   fi
 
   test_check "ArgoCD 可访问" 0
+
+  # 核心业务集群的 whoami Application 覆盖检查
+  if [ -n "$EXPECTED_CLUSTERS" ] && [ "$argocd_count" -gt 0 ]; then
+    apps_json=$(kubectl --context k3d-devops -n argocd get applications -o json 2> /dev/null || echo "")
+    if ! echo "$apps_json" | jq -e '.items | type == "array"' >/dev/null 2>&1; then
+      echo "    ✗ 无法获取 ArgoCD applications 详细列表"
+      test_check "ArgoCD whoami 应用覆盖核心业务集群" 1
+    else
+      missing_apps=0
+      while IFS='|' read -r env_name env_provider; do
+        [ -z "$env_name" ] && continue
+        app_name="whoami-${env_name}"
+        if echo "$apps_json" | jq -e --arg n "$app_name" '.items[] | select(.metadata.name == $n)' >/dev/null 2>&1; then
+          echo "    ✓ $app_name: 存在于 ArgoCD"
+        else
+          echo "    ✗ $app_name: 在 ArgoCD 中缺失"
+          missing_apps=$((missing_apps + 1))
+        fi
+      done <<< "$EXPECTED_CLUSTERS"
+
+      if [ "$missing_apps" -eq 0 ]; then
+        test_check "ArgoCD whoami 应用覆盖核心业务集群" 0
+      else
+        test_check "ArgoCD whoami 应用覆盖核心业务集群" 1
+      fi
+    fi
+  fi
 else
   echo "    ⚠ ArgoCD namespace 不存在"
   test_check "ArgoCD 可访问" 1
 fi
 echo ""
 
-# 5. 验证幂等性
-echo "[测试 5] 幂等性测试"
+# 5. 验证 Portainer 端点与核心业务集群一致性
+echo "[测试 5] Portainer 端点一致性"
+
+if [ -z "$EXPECTED_CLUSTERS" ]; then
+  echo "  ⚠ environments.csv 中没有需要强制校验的业务集群，跳过 Portainer 端点检查"
+  test_check "Portainer 端点与核心业务集群一致" 0
+else
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^portainer-ce$'; then
+    echo "  ✗ Portainer 容器未运行，无法检查端点"
+    test_check "Portainer 端点与核心业务集群一致" 1
+  else
+    # 加载 Portainer 管理员密码
+    if [ -f "$ROOT_DIR/config/secrets.env" ]; then
+      # shellcheck disable=SC1090
+      . "$ROOT_DIR/config/secrets.env"
+    fi
+    : "${PORTAINER_ADMIN_PASSWORD:=admin123}"
+
+    # 直接通过容器 IP 访问 Portainer，避免依赖 HAProxy
+    PORTAINER_HTTP_PORT="${PORTAINER_HTTP_PORT:-9000}"
+    PORTAINER_IP=$(docker inspect portainer-ce --format '{{with index .NetworkSettings.Networks "infrastructure"}}{{.IPAddress}}{{end}}' 2>/dev/null || true)
+    if [ -z "$PORTAINER_IP" ]; then
+      PORTAINER_IP=$(docker inspect portainer-ce --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' 2>/dev/null | awk '{print $1}')
+    fi
+
+    if [ -z "$PORTAINER_IP" ]; then
+      echo "  ✗ 无法解析 Portainer 容器 IP"
+      test_check "Portainer 端点与核心业务集群一致" 1
+    else
+      PORTAINER_URL="http://${PORTAINER_IP}:${PORTAINER_HTTP_PORT}"
+      echo "  Portainer API: $PORTAINER_URL"
+
+      # 获取 JWT
+      jwt=""
+      for i in 1 2 3 4 5; do
+        jwt=$(curl -sk -m 8 -X POST "$PORTAINER_URL/api/auth" \
+          -H "Content-Type: application/json" \
+          -d "{\"username\": \"admin\", \"password\": \"${PORTAINER_ADMIN_PASSWORD}\"}" 2>/dev/null | jq -r '.jwt // empty' || true)
+        [ -n "$jwt" ] && [ "$jwt" != "null" ] && break
+        sleep $((i * 2))
+      done
+
+      if [ -z "$jwt" ] || [ "$jwt" = "null" ]; then
+        echo "  ✗ 无法使用 config/secrets.env 中的密码登录 Portainer"
+        test_check "Portainer 端点与核心业务集群一致" 1
+      else
+        endpoints_json=$(curl -sk -m 10 -X GET "$PORTAINER_URL/api/endpoints" \
+          -H "Authorization: Bearer $jwt" 2>/dev/null || echo "[]")
+
+        if ! echo "$endpoints_json" | jq -e '. | type == "array"' >/dev/null 2>&1; then
+          echo "  ✗ 无法解析 Portainer /api/endpoints 返回结果"
+          test_check "Portainer 端点与核心业务集群一致" 1
+        else
+          endpoint_names=$(echo "$endpoints_json" | jq -r '.[].Name' 2>/dev/null | sort || echo "")
+          echo "  Portainer endpoints:"
+          echo "$endpoint_names" | sed 's/^/    - /'
+
+          missing=0
+          while IFS='|' read -r env_name env_provider; do
+            [ -z "$env_name" ] && continue
+            if echo "$endpoint_names" | grep -qx "$env_name"; then
+              echo "    ✓ $env_name: endpoint 存在"
+            else
+              echo "    ✗ $env_name: 在 Portainer endpoints 中缺失"
+              missing=$((missing + 1))
+            fi
+          done <<< "$EXPECTED_CLUSTERS"
+
+          if [ "$missing" -eq 0 ]; then
+            test_check "Portainer 端点与核心业务集群一致" 0
+          else
+            test_check "Portainer 端点与核心业务集群一致" 1
+          fi
+        fi
+      fi
+    fi
+  fi
+fi
+echo ""
+
+# 6. 验证 HAProxy 路由与核心业务集群一致性
+echo "[测试 6] HAProxy 路由与核心业务集群一致性"
+
+cfg="$ROOT_DIR/compose/infrastructure/haproxy.cfg"
+if [ -z "$EXPECTED_HAPROXY_CLUSTERS" ]; then
+  echo "  ⚠ environments.csv 中没有启用 haproxy_route 的业务集群，跳过 HAProxy 路由检查"
+  test_check "HAProxy 路由与核心业务集群一致" 0
+else
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'haproxy-gw'; then
+    echo "  ✗ haproxy-gw 容器未运行，无法检查 HAProxy 路由"
+    test_check "HAProxy 路由与核心业务集群一致" 1
+  else
+    # 先验证 HAProxy 配置语法有效（忽略 WARNING）
+    validation_output=$(docker exec haproxy-gw /usr/local/sbin/haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg 2>&1 || true)
+    if echo "$validation_output" | grep -q "ALERT"; then
+      echo "  ✗ HAProxy 配置校验失败"
+      echo "$validation_output" | grep -E "(ALERT|ERROR)" | head -5 | sed 's/^/    /'
+      test_check "HAProxy 路由与核心业务集群一致" 1
+    else
+      echo "  ✓ HAProxy 配置校验通过（忽略 WARNING）"
+      if [ ! -f "$cfg" ]; then
+        echo "  ✗ 找不到 haproxy.cfg: $cfg"
+        test_check "HAProxy 路由与核心业务集群一致" 1
+      else
+        missing=0
+        while IFS='|' read -r env_name env_provider; do
+          [ -z "$env_name" ] && continue
+          # 检查动态 ACL / use_backend / backend 是否齐全
+          if ! grep -q "acl host_${env_name} " "$cfg"; then
+            echo "    ✗ $env_name: 缺少动态 ACL host_${env_name}"
+            missing=$((missing + 1))
+            continue
+          fi
+          if ! grep -q "use_backend be_${env_name} if host_${env_name}" "$cfg"; then
+            echo "    ✗ $env_name: 缺少 use_backend be_${env_name} if host_${env_name}"
+            missing=$((missing + 1))
+            continue
+          fi
+          if ! grep -q "backend be_${env_name}" "$cfg"; then
+            echo "    ✗ $env_name: 缺少 backend be_${env_name}"
+            missing=$((missing + 1))
+            continue
+          fi
+          echo "    ✓ $env_name: ACL/use_backend/backend 均存在"
+        done <<< "$EXPECTED_HAPROXY_CLUSTERS"
+
+        if [ "$missing" -eq 0 ]; then
+          test_check "HAProxy 路由与核心业务集群一致" 0
+        else
+          test_check "HAProxy 路由与核心业务集群一致" 1
+        fi
+      fi
+    fi
+  fi
+fi
+echo ""
+
+# 7. 验证幂等性
+echo "[测试 7] 幂等性测试"
 echo "  多次运行 cleanup_nonexistent_clusters.sh..."
 
 if [ -f "$ROOT_DIR/scripts/cleanup_nonexistent_clusters.sh" ]; then

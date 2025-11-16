@@ -355,15 +355,16 @@ if [ "$provider" = "k3d" ] && [ "$name" != "devops" ]; then
 fi
 
 # Add HAProxy route (domain-based; default to node_port)
+# 注意：HAProxy 路由失败不应阻止后续 Portainer/ArgoCD 注册与数据库写入，
+# 由 scripts/haproxy_sync.sh 在回归/调和阶段做最终收敛。
 if [ "$add_haproxy" -eq 1 ]; then
   echo "[HAPROXY] Adding route for cluster $name..."
-  # 为避免在批量创建时因临时不一致导致 HAProxy reload 失败，先禁用即时重载
-  NO_RELOAD=1 \
-    "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port" || {
-    echo "[ERROR] Failed to add HAProxy route for $name"
-    exit 1
-  }
-  echo "[HAPROXY] Route added successfully"
+  # 为避免在批量创建时因临时不一致导致 HAProxy reload 失败，禁用即时重载，仅更新配置并校验
+  if NO_RELOAD=1 "$ROOT_DIR"/scripts/haproxy_route.sh add "$name" --node-port "$node_port"; then
+    echo "[HAPROXY] Route added successfully"
+  else
+    echo "[WARN] Failed to add HAProxy route for $name (will rely on haproxy_sync.sh for final convergence)" >&2
+  fi
 fi
 
 if [ "$reg_portainer" -eq 1 ]; then
