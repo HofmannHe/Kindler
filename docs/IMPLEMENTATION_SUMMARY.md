@@ -89,6 +89,7 @@ tests/run_tests.sh all                # 所有测试
   - `docs/history/IMPLEMENTATION_COMPLETE_SUMMARY.md`：一次完整实施收尾与一致性完善的过程记录。
   - `docs/history/HONEST_STATUS_REPORT_20251020.md`：围绕实现/回归状态的诚实汇报与剩余风险说明。
 - 其他实现与状态类报告已在 `shrink-file-inventory-tree` 变更中删除或折叠进本总结；如需原始细节可通过 Git 历史查看相应文档的旧版本。
+- `shrink-runtime-artifacts` 变更：收缩运行时/实验产物，删除 WebUI 后端 `*.phase2-attempt` 实验文件及显式标记为 broken 的测试脚本，改用 `config/git.env.example` + 本地未提交 `config/git.env` 管理 GitOps 凭据。
 
 ## 📋 剩余工作 (10%, 可选)
 
