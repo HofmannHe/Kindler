@@ -296,7 +296,6 @@
 | `tests/run_full_test.sh` | auto |
 | `tests/run_tests.sh` | auto |
 | `tests/services_test.sh` | auto |
-| `tests/services_test.sh.broken` | auto |
 | `tests/test_data_consistency.sh` | auto |
 | `tests/test_db_backend.py` | auto |
 | `tests/test_full_cycle.sh` | auto |
@@ -362,7 +361,6 @@
 | `webui/backend/app/__init__.py` | auto |
 | `webui/backend/app/api/__init__.py` | auto |
 | `webui/backend/app/api/clusters.py` | auto |
-| `webui/backend/app/api/clusters.py.phase2-attempt` | auto |
 | `webui/backend/app/api/services.py` | auto |
 | `webui/backend/app/api/tasks.py` | auto |
 | `webui/backend/app/api/websocket.py` | auto |
@@ -375,7 +373,6 @@
 | `webui/backend/app/services/__init__.py` | auto |
 | `webui/backend/app/services/cluster_service.py` | auto |
 | `webui/backend/app/services/db_service.py` | auto |
-| `webui/backend/app/services/db_service.py.phase2-attempt` | auto |
 | `webui/backend/app/services/reconcile_service.py` | auto |
 | `webui/backend/app/services/task_manager.py` | auto |
 | `webui/backend/app/services/ws_manager.py` | auto |
