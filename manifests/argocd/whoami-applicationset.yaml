@@ -50,7 +50,7 @@ spec:
     spec:
       project: default
       source:
-        repoURL: 'http://192.168.51.30:6080/fc005/devops.git'
+        repoURL: 'https://git.example.com/demo/whoami.git'
         path: deploy
         # 每个集群对应一个同名的 Git 分支
         targetRevision: '{{.branch}}'
